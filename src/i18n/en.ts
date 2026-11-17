@@ -218,7 +218,8 @@ export const en = {
   pluginEngineUnavailable: 'The plugin engine is not ready yet',
   pluginBuiltinUninstallHint: 'Built-in plugins are loaded by the host and cannot be uninstalled',
   pluginUninstallTitle: 'Uninstall plugin',
-  pluginUninstallDescription: 'Uninstalling {name} stops its features immediately; local data is kept',
+  pluginUninstallDescription:
+    'Uninstalling {name} stops its features immediately; local data is cleared',
   pluginUninstallFailed: 'Plugin {id} could not be uninstalled',
   pluginUninstallBlocked:
     'Plugin {name} is required by enabled plugins; disable them first: {dependents}',
@@ -237,7 +238,8 @@ export const en = {
   pluginInstallFromUrl: 'Install from URL',
   pluginInstallUrlLabel: 'Plugin artifact URL',
   pluginInstallUrlPlaceholder: 'https://example.com/plugin.js',
-  pluginInstallUrlInvalid: 'The URL must start with https://',
+  pluginInstallUrlInvalid:
+    'The URL must start with https://, or use http://localhost or http://127.0.0.1 for local debugging',
   pluginManifestMissing:
     'The plugin artifact exports no manifest and no manifest was provided: {id}',
   pluginInstalling: 'Installing',

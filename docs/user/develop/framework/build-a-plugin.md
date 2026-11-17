@@ -1,0 +1,196 @@
+# 从零编写一个 dsc 插件
+
+本文从一个空文件开始,写出一份能被 dsc 识别、安装并运行的插件,并说明如何验证、打包与分发。
+
+## 插件是什么
+
+dsc 插件在运行阶段就是一个符合 [dsc 插件产物规范](../basic/plugin-product-spec.md) 的 `js` 文件:它以 ESM 形式被 `dsc-plugin-engine` 加载,导出一个插件对象,在激活时拿到引擎提供的 `context`。
+
+插件与宿主之间只有一条通道:`context` 上的受限能力对象。插件拿不到 `dsc-core` 的内部接口、`zustand` store 句柄与 IndexedDB 句柄,也拿不到任何 DOM 或插槽接口。绕过 `context` 直接操作宿主不受支持,引擎会识别这类行为并提示用户。
+
+插件的运行状态有四种:
+
+| 状态 | 含义 |
+|:---:|:---:|
+| `registered` | 已登记,尚未启动 |
+| `active` | 已激活,能力可用 |
+| `inactive` | 已停用,能力与贡献点已撤销 |
+| `failed` | 启动失败,原因记录在插件日志与列表的错误字段 |
+
+## 运行环境
+
+| 项 | 说明 |
+|:---:|:---:|
+| 运行位置 | 浏览器页面主线程 |
+| 可用 API | 浏览器 API,例如 `fetch`、`localStorage`、`setTimeout` |
+| 不可用 | Node 内置模块、后端接口、本地文件系统 |
+| 依赖 | 不得新增运行依赖 |
+| 宿主版本 | dsc-core `1.0.0`,对应清单的 `engines` 字段 |
+
+产物按普通 ESM 在页面内 `import`,因此必须是浏览器能直接解析的模块代码,不能包含 `require` 或打包器专用的运行时占位。
+
+## 最小可运行示例
+
+### 源码
+
+下面的代码申请两项能力:`events:session` 用于订阅会话切换事件,`plugins:storage` 用于保存自己的计数。
+
+```ts
+import type { PluginContext, PluginManifest } from './components/dsc-plugin-engine/index.js'
+
+// 插件清单,从地址安装时以它为准
+export const manifest: PluginManifest = {
+  id: 'dsc-demo-log',
+  name: 'Demo Log',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['events:session', 'plugins:storage'],
+  contributions: ['session:changed'],
+}
+
+// 启动入口,引擎在激活时调用,超时 5 秒
+export const activate = (context: PluginContext) => {
+  const stored = context.storage.get('switch-count')
+  let count = typeof stored === 'number' ? stored : 0
+  context.events.on('session:changed', (event) => {
+    count += 1
+    context.storage.set('switch-count', count)
+    context.log('session:changed -> ' + String(event.activeId ?? 'none') + ' (' + count + ')')
+  })
+}
+
+// 停用入口,可选;引擎在停用后仍会执行 events.on 返回的释放函数
+export const deactivate = () => {}
+```
+
+`import type` 只是为了让编辑器拿到类型提示,编译后不会留在产物里。该路径指向本仓库的类型定义;独立插件项目可以复制这份类型声明,或使用 omdsc-dev 提供的 dsc 插件模板。
+
+### 产物
+
+插件最终交付的是去掉类型标注的 ESM 文件,内容与上面的源码等价:
+
+```js
+export const manifest = {
+  id: 'dsc-demo-log',
+  name: 'Demo Log',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['events:session', 'plugins:storage'],
+  contributions: ['session:changed'],
+}
+
+export const activate = (context) => {
+  const stored = context.storage.get('switch-count')
+  let count = typeof stored === 'number' ? stored : 0
+  context.events.on('session:changed', (event) => {
+    count += 1
+    context.storage.set('switch-count', count)
+    context.log('session:changed -> ' + String(event.activeId ?? 'none') + ' (' + count + ')')
+  })
+}
+```
+
+### 逐段说明
+
+| 部分 | 作用 |
+|:---:|:---:|
+| `export const manifest` | 安装依据。用户从地址安装时不必再提供清单;写在 `default` 导出对象上也能识别,模块顶层的具名导出优先 |
+| `capabilities` | 申请的能力,必须在核心能力表内且不得重复。未申请的能力被调用时抛 `PluginCapabilityError` |
+| `contributions` | 声明订阅的贡献点。只有声明了 `session:changed` 才能调用 `context.events.on('session:changed', ...)` |
+| `activate(context)` | 启动入口,可返回 Promise;抛错或超过 5 秒会让插件进入 `failed`,引擎与其他插件继续运行 |
+| `deactivate()` | 停用入口,可选,可返回 Promise,超时 3 秒;之后引擎执行 `events.on` 返回的释放函数并清空贡献点 |
+
+插件 id 的仓库约定是以 `dsc-` 开头。引擎的格式校验为小写字母开头、允许数字与连字符、长度 3 到 64。
+
+### 能力清单
+
+| 能力 | 可见范围 | `context` 成员 | 限流 |
+|:---:|:---:|:---:|:---:|
+| `sessions:list` | 全部插件 | `context.sessions.list` | 30 次 / 10 秒 |
+| `sessions:read` | 全部插件 | `context.sessions.read` | 30 次 / 10 秒 |
+| `sessions:rename` | 全部插件 | `context.sessions.rename` | 5 次 / 10 秒 |
+| `events:session` | 全部插件 | `context.events.on` | 5 次 / 10 秒 |
+| `notify` | 全部插件 | `context.ui.notify` | 10 次 / 10 秒 |
+| `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
+| `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
+| `net:fetch` | 仅内置插件 | `context.net.getText` | 10 次 / 10 秒 |
+
+`net:fetch` 只对内置插件开放。第三方插件在清单里申请它时,安装结果为 `unknown-capability`,与申请一个不存在的能力表现一致;调用层还会再校验一次。
+
+各能力的完整签名与可见数据范围见 [dsc 插件开发规范](../basic/plugin-develop-spec.md)。
+
+## 本地加载验证
+
+1. 准备产物:一个 js 文件,例如 `dsc-demo-log.js`。
+2. 用本机静态服务器以 `http://localhost` 提供该文件,例如 `http://localhost:8090/dsc-demo-log.js`。地址规则:允许 `https://` 的任意主机,或 `http://localhost`、`http://127.0.0.1`、`http://[::1]`;其余协议与主机一律拒绝。
+3. 打开插件面板,在「从地址安装」中粘贴产物地址,点击「安装」。
+4. 安装成功后插件自动激活,「已安装」中出现该插件,状态为「运行中」。
+5. 点击「查看日志」可看到 `context.log` 写入的内容;切换会话后再次查看,计数递增。
+
+两点补充:
+
+- 面板与 `installFromUrl(url, manifest?)` 共用同一地址判定,所以本地 `http://localhost` 地址可以直接从面板安装;分发给用户时仍应使用 `https` 地址。
+- 产物改动后需要先在面板卸载再重新安装;同一地址的模块会被浏览器缓存,必要时更换文件名或地址。
+
+## 发布成单个 js 产物
+
+| 要求 | 说明 |
+|:---:|:---:|
+| 入口 | 一个 js 文件,浏览器可直接 `import` 的 ESM |
+| 导出 | 保留 `export const manifest` 与 `export const activate` |
+| 依赖 | 第三方依赖内联进产物,不新增运行依赖 |
+| 资源 | 产物引用的样式、字体、图片随入口一起部署,路径相对入口 |
+| 格式 | 不使用 `require`、Node 内置模块与打包器专用运行时 |
+
+打包时注意:
+
+- 把入口配置为 ESM 库,保留 `manifest` 与 `activate` 两个导出,不要产出仅供应用使用的 HTML 入口。
+- 若必须拆分代码,被拆出的 chunk 与资源要一起部署,入口地址保持稳定。
+- 构建完成后在浏览器控制台直接 `import('https://example.com/dsc-demo-log.js')` 一次,确认没有语法错误与缺失依赖。
+
+## 让用户安装
+
+| 方式 | 入口 | 清单来源 |
+|:---:|:---:|:---:|
+| 从地址安装 | 插件面板底部的「从地址安装」 | 产物自带的 `manifest` 导出 |
+| 插件市场 | 插件面板的「插件市场」标签页 | 索引条目内联的清单优先,否则用产物自带的 `manifest` |
+| 宿主注册 | 宿主代码调用 `engine.install(manifest, plugin)` | 调用方传入 |
+
+- 通过地址安装成功后插件自动激活;安装记录写入浏览器本地,下次打开页面时自动恢复。
+- 产物地址失效时,恢复失败只把该插件标记为 `failed`,不影响其他插件与页面渲染。
+- 市场索引的结构与收录要求由插件市场侧维护,产物仍须导出 `manifest`,或由索引条目内联清单。
+- 卸载会清除该插件的本地数据,`context.storage` 写入的内容不会跨卸载保留。
+
+## 常见错误与排查
+
+安装阶段的拒绝原因:
+
+| 原因 | 常见成因 | 处理 |
+|:---:|:---:|:---:|
+| `invalid-manifest` | `id`、`name`、`version` 不符合规则,或产物未导出清单且调用时未传入清单 | 修正清单字段;确保产物导出 `manifest` |
+| `unknown-capability` | 申请了能力表之外的能力,或第三方插件申请 `net:fetch` | 只申请能力清单内的能力 |
+| `unknown-contribution` | `contributions` 不在贡献点表内 | 只使用 `session:changed` |
+| `incompatible-version` | `engines` 与宿主 `1.0.0` 不匹配 | 调整 `engines` |
+| `duplicate` | 同 id 插件已存在 | 先卸载旧插件再安装 |
+| `missing-dependency` | `dependencies` 中的插件未安装 | 先安装依赖 |
+| `conflict` | `conflicts` 中的插件已安装 | 先卸载冲突插件 |
+| `load-failed` | 地址协议不支持、网络失败或加载超过 10 秒 | 检查地址与网络 |
+| `invalid-plugin` | 产物没有导出 `activate`,或导出形态不被识别 | 检查导出形态 |
+
+运行阶段的现象:
+
+| 现象 | 成因 | 处理 |
+|:---:|:---:|:---:|
+| 状态显示「启动失败」 | `activate` 抛错或超过 5 秒 | 打开插件日志定位抛错位置 |
+| 抛 `PluginCapabilityError` | 调用了未在清单申请的能力 | 在 `capabilities` 中补上 |
+| 抛 `PluginRateLimitError` | 超出能力限流 | 降低调用频率或改为事件驱动 |
+| 抛 `PluginTimeoutError` | 单次异步调用超过 3 秒 | 缩短单次调用耗时 |
+| 抛 `PluginAbortError` | 传入的 `signal` 已取消 | 检查取消逻辑 |
+| 抛 `PluginDataError` | 数据超过 64KB,或值无法 JSON 序列化 | 精简数据;移除函数、`undefined` 与循环引用 |
+| 卸载被拒绝 | 有已启用的插件依赖它 | 先停用依赖方再卸载 |
+
+## 延伸阅读
+
+- [dsc 插件开发规范](../basic/plugin-develop-spec.md)
+- [dsc 插件产物规范](../basic/plugin-product-spec.md)
+- [开发文档索引](../index.md)

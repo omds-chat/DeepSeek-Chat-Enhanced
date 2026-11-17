@@ -19,6 +19,7 @@ export type CoreServiceTable = {
   'settings:locale': () => 'zh-CN' | 'en-US'
   'net:fetch': (url: string, signal?: AbortSignal) => Promise<CoreFetchResult>
   'plugins:storage': (call: CoreStorageCall) => unknown
+  'plugins:data-clear': (pluginId: string) => void
 }
 
 const services = new Map<CoreCapabilityId, unknown>()

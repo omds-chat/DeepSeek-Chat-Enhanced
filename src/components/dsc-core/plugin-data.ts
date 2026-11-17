@@ -127,3 +127,16 @@ export const removePluginEntry = (pluginId: string, key: string): void => {
     throw new PluginDataError('storage', 'localStorage write failed')
   }
 }
+
+/**
+ * 清除单个插件的全部数据。
+ * 插件数据按 id 收敛在一个键内，删除该键即清空；只由引擎在卸载时调用。
+ */
+export const clearPluginData = (pluginId: string): void => {
+  const target = storageKey(pluginId)
+  try {
+    localStorage.removeItem(target)
+  } catch {
+    throw new PluginDataError('storage', 'localStorage write failed')
+  }
+}

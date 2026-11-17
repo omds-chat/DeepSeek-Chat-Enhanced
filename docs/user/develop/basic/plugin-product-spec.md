@@ -55,7 +55,7 @@
 
 `net:fetch` 对第三方插件不可见：引擎维护一份内置插件 id 集合，只有集合内的插件申请该能力才会被接受；第三方清单里写 `net:fetch` 时安装结果为 `unknown-capability`，与申请一个不存在的能力表现完全一致。
 
-`plugins:storage` 对第三方插件开放，但数据保存在浏览器本地，随站点数据清除而丢失，插件不得把它当作可靠存储。
+`plugins:storage` 对第三方插件开放，但数据保存在浏览器本地，随站点数据清除而丢失，插件不得把它当作可靠存储。卸载插件时引擎清除该插件的全部插件数据，重新安装后读不到旧数据。
 
 贡献点仅限 `session:changed`。
 
@@ -74,7 +74,7 @@
 | 运行时加载 | `engine.installFromUrl(url, manifest?)` | 按 `import` 加载产物，成功后自动激活；超时 10 秒 |
 | 手动激活 | `engine.activate(id)` | 依赖满足时进入 `active` |
 
-`url` 只接受 http 与 https，按页面地址解析相对路径；其他协议直接拒绝，结果为 `load-failed`。
+`url` 只接受 `https` 的任意主机，或 `http` 的本机回环地址（`localhost`、`127.0.0.1`、`[::1]`），按页面地址解析相对路径；其余地址直接拒绝，结果为 `load-failed`。
 
 清单优先级：`installFromUrl(url, manifest)` 显式传入的清单优先；未传入时使用产物导出的 `manifest`；两者都没有时安装被拒绝，原因为 `invalid-manifest`，并提示 `pluginManifestMissing`。
 
@@ -89,6 +89,8 @@
 | `enabled` | 用户期望的运行状态 |
 
 页面启动时引擎先装载内置插件，再按记录恢复 `url` 来源的插件：加载成功则重新注册并按 `enabled` 决定是否激活；加载失败只把该插件标记为 `failed` 并在 `list()` 中可见，不阻塞启动与其他插件。宿主通过 `install()` 直接注册的插件没有可恢复来源，不写入该记录。
+
+卸载插件时，引擎在移除记录后清除该插件的 `plugins:storage` 数据；清理失败只写入 `engineLogs()`，不影响卸载结果。
 
 ## 错误与降级
 

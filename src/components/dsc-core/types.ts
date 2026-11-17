@@ -14,6 +14,8 @@ export type CoreCapabilityId =
   | 'settings:locale'
   | 'net:fetch'
   | 'plugins:storage'
+  // 引擎管理专用，不在 CORE_CAPABILITIES 内，插件申请时按未知能力拒绝
+  | 'plugins:data-clear'
 
 /** 全部核心能力；引擎据此校验插件申请 */
 export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
@@ -83,4 +85,6 @@ export type CoreApi = {
   readPluginEntry(call: CoreCall, pluginId: string, key: string): { value: unknown } | null
   writePluginEntry(call: CoreCall, pluginId: string, key: string, value: unknown): void
   removePluginEntry(call: CoreCall, pluginId: string, key: string): void
+  /** 清除单个插件的全部数据；只给引擎用于卸载清理 */
+  clearPluginData(call: CoreCall, pluginId: string): void
 }

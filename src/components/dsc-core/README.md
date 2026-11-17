@@ -49,6 +49,7 @@ dsc-core/
 | `settings:locale` | `currentLocale` | 只读当前语言 | 可开放 |
 | `net:fetch` | `fetchText` | 读取外源文本资源，只有 https 与 GET | 需限流 |
 | `plugins:storage` | `readPluginEntry`、`writePluginEntry`、`removePluginEntry` | 插件自身的键值数据，单插件 64KB | 需限流 |
+| `plugins:data-clear` | `clearPluginData` | 清除单个插件的全部数据，只供引擎卸载时调用 | 仅引擎 |
 
 永久不开放：API Key、`zustand` store 原始句柄、IndexedDB 句柄与事务、附件上传与原件、任意网络请求（`net:fetch` 是唯一例外，且只对内置插件开放）、任意 DOM 操作。
 
@@ -73,13 +74,13 @@ dsc-core/
 
 | 约束 | 规定 |
 |:---:|:---:|
-| 操作 | 只有读取、写入、删除三种 |
+| 操作 | 读取、写入、删除三种，另有引擎专用的整体清除 |
 | 总量 | 单插件上限 64KB，按序列化后的 UTF-8 字节数计算 |
 | 值 | 必须可 JSON 序列化，含函数、`undefined` 或循环引用时抛错 |
 | 插件 id | 必须符合清单 id 规则，避免拼出跨插件的键 |
 | 失败 | 统一抛 `PluginDataError`，`reason` 取值为 `invalid`、`quota`、`serialize`、`storage` |
 
-数据保存在浏览器 localStorage，随站点数据清除而丢失，不作为可靠存储。
+数据保存在浏览器 localStorage，随站点数据清除而丢失，不作为可靠存储。卸载插件时引擎清除该插件的全部数据。
 
 ## 凭证与绕过检测
 

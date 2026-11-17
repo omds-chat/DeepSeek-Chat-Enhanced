@@ -57,6 +57,8 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 超限抛 `PluginRateLimitError`，未授予抛 `PluginCapabilityError`，超时抛 `PluginTimeoutError`，取消抛 `PluginAbortError`；限流与超时同时用既有 Toast 提示。
 
+`plugins:data-clear` 是引擎管理专用能力，不在 `CORE_CAPABILITIES` 内，插件清单申请它时按 `unknown-capability` 拒绝，也不会出现在插件上下文中。
+
 ### net:fetch 的可见性
 
 `net:fetch` 只对内置插件开放。引擎启动时把 `builtin.ts` 里的插件 id 登记进注册表；安装校验时若清单申请了 `net:fetch` 而 id 不在集合内，直接返回 `unknown-capability`，第三方插件无法把它与一个不存在的能力区分开。能力调用层会再校验一次，防止绕过安装校验直接拿到 `context.net`。
@@ -77,6 +79,8 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 ```
 
 宿主通过 `install()` 直接注册的插件没有可恢复来源，不写入安装记录。恢复失败的占位记录没有插件实例，`activate()` 会拒绝并提示 `pluginRestoreFailed`，但允许重新安装覆盖。
+
+卸载插件时，引擎在移除记录后调用核心清除该插件的 `plugins:storage` 数据；清理失败只写入 `engineLogs()`，不影响卸载结果。
 
 ### 内置插件
 

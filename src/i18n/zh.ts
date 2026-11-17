@@ -210,7 +210,7 @@ export const zh = {
   pluginEngineUnavailable: '插件引擎尚未就绪',
   pluginBuiltinUninstallHint: '内置插件由宿主装载，不可卸载',
   pluginUninstallTitle: '卸载插件',
-  pluginUninstallDescription: '卸载 {name} 后它的功能会立即停止，本地数据保留',
+  pluginUninstallDescription: '卸载 {name} 后它的功能会立即停止，本地数据一并清除',
   pluginUninstallFailed: '插件 {id} 卸载失败',
   pluginUninstallBlocked: '插件 {name} 正被已启用的插件依赖，需先停用：{dependents}',
   pluginLogsTitle: '插件日志：{name}',
@@ -228,7 +228,8 @@ export const zh = {
   pluginInstallFromUrl: '从地址安装',
   pluginInstallUrlLabel: '插件产物地址',
   pluginInstallUrlPlaceholder: 'https://example.com/plugin.js',
-  pluginInstallUrlInvalid: '地址必须以 https:// 开头',
+  pluginInstallUrlInvalid:
+    '地址需以 https:// 开头，本机地址可用 http://localhost 或 http://127.0.0.1',
   pluginManifestMissing: '插件产物未导出 manifest，安装时也没有提供清单：{id}',
   pluginInstalling: '安装中',
   pluginOperationBusy: '处理中',

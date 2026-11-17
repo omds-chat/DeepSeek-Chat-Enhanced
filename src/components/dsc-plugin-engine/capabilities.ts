@@ -32,6 +32,8 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   // 内层 10 秒超时由 dsc-core 的 net:fetch 自己中止请求，这里只做外层兜底
   'net:fetch': { limit: 10, windowMs: 10000, timeoutMs: 12000 },
   'plugins:storage': { limit: 100, windowMs: 10000, timeoutMs: 3000 },
+  // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
+  'plugins:data-clear': { limit: 0, windowMs: 10000, timeoutMs: 3000 },
 }
 
 /** 能力未授予 */

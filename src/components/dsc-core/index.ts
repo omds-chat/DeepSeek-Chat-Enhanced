@@ -7,6 +7,7 @@ import { useSettings, type Locale } from '../../services/settings.js'
 import { isCredential, recordBypass, type CoreCredential } from './guard.js'
 import { fetchText } from './net.js'
 import {
+  clearPluginData,
   readPluginEntry,
   removePluginEntry,
   writePluginEntry,
@@ -122,6 +123,7 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     registerCoreService('settings:locale', currentLocale)
     registerCoreService('net:fetch', fetchText)
     registerCoreService('plugins:storage', pluginDataService)
+    registerCoreService('plugins:data-clear', clearPluginData)
     opened = true
   }
   return {
@@ -145,6 +147,8 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     removePluginEntry: (call, pluginId, key) => {
       requireCoreService(call, 'plugins:storage')({ op: 'remove', pluginId, key })
     },
+    clearPluginData: (call, pluginId) =>
+      requireCoreService(call, 'plugins:data-clear')(pluginId),
   }
 }
 

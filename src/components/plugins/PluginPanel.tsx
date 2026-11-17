@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
+import { isPluginSourceAllowed } from '../dsc-plugin-engine/loader.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
@@ -10,9 +11,6 @@ import { MarketPlugins } from './MarketPlugins.js'
 import { closePluginPanel, usePluginPanel, type PluginPanelTab } from './pluginPanelState.js'
 import { usePluginList } from './usePluginList.js'
 import styles from './PluginPanel.module.css'
-
-/** 产物地址只接受 https */
-const URL_PREFIX = 'https://'
 
 const tabs: { value: PluginPanelTab; label: TranslationKey }[] = [
   { value: 'installed', label: 'pluginTabInstalled' },
@@ -74,7 +72,7 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
 
   const submit = async () => {
     const target = url.trim()
-    if (!target.startsWith(URL_PREFIX)) {
+    if (!isPluginSourceAllowed(target)) {
       setInvalid(true)
       return
     }

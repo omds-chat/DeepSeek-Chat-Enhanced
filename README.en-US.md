@@ -23,7 +23,7 @@ This branch adds the following **feature enhancements** to the source repository
 |:---:|:---:|
 | `dsc-core` | dsc core, runs the basic services of Chat-Demo |
 | `dsc-plugin-engine` | dsc plugin engine, the middle layer that implements the plugin system |
-| `dsc-market` | dsc plugin market, reads and displays external plugin collections |
+| `dsc-market` | dsc plugin market, reads the external plugin index and feeds the plugin panel's Plugin market tab |
 | Other same-origin plugins | See [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) |
 
 <!-- Every dsc plugin must start with `dsc-` -->
@@ -51,6 +51,22 @@ Note that we only provide the creation, display, and distribution of **static we
 <!-- Link note: OMDSC-Market needs a preset emergency takedown process and broadcast announcement for malicious plugins -->
 
 
+## Plugin panel
+
+The plugin panel is where plugins are managed inside the app. Open it with the Plugins button at the bottom of the sidebar; when the sidebar is collapsed, the entry is the plugin icon in the top-left button group.
+
+| Tab | Purpose |
+|:---:|:---:|
+| Installed | Lists each plugin's name, version, state, and source, and provides enable, disable, uninstall, and log viewing |
+| Plugin market | Reads the plugin index and lists installable plugins, and can refresh the index or install directly |
+
+The bottom of the panel provides Install from URL: paste the `https` address of a plugin artifact to install it, and the manifest comes from the `manifest` export bundled with the artifact.
+
+Install records and enable states are stored in browser storage and restored the next time the page loads.
+
+For end-user instructions, see the [plugin user guide](docs/user/guide/plugins.md).
+
+
 ## Plugin market
 
 To view the plugin list online, visit [OMDSC-Market](https://omdsc-market.com/en-US/).
@@ -69,6 +85,24 @@ Every dsc plugin is an independent project during **development**. You can write
 To keep plugins standardized and maintainable, and to make your plugin easier for others to use and build upon, we recommend developing plugins with the [dsc plugin template](https://github.com/omdsc-dev/dsc-plugin-template) provided by omdsc-dev.
 
 Every dsc plugin is a `js script` conforming to the [dsc plugin artifact specification](docs/user/develop/basic/plugin-product-spec.md) during **runtime**.
+
+A plugin artifact can export a named `manifest`, so users do not need to supply one when installing from a URL:
+
+```js
+export const manifest = {
+  id: 'dsc-demo-log',
+  name: 'Demo Log',
+  version: '1.0.0',
+  capabilities: ['events:session', 'plugins:storage'],
+  contributions: ['session:changed'],
+}
+
+export const activate = (context) => {
+  context.log('demo log activated')
+}
+```
+
+The manifest may also live on the `default` export, and a top-level named export wins. When `installFromUrl(url, manifest)` receives a manifest explicitly, that manifest is used. If the artifact exports no manifest and none is supplied, the install is rejected.
 
 A dsc plugin is loaded by `dsc-plugin-engine` and controls the whole Chat and its pages in a limited way through the standard interfaces provided by `dsc-plugin-engine`. Bypassing `dsc-plugin-engine` to interact with `dsc-core` directly is inappropriate; `dsc-plugin-engine` detects this behavior and raises an alert to the user.
 

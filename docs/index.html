@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepSeek-Chat-Enhanced 文档</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1f2328;
+    --muted: #59636e;
+    --line: #d8dee4;
+    --card: #f6f8fa;
+    --link: #0b6bcb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117;
+      --fg: #e6edf3;
+      --muted: #9198a1;
+      --line: #30363d;
+      --card: #161b22;
+      --link: #6cb6ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+  main {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 48px 24px 64px;
+  }
+  h1 {
+    margin: 0 0 8px;
+    font-size: 24px;
+  }
+  .lead {
+    margin: 0;
+    color: var(--muted);
+  }
+  h2 {
+    margin: 36px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    font-size: 18px;
+  }
+  ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  li {
+    margin: 8px 0;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+  }
+  li a {
+    color: var(--link);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  li a:hover { text-decoration: underline; }
+  li span {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 14px;
+  }
+  footer {
+    margin-top: 40px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>DeepSeek-Chat-Enhanced 文档</h1>
+  <p class="lead">文档入口页,列出仓库内 docs 目录下的 markdown 文件。页面为纯静态,无外部脚本与外部样式。</p>
+
+  <h2>用户指南</h2>
+  <ul>
+    <li><a href="user/guide/index.md">用户指南索引</a><span>用户文档的入口</span></li>
+    <li><a href="user/guide/plugins.md">插件使用指南</a><span>打开插件面板、从地址安装、启用停用与卸载、安全提示</span></li>
+  </ul>
+
+  <h2>开发文档</h2>
+  <ul>
+    <li><a href="user/develop/index.md">开发文档索引</a><span>开发文档的入口</span></li>
+    <li><a href="user/develop/basic/plugin-develop-spec.md">dsc 插件开发规范</a><span>插件对象、清单字段、能力清单与错误处理</span></li>
+    <li><a href="user/develop/basic/plugin-product-spec.md">dsc 插件产物规范</a><span>产物形态、导出契约、加载方式与持久化</span></li>
+    <li><a href="user/develop/framework/build-a-plugin.md">从零编写一个 dsc 插件</a><span>最小可运行示例、本地验证与产物发布</span></li>
+  </ul>
+
+  <h2>其他</h2>
+  <ul>
+    <li><a href="intro/dsc-diff-dsh.md">DSC 与 DSH 的设计异同</a><span>两个项目的理念、服务边界与技术架构对比</span></li>
+    <li><a href="../README.md">README</a><span>项目说明、内置插件与插件面板</span></li>
+  </ul>
+
+  <footer>Copyright &copy; 2026 omdsc-dev. 文档随仓库一同分发。</footer>
+</main>
+</body>
+</html>

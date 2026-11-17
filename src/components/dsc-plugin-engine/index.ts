@@ -203,10 +203,17 @@ export const installPluginEngine = (): PluginEngine => {
     }
     await deactivate(id)
     const removed = store.remove(id)
-    if (removed) {
-      persist()
+    if (!removed) {
+      return false
     }
-    return removed
+    // 卸载即清理该插件的本地数据；清理失败只记引擎日志，不影响卸载结果
+    try {
+      core.clearPluginData({ credential, ticket: issueTicket('plugins:data-clear') }, id)
+    } catch (error) {
+      pushEngineLog(`clear plugin data failed: ${describeError(error)}`)
+    }
+    persist()
+    return true
   }
 
   /**
