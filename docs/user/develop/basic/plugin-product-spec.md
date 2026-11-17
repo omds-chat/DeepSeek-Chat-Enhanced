@@ -21,6 +21,7 @@
 | `export const activate` | 具名导出插件对象，`activate(context)` 必填 |
 | `export default` | 默认导出插件对象或插件工厂 |
 | 插件工厂 | 函数，返回插件对象或返回它的 Promise |
+| `export const manifest` | 具名导出清单；`installFromUrl` 未传入清单时使用 |
 
 插件对象：
 
@@ -28,6 +29,8 @@
 |:---:|:---:|:---:|
 | `activate(context)` | 是 | 启动入口，可返回 Promise；超时 5 秒 |
 | `deactivate()` | 否 | 停用入口，可返回 Promise；超时 3 秒，之后执行注册的释放函数 |
+
+产物可以同时导出具名 `manifest`，引擎在运行时加载时读取它，作为未传入清单时的安装依据；写在 `default` 导出对象上的 `manifest` 同样被识别，模块顶层的具名导出优先。
 
 ## 清单字段
 
@@ -68,10 +71,12 @@
 | 方式 | 接口 | 说明 |
 |:---:|:---:|:---:|
 | 直接注册 | `engine.install(manifest, plugin)` | 宿主已持有插件对象时使用，只登记不激活 |
-| 运行时加载 | `engine.installFromUrl(manifest, url)` | 按 `import` 加载产物，成功后自动激活；超时 10 秒 |
+| 运行时加载 | `engine.installFromUrl(url, manifest?)` | 按 `import` 加载产物，成功后自动激活；超时 10 秒 |
 | 手动激活 | `engine.activate(id)` | 依赖满足时进入 `active` |
 
 `url` 只接受 http 与 https，按页面地址解析相对路径；其他协议直接拒绝，结果为 `load-failed`。
+
+清单优先级：`installFromUrl(url, manifest)` 显式传入的清单优先；未传入时使用产物导出的 `manifest`；两者都没有时安装被拒绝，原因为 `invalid-manifest`，并提示 `pluginManifestMissing`。
 
 ## 安装持久化
 
@@ -94,6 +99,7 @@
 | 版本不兼容 | 安装拒绝，原因 `incompatible-version` |
 | 重名、缺依赖、冲突 | 安装拒绝，原因 `duplicate`、`missing-dependency`、`conflict` |
 | 产物无法加载或导出不符 | 安装拒绝，原因 `load-failed` 或 `invalid-plugin` |
+| 产物未导出清单且未传入清单 | 安装拒绝，原因 `invalid-manifest`，并提示 `pluginManifestMissing` |
 | 激活抛错或超时 | 插件标记 `failed`，引擎与其他插件继续运行 |
 | 未授予的能力被调用 | 抛 `PluginCapabilityError`，并提示 `pluginCapabilityDenied` |
 | 超出限流 | 抛 `PluginRateLimitError`，并提示 `pluginCallRateLimited` |

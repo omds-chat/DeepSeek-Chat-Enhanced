@@ -123,6 +123,11 @@
   height: 64px;
 }
 
+.pluginEntry {
+  display: flex;
+  flex-shrink: 0;
+}
+
 .settings {
   display: flex;
   align-items: center;

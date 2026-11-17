@@ -31,6 +31,8 @@ dsc-plugin-engine/
 | `capabilities` | 是 | 申请的能力，必须在核心能力表内且不得重复 |
 | `contributions` | 否 | 订阅的贡献点，必须在贡献点表内且不得重复 |
 
+清单可以随产物一起导出：`export const manifest = {...}`，也可以挂在 `default` 导出对象上，模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`；两者都没有时安装被拒绝，原因为 `invalid-manifest`。
+
 ### 生命周期
 
 ```
@@ -113,7 +115,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 installPluginEngine()
 ```
 
-之后通过 `getPluginEngine()` 取实例，用 `install`、`installFromUrl`、`activate`、`deactivate`、`unload`、`list` 管理插件，用 `logs(id)`、`engineLogs()`、`bypassEvents()` 排查问题。
+之后通过 `getPluginEngine()` 取实例，用 `install`、`installFromUrl`、`activate`、`deactivate`、`unload`、`list` 管理插件，用 `logs(id)`、`engineLogs()`、`bypassEvents()` 排查问题。`installFromUrl(url, manifest?)` 的清单可以省略，省略时取产物自带的 `manifest` 导出。
 
 ## 示例
 
@@ -139,4 +141,15 @@ engine?.install(
   }
 )
 await engine?.activate('demo-plugin')
+
+// 运行时安装：清单由产物自带的 manifest 导出提供
+await engine?.installFromUrl('https://example.com/demo-plugin.js')
+
+// 也可以显式传入清单，此时以传入的为准
+await engine?.installFromUrl('https://example.com/demo-plugin.js', {
+  id: 'demo-plugin',
+  name: 'Demo',
+  version: '1.0.0',
+  capabilities: ['notify'],
+})
 ```

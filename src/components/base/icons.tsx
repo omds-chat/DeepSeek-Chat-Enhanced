@@ -222,6 +222,15 @@ export const IconPaperclipOutline16 = () => (
   </svg>
 )
 
+export const IconPluginOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1.6" y="1.6" width="5.2" height="5.2" rx="1.4" fill="currentColor" />
+    <rect x="9.2" y="1.6" width="5.2" height="5.2" rx="1.4" fill="currentColor" />
+    <rect x="1.6" y="9.2" width="5.2" height="5.2" rx="1.4" fill="currentColor" />
+    <rect x="9.2" y="9.2" width="5.2" height="5.2" rx="1.4" fill="currentColor" />
+  </svg>
+)
+
 export const IconRefreshOutline16 = () => (
   <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path

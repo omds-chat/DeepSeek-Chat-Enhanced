@@ -14,12 +14,13 @@ import {
 } from '../dsc-core/index.js'
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
-import { loadPluginModule, resolvePluginInstance } from './loader.js'
+import { loadPluginModule, resolvePluginModule } from './loader.js'
 import * as store from './registry.js'
 import { loadInstalled, saveInstalled } from './storage.js'
 import type {
   DscPlugin,
   InstallResult,
+  LoadedPlugin,
   PluginManifest,
   PluginSource,
   PluginStateView,
@@ -35,7 +36,8 @@ const MAX_ENGINE_LOG = 100
 export type PluginEngine = {
   readonly version: string
   install(manifest: PluginManifest, plugin: DscPlugin): InstallResult
-  installFromUrl(manifest: PluginManifest, url: string): Promise<InstallResult>
+  /** 运行时安装；manifest 缺省时使用产物自带的 manifest 导出 */
+  installFromUrl(url: string, manifest?: PluginManifest): Promise<InstallResult>
   activate(id: string): Promise<boolean>
   deactivate(id: string): Promise<boolean>
   unload(id: string): Promise<boolean>
@@ -207,32 +209,44 @@ export const installPluginEngine = (): PluginEngine => {
     return removed
   }
 
+  /**
+   * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，
+   * 两者都没有则按清单非法拒绝。
+   */
   const installFromUrl = async (
-    manifest: PluginManifest,
-    url: string
+    url: string,
+    manifest?: PluginManifest
   ): Promise<InstallResult> => {
-    let loaded: unknown
+    let loadedModule: unknown
     try {
-      loaded = await loadPluginModule(url)
-    } catch (error) {
-      report('pluginInstallRejected', { id: manifest.id, reason: `load:${describeError(error)}` })
-      return { ok: false, reason: 'load-failed', detail: describeError(error) }
-    }
-    let plugin: DscPlugin
-    try {
-      plugin = await resolvePluginInstance(loaded)
+      loadedModule = await loadPluginModule(url)
     } catch (error) {
       report('pluginInstallRejected', {
-        id: manifest.id,
+        id: manifest?.id ?? url,
+        reason: `load:${describeError(error)}`,
+      })
+      return { ok: false, reason: 'load-failed', detail: describeError(error) }
+    }
+    let loaded: LoadedPlugin
+    try {
+      loaded = await resolvePluginModule(loadedModule)
+    } catch (error) {
+      report('pluginInstallRejected', {
+        id: manifest?.id ?? url,
         reason: `resolve:${describeError(error)}`,
       })
       return { ok: false, reason: 'invalid-plugin', detail: describeError(error) }
     }
-    const result = register(manifest, plugin, { kind: 'url', url })
+    const resolved = manifest ?? loaded.manifest
+    if (!resolved) {
+      report('pluginManifestMissing', { id: url })
+      return { ok: false, reason: 'invalid-manifest' }
+    }
+    const result = register(resolved, loaded.plugin, { kind: 'url', url })
     if (!result.ok) {
       return result
     }
-    await activate(manifest.id)
+    await activate(resolved.id)
     persist()
     return result
   }
@@ -265,16 +279,16 @@ export const installPluginEngine = (): PluginEngine => {
       if (entry.source.kind !== 'url' || BUILTIN_PLUGIN_IDS.includes(entry.manifest.id)) {
         continue
       }
-      let plugin: DscPlugin
+      let loaded: LoadedPlugin
       try {
-        plugin = await resolvePluginInstance(await loadPluginModule(entry.source.url))
+        loaded = await resolvePluginModule(await loadPluginModule(entry.source.url))
       } catch (error) {
         const reason = describeError(error)
         store.addFailed(entry.manifest, entry.source, reason)
         report('pluginRestoreFailed', { id: entry.manifest.id, reason })
         continue
       }
-      const result = register(entry.manifest, plugin, entry.source)
+      const result = register(entry.manifest, loaded.plugin, entry.source)
       const record = store.get(entry.manifest.id)
       if (!result.ok || !record) {
         continue
@@ -295,6 +309,7 @@ export const installPluginEngine = (): PluginEngine => {
       state: record.state,
       source: record.source,
       enabled: record.enabled,
+      dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],
       contributions: [...record.contributions.keys()],
       error: record.error,
@@ -337,6 +352,7 @@ export type {
   DscPlugin,
   EventsCapability,
   InstallResult,
+  LoadedPlugin,
   NetCapability,
   NetResponse,
   PluginContext,

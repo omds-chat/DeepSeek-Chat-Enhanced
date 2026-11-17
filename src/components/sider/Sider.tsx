@@ -1,7 +1,12 @@
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
+import {
+  IconPanelLeftOutline16,
+  IconPluginOutline16,
+  IconSettingsOutline16,
+  NewChatIcon,
+} from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
@@ -11,6 +16,7 @@ import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { openSettings } from '../settings/settingsDialogState.js'
+import { openPluginPanel } from '../plugins/pluginPanelState.js'
 import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
@@ -90,6 +96,14 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
             </div>
           ))}
         </div>
+      </div>
+      <div className={styles.pluginEntry}>
+        <button type="button" className={styles.settings} onClick={() => openPluginPanel()}>
+          <span className={styles.settingsIcon}>
+            <IconPluginOutline16 />
+          </span>
+          <span className={styles.settingsLabel}>{t('pluginPanelTitle')}</span>
+        </button>
       </div>
       <div className={styles.bottom}>
         <button type="button" className={styles.settings} onClick={() => openSettings('general')}>

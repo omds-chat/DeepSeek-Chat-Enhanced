@@ -26,6 +26,27 @@ export const deactivate = () => {}
 
 `activate` 可返回 Promise，超时 5 秒；`deactivate` 可返回 Promise，超时 3 秒。`context.events.on` 返回的释放函数由引擎在停用与卸载时自动执行，`activate` 的返回值被忽略，插件不需要也不应返回释放函数。
 
+## 导出清单
+
+产物可以导出具名 `manifest`，用户从地址安装时就不需要再提供清单：
+
+```ts
+import type { PluginContext, PluginManifest } from './components/dsc-plugin-engine/index.js'
+
+export const manifest: PluginManifest = {
+  id: 'demo-plugin',
+  name: 'Demo',
+  version: '1.0.0',
+  capabilities: ['notify'],
+}
+
+export const activate = (context: PluginContext) => {
+  context.log('demo plugin activated')
+}
+```
+
+`manifest` 写在模块顶层或 `default` 导出对象上都可识别，模块顶层优先；宿主调用 `installFromUrl(url, manifest)` 并显式传入清单时以传入的为准。两者都没有时安装被拒绝，原因为 `invalid-manifest`。
+
 ## 能力清单
 
 | 能力 | 上下文成员 | 签名 | 限流 |

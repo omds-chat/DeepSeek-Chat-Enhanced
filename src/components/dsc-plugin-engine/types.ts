@@ -102,8 +102,14 @@ export type DscPlugin = {
 /** 插件工厂 */
 export type PluginFactory = () => DscPlugin | Promise<DscPlugin>
 
-/** 插件产物导出形态 */
-export type PluginModule = DscPlugin | PluginFactory | { default: DscPlugin | PluginFactory }
+/** 插件产物导出形态：插件对象、工厂或 default 导出，三者都可附带具名 manifest 导出 */
+export type PluginModule =
+  | (DscPlugin & { manifest?: PluginManifest })
+  | (PluginFactory & { manifest?: PluginManifest })
+  | { default: DscPlugin | PluginFactory; manifest?: PluginManifest }
+
+/** 从产物解析出的插件实例与产物自带的清单 */
+export type LoadedPlugin = { plugin: DscPlugin; manifest?: PluginManifest }
 
 /** 插件状态 */
 export type PluginState = 'registered' | 'active' | 'inactive' | 'failed'
@@ -133,6 +139,8 @@ export type PluginStateView = {
   source: PluginSource | null
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */
   enabled: boolean
+  /** 清单声明的依赖插件 id */
+  dependencies: string[]
   capabilities: CoreCapabilityId[]
   contributions: ContributionPoint[]
   error?: string
