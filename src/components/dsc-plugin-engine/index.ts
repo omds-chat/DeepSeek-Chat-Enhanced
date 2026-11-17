@@ -131,7 +131,26 @@ export const installPluginEngine = (): PluginEngine => {
   const install = (manifest: PluginManifest, plugin: DscPlugin): InstallResult =>
     register(manifest, plugin, null)
 
-  const activate = async (id: string): Promise<boolean> => {
+  /**
+   * 同一插件的生命周期操作串行执行。
+   * 并发激活会让同一个插件实例执行两遍 activate，事件处理器与释放函数重复登记；
+   * 激活与卸载交错时，卸载会先移除记录，随后的 activate 仍把已消失的记录标记为 active。
+   */
+  const queues = new Map<string, Promise<unknown>>()
+  const serialize = <T>(id: string, task: () => Promise<T>): Promise<T> => {
+    const previous = queues.get(id) ?? Promise.resolve()
+    const current = previous.then(task, task)
+    const settled = current.catch(() => undefined)
+    queues.set(id, settled)
+    void settled.then(() => {
+      if (queues.get(id) === settled) {
+        queues.delete(id)
+      }
+    })
+    return current
+  }
+
+  const activateNow = async (id: string): Promise<boolean> => {
     const record = store.get(id)
     if (!record) {
       return false
@@ -169,7 +188,7 @@ export const installPluginEngine = (): PluginEngine => {
     }
   }
 
-  const deactivate = async (id: string): Promise<boolean> => {
+  const deactivateNow = async (id: string): Promise<boolean> => {
     const record = store.get(id)
     if (!record || record.state !== 'active' || !record.plugin) {
       return false
@@ -191,7 +210,7 @@ export const installPluginEngine = (): PluginEngine => {
     return true
   }
 
-  const unload = async (id: string): Promise<boolean> => {
+  const unloadNow = async (id: string): Promise<boolean> => {
     const record = store.get(id)
     if (!record) {
       return false
@@ -201,7 +220,7 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id, reason: `depended-on:${dependents[0]}` })
       return false
     }
-    await deactivate(id)
+    await deactivateNow(id)
     const removed = store.remove(id)
     if (!removed) {
       return false
@@ -215,6 +234,11 @@ export const installPluginEngine = (): PluginEngine => {
     persist()
     return true
   }
+
+  /** 生命周期入口：同一插件的操作排队执行，后一次等前一次结束后再读状态 */
+  const activate = (id: string): Promise<boolean> => serialize(id, () => activateNow(id))
+  const deactivate = (id: string): Promise<boolean> => serialize(id, () => deactivateNow(id))
+  const unload = (id: string): Promise<boolean> => serialize(id, () => unloadNow(id))
 
   /**
    * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，

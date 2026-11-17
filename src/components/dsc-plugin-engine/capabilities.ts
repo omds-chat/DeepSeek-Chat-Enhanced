@@ -72,15 +72,20 @@ export class PluginAbortError extends Error {
 export const runWithTimeout = async <T>(
   task: Promise<T>,
   timeoutMs: number,
-  hooks: { onTimeout?: () => void; signal?: AbortSignal; abortError?: () => Error } = {}
+  hooks: {
+    onTimeout?: () => void
+    signal?: AbortSignal
+    abortError?: () => Error
+    timeoutError?: () => Error
+  } = {}
 ): Promise<T> => {
-  const { onTimeout, signal, abortError } = hooks
+  const { onTimeout, signal, abortError, timeoutError } = hooks
   let timer = 0
   let abortHandler: (() => void) | null = null
   const guard = new Promise<never>((_resolve, reject) => {
     timer = window.setTimeout(() => {
       onTimeout?.()
-      reject(new Error('dsc-plugin-engine: task timed out'))
+      reject(timeoutError ? timeoutError() : new Error('dsc-plugin-engine: task timed out'))
     }, timeoutMs)
     if (signal) {
       abortHandler = () => reject(abortError ? abortError() : new Error('dsc-plugin-engine: task aborted'))
@@ -163,6 +168,7 @@ export const createPluginContext = ({
       onTimeout: () => report('pluginCallTimeout', { id: manifest.id, capability }),
       signal: options?.signal,
       abortError: () => new PluginAbortError(capability),
+      timeoutError: () => new PluginTimeoutError(capability),
     })
   }
 

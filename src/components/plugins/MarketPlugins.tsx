@@ -151,7 +151,9 @@ export const MarketPlugins = ({
                   <span className={styles.name}>{entry.name}</span>
                   <span className={styles.caption}>{entry.id}</span>
                 </div>
-                <div role="cell">{entry.version}</div>
+                <div className={styles.versionCell} role="cell">
+                  {entry.version}
+                </div>
                 <div className={styles.description} role="cell">
                   {entry.description}
                 </div>

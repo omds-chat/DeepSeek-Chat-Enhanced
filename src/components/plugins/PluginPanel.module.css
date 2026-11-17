@@ -105,6 +105,15 @@
   word-break: break-word;
 }
 
+/* 版本与作者来自清单或索引，长度不受控；截断而不是撑破固定列宽 */
+.versionCell,
+.authorCell {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .caption {
   font-size: 12px;
   line-height: 18px;

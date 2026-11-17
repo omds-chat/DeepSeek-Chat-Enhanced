@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useState } from 'react'
+import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
 import { isPluginSourceAllowed } from '../dsc-plugin-engine/loader.js'
@@ -28,6 +28,30 @@ const PluginPanelContent = () => {
   const tab = usePluginPanel((state) => state.tab)
   const { plugins, ready, refresh } = usePluginList()
   const installedIds = new Set(plugins.map((plugin) => plugin.id))
+  const baseId = useId()
+  const tabId = (value: PluginPanelTab) => `${baseId}-tab-${value}`
+  const panelId = `${baseId}-tabpanel`
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  /** 标签页键盘导航：左右方向键循环切换，Home / End 跳到首尾 */
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const index = tabs.findIndex((item) => item.value === tab)
+    let next = index
+    if (event.key === 'ArrowRight') {
+      next = (index + 1) % tabs.length
+    } else if (event.key === 'ArrowLeft') {
+      next = (index - 1 + tabs.length) % tabs.length
+    } else if (event.key === 'Home') {
+      next = 0
+    } else if (event.key === 'End') {
+      next = tabs.length - 1
+    } else {
+      return
+    }
+    event.preventDefault()
+    usePluginPanel.setState({ tab: tabs[next].value })
+    tabRefs.current[next]?.focus()
+  }
 
   return (
     <Modal
@@ -37,13 +61,19 @@ const PluginPanelContent = () => {
       mainClassName={styles.panelMain}
       onClose={closePluginPanel}
     >
-      <div role="tablist" className={styles.tabs}>
-        {tabs.map((item) => (
+      <div role="tablist" className={styles.tabs} onKeyDown={onTabKeyDown}>
+        {tabs.map((item, index) => (
           <button
             key={item.value}
+            ref={(node) => {
+              tabRefs.current[index] = node
+            }}
+            id={tabId(item.value)}
             type="button"
             role="tab"
             aria-selected={tab === item.value}
+            aria-controls={panelId}
+            tabIndex={tab === item.value ? 0 : -1}
             className={clsx(styles.tab, tab === item.value && styles.tabActive)}
             onClick={() => usePluginPanel.setState({ tab: item.value })}
           >
@@ -51,7 +81,7 @@ const PluginPanelContent = () => {
           </button>
         ))}
       </div>
-      <div className={styles.body} role="tabpanel">
+      <div className={styles.body} role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
         {tab === 'installed' ? (
           <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
         ) : (

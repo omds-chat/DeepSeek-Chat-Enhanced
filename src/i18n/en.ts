@@ -75,7 +75,6 @@ export const en = {
   replyInsufficientBalance: 'Insufficient account balance. Please top up and try again.',
   replyRateLimited: 'Too many requests. Please try again later.',
   completionServerBusyToast: 'Server busy, please try again later.',
-  unknownError: 'Unknown error',
   replyRefused: "Sorry, that's beyond my current scope. Let's talk about something else.",
   messageThinkDuration: 'Thought for {count} second',
   messageThinkDurationPlural: 'Thought for {count} seconds',
@@ -163,7 +162,6 @@ export const en = {
   voiceInputPermissionDenied:
     'Microphone access is blocked. Please allow it in your browser settings.',
   voiceInputNoDevice: 'No microphone detected',
-  voiceInputTooLong: 'Recording is too long. Please shorten it and try again.',
   voiceInputFailed: 'Speech recognition failed. Please try again later.',
   voiceInputEmpty: 'No speech detected',
   voiceInputLimitReached: 'Maximum recording length reached',
@@ -239,7 +237,7 @@ export const en = {
   pluginInstallUrlLabel: 'Plugin artifact URL',
   pluginInstallUrlPlaceholder: 'https://example.com/plugin.js',
   pluginInstallUrlInvalid:
-    'The URL must start with https://, or use http://localhost or http://127.0.0.1 for local debugging',
+    'The URL must start with https://, or use http://localhost, http://127.0.0.1 or http://[::1] for local debugging',
   pluginManifestMissing:
     'The plugin artifact exports no manifest and no manifest was provided: {id}',
   pluginInstalling: 'Installing',

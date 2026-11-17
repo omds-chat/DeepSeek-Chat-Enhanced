@@ -14,7 +14,8 @@ export type PluginListState = {
 /** 读取 engine.list()；引擎未就绪或读取失败时给出空列表，不向界面抛错 */
 export const usePluginList = (): PluginListState => {
   const [plugins, setPlugins] = useState<PluginStateView[]>([])
-  const [ready, setReady] = useState(false)
+  /** 引擎在首屏渲染前已由 main.tsx 安装，初值按实际可读性取，避免先渲染一帧「引擎尚未就绪」 */
+  const [ready, setReady] = useState(() => getPluginEngine() !== null)
 
   const refresh = useCallback(() => {
     const engine = getPluginEngine()

@@ -53,7 +53,8 @@ const parseEntry = (value: unknown): MarketEntry | null => {
   if (!isFilled(id) || !isFilled(name) || !isFilled(version)) {
     return null
   }
-  if (!isText(description) || !isText(author) || !isText(homepage) || !isText(download)) {
+  // download 为空时 new URL('') 会解析成页面自身，安装必然失败，按不合格条目跳过
+  if (!isText(description) || !isText(author) || !isText(homepage) || !isFilled(download)) {
     return null
   }
   const entry: MarketEntry = { id, name, version, description, author, homepage, download }
@@ -84,13 +85,16 @@ const parseIndex = (text: string): ParsedIndex | null => {
   }
   const entries: MarketEntry[] = []
   let skipped = 0
+  const seen = new Set<string>()
   for (const item of plugins) {
     const entry = parseEntry(item)
-    if (entry) {
-      entries.push(entry)
-    } else {
+    // 重复 id 会渲染出重复的 React key 与同 id 的两行，按不合格条目跳过
+    if (!entry || seen.has(entry.id)) {
       skipped += 1
+      continue
     }
+    seen.add(entry.id)
+    entries.push(entry)
   }
   return { entries, skipped }
 }
