@@ -1,0 +1,86 @@
+import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import type { CoreCall } from './guard.js'
+
+/** dsc-core 版本；与 package.json 的 version 保持一致 */
+export const CORE_VERSION = '1.0.0'
+
+/** 引擎可申请的核心能力 */
+export type CoreCapabilityId =
+  | 'sessions:list'
+  | 'sessions:read'
+  | 'sessions:rename'
+  | 'events:session'
+  | 'notify'
+  | 'settings:locale'
+  | 'net:fetch'
+  | 'plugins:storage'
+
+/** 全部核心能力；引擎据此校验插件申请 */
+export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
+  'sessions:list',
+  'sessions:read',
+  'sessions:rename',
+  'events:session',
+  'notify',
+  'settings:locale',
+  'net:fetch',
+  'plugins:storage',
+]
+
+/** 会话摘要视图 */
+export type CoreSessionSummary = {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+}
+
+/** 附件视图；不含本地 id、服务端 file_id 与原件 */
+export type CoreAttachmentView = {
+  name: string
+  size: number
+  isImage: boolean
+}
+
+/** 消息视图；只保留角色、文本与附件描述 */
+export type CoreMessageView = {
+  id: string
+  role: 'user' | 'assistant'
+  createdAt: number
+  text: string
+  attachments: CoreAttachmentView[]
+}
+
+/** 会话视图；不含分支结构与请求快照 */
+export type CoreSessionView = CoreSessionSummary & { messages: CoreMessageView[] }
+
+/** 核心向引擎广播的事件 */
+export type CoreEvent = { type: 'session:changed'; activeId: string | null }
+
+/** 外源请求结果 */
+export type CoreFetchResult = {
+  url: string
+  contentType: string
+  text: string
+}
+
+/** 插件数据操作；三条能力共用 plugins:storage 服务 */
+export type CoreStorageCall =
+  | { op: 'read'; pluginId: string; key: string }
+  | { op: 'write'; pluginId: string; key: string; value: unknown }
+  | { op: 'remove'; pluginId: string; key: string }
+
+/** 核心内部接口；每次调用都要带上引擎签发的 CoreCall */
+export type CoreApi = {
+  readonly version: string
+  listSessions(call: CoreCall): Promise<CoreSessionSummary[]>
+  readSession(call: CoreCall, id: string): Promise<CoreSessionView | null>
+  renameSession(call: CoreCall, id: string, title: string): boolean
+  currentLocale(call: CoreCall): 'zh-CN' | 'en-US'
+  notify(call: CoreCall, key: TranslationKey, params?: TranslationParams): void
+  subscribe(call: CoreCall, listener: (event: CoreEvent) => void): () => void
+  fetchText(call: CoreCall, url: string, signal?: AbortSignal): Promise<CoreFetchResult>
+  readPluginEntry(call: CoreCall, pluginId: string, key: string): { value: unknown } | null
+  writePluginEntry(call: CoreCall, pluginId: string, key: string, value: unknown): void
+  removePluginEntry(call: CoreCall, pluginId: string, key: string): void
+}
