@@ -160,6 +160,8 @@ export const activate = (context) => {
 - 产物地址失效时,恢复失败只把该插件标记为 `failed`,不影响其他插件与页面渲染。
 - 市场索引的结构与收录要求由插件市场侧维护,产物仍须导出 `manifest`,或由索引条目内联清单。
 - 卸载会清除该插件的本地数据,`context.storage` 写入的内容不会跨卸载保留。
+- 产物按 ES 模块从地址加载,托管方必须允许跨源导入:与页面同源时不需要额外配置;跨源时响应必须带 `Access-Control-Allow-Origin`,否则安装失败。
+- 常见静态托管的默认行为:GitHub Pages 对资源返回 `Access-Control-Allow-Origin: *`,一般可以直接跨源加载;对象存储与多数 CDN 通常默认不返回该头,需要在存储桶或 CDN 侧配置 CORS 规则;不确定时用 `curl -I <产物地址>` 查看响应头里有没有 `Access-Control-Allow-Origin`。
 
 ## 常见错误与排查
 
@@ -175,6 +177,7 @@ export const activate = (context) => {
 | `missing-dependency` | `dependencies` 中的插件未安装 | 先安装依赖 |
 | `conflict` | `conflicts` 中的插件已安装 | 先卸载冲突插件 |
 | `load-failed` | 地址协议不支持、网络失败或加载超过 10 秒 | 检查地址与网络 |
+| `load-failed`（跨源托管） | 产物与页面不同源,响应里没有 `Access-Control-Allow-Origin`,浏览器拒绝导入模块 | 在托管侧配置 CORS;或把产物放到与页面同源的地址 |
 | `invalid-plugin` | 产物没有导出 `activate`,或导出形态不被识别 | 检查导出形态 |
 
 运行阶段的现象:

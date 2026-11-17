@@ -82,6 +82,10 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 卸载插件时，引擎在移除记录后调用核心清除该插件的 `plugins:storage` 数据；清理失败只写入 `engineLogs()`，不影响卸载结果。
 
+### 运行时加载与跨源
+
+`installFromUrl()` 用 `import()` 在页面内加载产物：与页面同源时直接可用；跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`，缺失时 `import()` 被拒绝，引擎按 `load-failed` 拒绝安装，原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机，不介入 CORS。
+
 ### 内置插件
 
 内置插件的清单、工厂与 id 集合统一在 `builtin.ts` 维护，新增内置插件只需在该文件追加一条。当前内置插件为 `dsc-market`，源码见 `src/components/dsc-market/`，负责拉取外源插件索引并对外提供查询。

@@ -219,7 +219,7 @@ export const zh = {
   pluginReasonConflict: '与已安装的插件冲突',
   pluginReasonMissingDependency: '需要先安装依赖插件 {id}',
   pluginReasonDependedOn: '仍被已启用的插件 {id} 依赖',
-  pluginReasonLoadFailed: '插件产物加载失败，请检查地址与网络',
+  pluginReasonLoadFailed: '插件产物加载失败，请检查地址与网络；跨源托管需允许 CORS',
   pluginReasonInvalidPlugin: '插件产物不是有效的插件',
   pluginReasonNoInstance: '插件实例缺失，需要重新安装',
   pluginReasonUnknown: '未知原因，详情见插件日志',

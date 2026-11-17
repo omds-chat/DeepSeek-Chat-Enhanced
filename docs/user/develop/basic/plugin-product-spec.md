@@ -78,6 +78,19 @@
 
 清单优先级：`installFromUrl(url, manifest)` 显式传入的清单优先；未传入时使用产物导出的 `manifest`；两者都没有时安装被拒绝，原因为 `invalid-manifest`，并提示 `pluginManifestMissing`。
 
+### 跨源分发与 CORS
+
+产物由浏览器按 ES 模块 `import` 加载,所以加载过程受模块脚本的跨源规则约束:
+
+| 部署形态 | 托管方要求 | 结果 |
+|:---:|:---:|:---:|
+| 与页面同源 | 无需额外响应头 | 正常加载 |
+| 与页面跨源 | 响应必须带 `Access-Control-Allow-Origin`,值为 `*` 或页面来源 | 缺该头时加载被拒绝 |
+
+模块导入默认不携带凭证,所以 `Access-Control-Allow-Origin: *` 即可满足要求,不需要 `Access-Control-Allow-Credentials`。产物自行拆出的 chunk 与它引用的资源按同样的规则加载,跨源时也要带上该响应头,或者与入口放在同一个源下。
+
+不满足时表现为安装失败:引擎把 `import` 抛出的错误写入 `engineLogs()`,安装结果为 `load-failed`,界面提示插件产物加载失败。`import()` 被拒绝时给出的错误文本不含 CORS 细节,具体原因只在浏览器控制台可见。
+
 ## 安装持久化
 
 引擎把安装记录写入 localStorage 的 `<APP_NAME>:plugins` 键，每条包含清单、来源与启用状态：

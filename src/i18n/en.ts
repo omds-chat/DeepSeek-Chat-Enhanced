@@ -229,7 +229,8 @@ export const en = {
   pluginReasonConflict: 'The plugin conflicts with an installed plugin',
   pluginReasonMissingDependency: 'Install the required plugin first: {id}',
   pluginReasonDependedOn: 'Still required by an enabled plugin: {id}',
-  pluginReasonLoadFailed: 'The plugin artifact could not be loaded; check the URL and network',
+  pluginReasonLoadFailed:
+    'The plugin artifact could not be loaded; check the URL and network, and allow CORS when hosted cross-origin',
   pluginReasonInvalidPlugin: 'The plugin artifact is not a valid plugin',
   pluginReasonNoInstance: 'The plugin instance is missing; reinstall the plugin',
   pluginReasonUnknown: 'Unknown cause; see the plugin logs for details',

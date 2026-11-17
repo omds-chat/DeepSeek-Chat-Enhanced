@@ -230,6 +230,7 @@
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-state-error-primary);
+  word-break: break-word;
 }
 
 .logList {

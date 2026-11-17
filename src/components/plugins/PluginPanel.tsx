@@ -100,6 +100,8 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
   const [url, setUrl] = useState('')
   const [invalid, setInvalid] = useState(false)
   const [installing, setInstalling] = useState(false)
+  /** 安装失败原因，常驻在安装栏下方，直到用户改动地址或重新安装 */
+  const [failure, setFailure] = useState<string | null>(null)
 
   const submit = async () => {
     const target = url.trim()
@@ -113,12 +115,15 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
       return
     }
     setInvalid(false)
+    setFailure(null)
     setInstalling(true)
     try {
       const result = await engine.installFromUrl(target)
       if (result.ok) {
         showToast({ key: 'pluginInstallDone' })
         setUrl('')
+      } else {
+        setFailure(pluginReasonText(result.reason, result.detail))
       }
     } catch {
       showToast({
@@ -148,6 +153,7 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
           onChange={(event) => {
             setUrl(event.target.value)
             setInvalid(false)
+            setFailure(null)
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
@@ -160,6 +166,11 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
         </Button>
       </div>
       {invalid ? <div className={styles.fieldError}>{t('pluginInstallUrlInvalid')}</div> : null}
+      {!installing && failure !== null ? (
+        <div className={styles.fieldError} role="alert">
+          {failure}
+        </div>
+      ) : null}
     </div>
   )
 }
