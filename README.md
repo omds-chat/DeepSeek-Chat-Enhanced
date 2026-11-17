@@ -1,75 +1,88 @@
-# chat-demo
+<div align="center">
 
-English | [简体中文](README.zh-CN.md)
+# DeepSeek-Chat-Enhanced
 
-A static chat demo powered by the DeepSeek API. No application backend is required: the browser connects directly to the configured API service.
+[简体中文] |
+[English](README.en-US.md)
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
+</div>
 
-## Getting started
+> [!IMPORTANT]
+> 本仓库是 DeepSeek 官方仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-demo/) 的增强分支，由社区维护，与DeepSeek官方无直接关联。
 
-Install Node.js 22.12+ and pnpm, then run:
+DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-demo/) 是一个基于 DeepSeek API 的静态聊天示例。无需应用后端，浏览器直接请求配置的 API 服务。
 
-```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
-pnpm install
-pnpm dev
-```
+这是一个基于 [deepseek-ai/Chat-Demo](https://github.com/deepseek-ai/chat-demo/) 的分支版本，整合了 dsh 的部分增强功能，使您的聊天体验更加友好。
 
-Open http://localhost:8090.
+本分支对源仓库做了以下 **功能增强** ：
 
-To build the static site:
+1. 效仿 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的理念 “Everything is a Plugin.”，引入了插件体系，制定了统一的插件规范。
+2. 内置了以下基础插件：
 
-```sh
-pnpm build
-```
+| 插件名称 | 介绍 |
+|:---:|:---:|
+| `dsc-core` | dsc核心，运行Chat-Demo的基本服务 |
+| `dsc-plugin-engine` | dsc插件引擎，实现插件体系的中间层  |
+| `dsc-market` | dsc插件市场，读取并展示外源插件合集 |
+| 其他同源插件 | 详见 [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) |
 
-The output is written to `dist/`. Deploy it to a static web server or open `dist/index.html` directly. Opening the file directly requires browser support for storage on `file://` pages and an API service that permits their cross-origin requests.
+<!-- 任何一个dsc插件都必须以 `dsc-` 开头 -->
 
-## Features
+由于受传统前端技术的限制，我们不能保证能把一切事物做成一个插件，所以我们克制地效仿提出 “Something can be a Plugin” 。
 
-- Multiple conversations with automatic titles, renaming, and deletion; edit prompts, regenerate replies, and switch between message branches.
-- Streaming replies, deep thinking, smart search, link reading, and source citations; stop generation or continue eligible replies.
-- Upload, paste, or drag and drop attachments; use voice input and read replies aloud. A live audio spectrum appears in the first row of the input area while recording on mobile.
-- Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
-- Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
+我们沿用了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的部分设计理念和仓库规范，但针对 Chat 场景我们做了一些 **必要的改变** ，详见 [DSC与DSH差异文档](docs/intro/dsc-diff-dsh.md)
 
-## Data and storage
+注意，我们只提供 **静态网页(无Agent能力)** 的制作、展示与分发，**不提供任何**外源插件、付费服务、后端服务。外源插件的引入由用户**自行承担**安全风险，请确保只引入您 **信任安全** 的插件。
 
-Your API key and settings are stored in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured API service.
+点击 [在线体验](https://omdsc-dev.github.io/chat/) 即可使用，也可以前往 [Releases](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。
 
-History import and export in Settings use ZIP archives. After confirmation and successful validation, importing replaces all local conversations and attachments. Exports include conversations and locally available original images, but exclude API keys, settings, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
+> [!WARNING]
+> 温馨提示：使用 DeepSeek-Chat-Enhanced 及其在线网页一样需要依赖模型 API 服务并产生资费，但这些费用本身并不会进入 omdsc-dev 的钱包。
+> 除非您订阅了 Token Plan 、有免费额度的渠道或者余额充足，否则不要轻易使用 DeepSeek-Chat-Enhanced ，以防止产生额外资费。
 
-Settings → Data → Delete all chats clears all local conversations, original attachments, and unsent drafts after confirmation. It stops ongoing replies and returns to a new chat. Your API key and settings are preserved; files already uploaded to the API service are not deleted.
+> [!CAUTION]
+> 请保护好你的 API Key ，因为它直接保存并暴露在浏览器储存中。
+> 不要轻易启用未知来源的、不受用户本人信任的任何插件，以防止你的 API Key 、会话内容发生泄露造成不必要的损失。
+> 由 [omdsc-dev/dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) 提供的插件不会试图泄露你的凭证和数据。
+> 由 [OMDSC-Market](https://omdsc-market.com/) 提供的插件可能存在审查遗漏，使用前请先查证其来源和安全性。如遇恶意插件，你可以 [提交Issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new) 或 [联系 OMDSC-Market](mailto:JularDepick@gmail.com?subject=恶意插件举报) 甚至 [直接联系 omdsc-dev](mailto:JularDepick@gmail.com?subject=恶意插件举报) 进行举报、要求移除。但我们无法挽回你的损失，请及时移除恶意插件并更新您的 API Key 。
 
-## Development
+<!-- 链接事项: OMDSC-Market 需要预设恶意插件紧急下线流程、恶意插件广播公告 -->
 
-| Command       | Description                  |
-| ------------- | ---------------------------- |
-| `pnpm dev`    | Start the development server |
-| `pnpm build`  | Build into `dist/`           |
-| `pnpm type`   | Run TypeScript type checks   |
-| `pnpm lint`   | Lint with oxlint             |
-| `pnpm format` | Format with oxfmt            |
 
-[rspack.config.ts](rspack.config.ts) uses `https://api.deepseek.com` by default. Use `createConfig({ apiOrigin, devServer })` to customize the API origin and development server proxy.
+## 插件市场
 
-Chat uses `deepseek-flash` by default through Anthropic-compatible Messages / Files APIs. Speech features use ASR / TTS endpoints. Requests include extensions for search, link reading, titles, and `latest_reminder`, so the configured service must support the corresponding capabilities. Supported attachment formats are determined by server-side validation.
+插件市场在线查看列表请访问 [OMDSC-Market](https://omdsc-market.com/zh-CN/) 。
 
-```text
-src/
-  app/                 Application layout, themes, and global styles
-  components/          Chat, settings, Markdown, and other UI components
-  i18n/                English and Chinese translations
-  services/
-    api/               API requests, SSE, and protocol types
-    chat/              Conversations, message branches, storage, and history import/export
-    markdown/          Markdown parsing, syntax highlighting, and diagrams
-    speech/            Audio recording and read-aloud playback
-  utils/               Shared utilities
-```
+同源插件列表在线查看请访问 [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) 。
 
-## License
+插件收录申请详见 [omdsc-dev/awesome-dsc-plugin](https://github.com/omdsc-dev/awesome-dsc-plugin/) 。
 
-[MIT](LICENSE). The build copies the license to `dist/LICENSE`; include it when distributing the app. Third-party dependencies are subject to their own licenses.
+插件市场收录的插件 **必须符合** [dsc插件开发规范](docs/user/develop/basic/plugin-develop-spec.md) 。
+
+## 制作插件
+
+每一个dsc插件在 **开发阶段** 都是一个独立的项目，你可以用 **任何语言** 编写插件的逻辑，只需要保证 **构建的运行时产物** 符合 [**dsc插件产物规范**](docs/user/develop/basic/plugin-product-spec.md) 即可保证插件的识别和运行。
+
+为保证插件的规范性、可维护性，方便你的插件能被更多人使用进行二次开发。更推荐使用 omdsc-dev 提供的 [dsc插件模板](https://github.com/omdsc-dev/dsc-plugin-template) 进行插件开发。
+
+每一个dsc插件在运行阶段都是一个符合 [dsc插件产物规范](docs/user/develop/basic/plugin-product-spec.md) 的 `js脚本` ，但最终都要把它构建成遵守接口规范的标准插件本体。
+
+dsc插件由 `dsc-plugin-engine` 负责引入，并通过交互 `dsc-plugin-engine` 提供的标准接口来有限地控制整个Chat及其页面。
+
+详见 [build-a-plugin.md](docs/user/develop/framework/build-a-plugin.md) 。
+
+
+## 版权与许可
+
+Copyright &copy; 2026 omdsc-dev
+
+版权信息详见 [COPYRIGHT](COPYRIGHT) 。
+
+本分支在源仓库上所做的新增、修改、合并，均按 [Apache-2.0](LICENSE) 许可证授权，随产物一同分发。
+
+源仓库的内容沿用 [MIT](LICENSE.deepseek) 许可证，随产物一同分发。第三方依赖遵循各自的许可证。
+
+
+## 安全政策
+
+暂无。
