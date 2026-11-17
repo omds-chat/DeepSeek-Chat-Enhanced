@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
+import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { getPluginEngine, type PluginEngine } from '../dsc-plugin-engine/index.js'
 import type { PluginSource, PluginState, PluginStateView } from '../dsc-plugin-engine/types.js'
 import { Button } from '../base/Button.js'
@@ -47,17 +48,17 @@ export const InstalledPlugins = ({
 
   /**
    * 置忙执行一次操作，完成后刷新列表。
-   * 引擎自己会用 toast 说明启用/停用失败的原因，卸载失败时由界面补充提示。
+   * 引擎自己会用 toast 说明启用、停用与卸载被拒的原因；引擎未就绪时返回 null，由调用方决定是否补充提示。
    */
   const run = async (
     id: string,
     action: Busy['action'],
     task: (engine: PluginEngine) => Promise<boolean>
-  ): Promise<boolean> => {
+  ): Promise<boolean | null> => {
     const engine = getPluginEngine()
     if (!engine) {
       showToast({ type: 'error', key: 'pluginEngineUnavailable' })
-      return false
+      return null
     }
     setBusy({ id, action })
     let ok = false
@@ -78,7 +79,7 @@ export const InstalledPlugins = ({
     )
   }
 
-  /** 已启用且声明依赖该插件的插件，用于说明卸载被拒的原因 */
+  /** 已启用且声明依赖该插件的插件；卸载被拒的原因由引擎提示，这里只用来避免重复提示 */
   const dependentsOf = (plugin: PluginStateView) =>
     plugins.filter(
       (other) =>
@@ -88,20 +89,17 @@ export const InstalledPlugins = ({
     )
 
   const uninstall = async (plugin: PluginStateView) => {
-    if (await run(plugin.id, 'uninstall', (engine) => engine.unload(plugin.id))) {
+    const ok = await run(plugin.id, 'uninstall', (engine) => engine.unload(plugin.id))
+    // 引擎未就绪时已经提示过
+    if (ok === null) {
+      return
+    }
+    if (ok) {
       setConfirming(null)
       return
     }
-    const dependents = dependentsOf(plugin)
-    if (dependents.length > 0) {
-      showToast({
-        type: 'error',
-        key: 'pluginUninstallBlocked',
-        params: {
-          name: plugin.name,
-          dependents: dependents.map((item) => item.name).join(', '),
-        },
-      })
+    // 被依赖时引擎的 toast 已说明原因，再补一条会覆盖它
+    if (dependentsOf(plugin).length > 0) {
       return
     }
     showToast({ type: 'error', key: 'pluginUninstallFailed', params: { id: plugin.id } })
@@ -146,7 +144,9 @@ export const InstalledPlugins = ({
               <div className={styles.nameCell} role="cell">
                 <span className={styles.name}>{plugin.name}</span>
                 <span className={styles.caption}>{plugin.id}</span>
-                {plugin.error ? <span className={styles.errorText}>{plugin.error}</span> : null}
+                {plugin.error ? (
+                  <span className={styles.errorText}>{pluginReasonText(plugin.error)}</span>
+                ) : null}
                 {builtin ? (
                   <span className={styles.caption}>{t('pluginBuiltinUninstallHint')}</span>
                 ) : null}

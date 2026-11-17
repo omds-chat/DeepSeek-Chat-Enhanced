@@ -33,6 +33,10 @@
     0 12px 32px 0 rgba(0, 0, 0, 0.08);
 }
 
+.content:focus {
+  outline: none;
+}
+
 .header {
   display: flex;
   align-items: center;

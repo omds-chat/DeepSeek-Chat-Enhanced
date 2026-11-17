@@ -1,4 +1,5 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { showToast } from '../base/toastState.js'
 import {
   CORE_VERSION,
@@ -121,7 +122,11 @@ export const installPluginEngine = (): PluginEngine => {
   ): InstallResult => {
     const check = store.checkInstallable(manifest, CORE_VERSION)
     if (!check.ok) {
-      report('pluginInstallRejected', { id: manifest.id, reason: check.reason })
+      // 拒绝原因转成可读文案；原始代码留在 check.reason 与插件日志里
+      report('pluginInstallRejected', {
+        id: manifest.id,
+        reason: pluginReasonText(check.reason, check.detail),
+      })
       return check
     }
     store.add(manifest, plugin, source)
@@ -159,13 +164,19 @@ export const installPluginEngine = (): PluginEngine => {
       return true
     }
     if (!record.plugin) {
-      report('pluginRestoreFailed', { id, reason: record.error ?? 'no-plugin-instance' })
+      report('pluginRestoreFailed', {
+        id,
+        reason: pluginReasonText(record.error ?? 'no-plugin-instance'),
+      })
       return false
     }
     const pending = store.pendingDependencies(record)
     if (pending.length > 0) {
       store.markFailed(record, `missing-dependency:${pending.join(',')}`)
-      report('pluginActivateFailed', { id, reason: `missing-dependency:${pending[0]}` })
+      report('pluginActivateFailed', {
+        id,
+        reason: pluginReasonText(`missing-dependency:${pending[0]}`),
+      })
       persist()
       return false
     }
@@ -182,7 +193,9 @@ export const installPluginEngine = (): PluginEngine => {
       store.clearContributions(record)
       store.runDisposers(record)
       store.markFailed(record, describeError(error))
-      report('pluginActivateFailed', { id, reason: describeError(error) })
+      // 原始错误只进插件日志，界面用可读文案
+      store.pushLog(record, describeError(error))
+      report('pluginActivateFailed', { id, reason: pluginReasonText(describeError(error)) })
       persist()
       return false
     }
@@ -217,7 +230,10 @@ export const installPluginEngine = (): PluginEngine => {
     }
     const dependents = store.activeDependents(id)
     if (dependents.length > 0) {
-      report('pluginInstallRejected', { id, reason: `depended-on:${dependents[0]}` })
+      report('pluginUninstallRejected', {
+        id,
+        reason: pluginReasonText(`depended-on:${dependents.join(', ')}`),
+      })
       return false
     }
     await deactivateNow(id)
@@ -248,25 +264,25 @@ export const installPluginEngine = (): PluginEngine => {
     url: string,
     manifest?: PluginManifest
   ): Promise<InstallResult> => {
+    const target = manifest?.id ?? url
     let loadedModule: unknown
     try {
       loadedModule = await loadPluginModule(url)
     } catch (error) {
-      report('pluginInstallRejected', {
-        id: manifest?.id ?? url,
-        reason: `load:${describeError(error)}`,
-      })
-      return { ok: false, reason: 'load-failed', detail: describeError(error) }
+      const detail = describeError(error)
+      // 原始错误只进引擎日志，界面用可读文案
+      pushEngineLog(`install ${target} failed: ${detail}`)
+      report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
+      return { ok: false, reason: 'load-failed', detail }
     }
     let loaded: LoadedPlugin
     try {
       loaded = await resolvePluginModule(loadedModule)
     } catch (error) {
-      report('pluginInstallRejected', {
-        id: manifest?.id ?? url,
-        reason: `resolve:${describeError(error)}`,
-      })
-      return { ok: false, reason: 'invalid-plugin', detail: describeError(error) }
+      const detail = describeError(error)
+      pushEngineLog(`install ${target} failed: ${detail}`)
+      report('pluginInstallRejected', { id: target, reason: pluginReasonText('invalid-plugin') })
+      return { ok: false, reason: 'invalid-plugin', detail }
     }
     const resolved = manifest ?? loaded.manifest
     if (!resolved) {
@@ -315,8 +331,12 @@ export const installPluginEngine = (): PluginEngine => {
         loaded = await resolvePluginModule(await loadPluginModule(entry.source.url))
       } catch (error) {
         const reason = describeError(error)
+        // 原始错误随占位记录写入插件日志，界面用可读文案
         store.addFailed(entry.manifest, entry.source, reason)
-        report('pluginRestoreFailed', { id: entry.manifest.id, reason })
+        report('pluginRestoreFailed', {
+          id: entry.manifest.id,
+          reason: pluginReasonText(reason),
+        })
         continue
       }
       const result = register(entry.manifest, loaded.plugin, entry.source)

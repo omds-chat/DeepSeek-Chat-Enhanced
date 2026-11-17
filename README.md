@@ -26,6 +26,8 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 | `dsc-market` | dsc插件市场,读取外源插件索引,为插件面板的「插件市场」提供列表与查询 |
 | 其他同源插件 | 详见 [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) |
 
+其中 `dsc-market` 由插件引擎装载,可在插件面板的「已安装」中看到;`dsc-core` 与 `dsc-plugin-engine` 是宿主侧的基础模块,不进入插件列表。
+
 <!-- 任何一个dsc插件都必须以 `dsc-` 开头 -->
 
 我们沿用了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的部分设计理念和仓库规范,但针对 Chat 场景我们做了一些 **必要的改变**,详见 [DSC与DSH差异文档](docs/intro/dsc-diff-dsh.md)
@@ -60,7 +62,7 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 | 已安装 | 列出插件的名称、版本、状态与来源,可启用、停用、卸载,并查看插件日志 |
 | 插件市场 | 读取插件索引并列出可安装的插件,可刷新索引并直接安装 |
 
-面板底部提供「从地址安装」:输入插件产物的 `https` 地址即可安装,清单由产物自带的 `manifest` 导出提供。
+面板底部提供「从地址安装」:输入插件产物的 `https` 地址即可安装,本机调试也可用 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]` 地址;清单由产物自带的 `manifest` 导出提供。
 
 安装记录与启用状态保存在浏览器本地,下次打开页面时自动恢复。
 

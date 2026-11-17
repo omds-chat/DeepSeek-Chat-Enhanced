@@ -26,6 +26,8 @@ This branch adds the following **feature enhancements** to the source repository
 | `dsc-market` | dsc plugin market, reads the external plugin index and feeds the plugin panel's Plugin market tab |
 | Other same-origin plugins | See [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) |
 
+Only `dsc-market` is loaded by the plugin engine and appears under Installed in the plugin panel; `dsc-core` and `dsc-plugin-engine` are host-side base modules and are not listed as plugins.
+
 <!-- Every dsc plugin must start with `dsc-` -->
 
 We follow some of the design philosophy and repository conventions of [DeepSeekRuntime](https://github.com/deepseek-ai/deepseek-harness), but made some **necessary changes** for the chat scenario. See the [DSC vs DSH differences](docs/intro/dsc-diff-dsh.md).
@@ -60,7 +62,7 @@ The plugin panel is where plugins are managed inside the app. Open it with the P
 | Installed | Lists each plugin's name, version, state, and source, and provides enable, disable, uninstall, and log viewing |
 | Plugin market | Reads the plugin index and lists installable plugins, and can refresh the index or install directly |
 
-The bottom of the panel provides Install from URL: paste the `https` address of a plugin artifact to install it, and the manifest comes from the `manifest` export bundled with the artifact.
+The bottom of the panel provides Install from URL: paste the `https` address of a plugin artifact to install it; for local debugging, `http://localhost`, `http://127.0.0.1`, and `http://[::1]` addresses also work. The manifest comes from the `manifest` export bundled with the artifact.
 
 Install records and enable states are stored in browser storage and restored the next time the page loads.
 

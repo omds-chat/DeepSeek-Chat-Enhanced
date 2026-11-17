@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
+import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
 import { isPluginSourceAllowed } from '../dsc-plugin-engine/loader.js'
 import { Button } from '../base/Button.js'
@@ -123,7 +124,7 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
       showToast({
         type: 'error',
         key: 'pluginInstallRejected',
-        params: { id: target, reason: 'load-failed' },
+        params: { id: target, reason: pluginReasonText('load-failed') },
       })
     } finally {
       setInstalling(false)

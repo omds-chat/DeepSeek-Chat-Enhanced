@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
+import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
 import {
   market,
@@ -24,6 +25,17 @@ const statusLabel = (status: MarketStatus | null): TranslationKey => {
     return status.total === 0 ? 'pluginMarketStatusEmpty' : 'pluginMarketStatusReady'
   }
   return status.fetchedAt === null ? 'pluginMarketStatusFailed' : 'pluginMarketStatusStale'
+}
+
+/** 空态文案：区分拉取中、拉取失败与索引确实为空 */
+const emptyLabel = (status: MarketStatus | null): TranslationKey => {
+  if (!status || status.state === 'idle' || status.state === 'loading') {
+    return 'pluginMarketStatusLoading'
+  }
+  if (status.state === 'stale' && status.fetchedAt === null) {
+    return 'pluginMarketFailedEmpty'
+  }
+  return 'pluginMarketEmpty'
 }
 
 /** 插件市场：索引状态、刷新与安装 */
@@ -79,7 +91,7 @@ export const MarketPlugins = ({
       showToast({
         type: 'error',
         key: 'pluginInstallRejected',
-        params: { id: entry.id, reason: 'load-failed' },
+        params: { id: entry.id, reason: pluginReasonText('load-failed') },
       })
     } finally {
       setBusyId(null)
@@ -125,8 +137,10 @@ export const MarketPlugins = ({
           />
         </div>
       </div>
-      {unavailable ? null : entries.length === 0 ? (
-        <div className={styles.empty}>{t('pluginMarketEmpty')}</div>
+      {unavailable ? (
+        <div className={styles.empty}>{t('pluginMarketUnavailable')}</div>
+      ) : entries.length === 0 ? (
+        <div className={styles.empty}>{t(emptyLabel(status))}</div>
       ) : (
         <div className={styles.table} role="table">
           <div className={clsx(styles.row, styles.marketRow, styles.head)} role="row">
