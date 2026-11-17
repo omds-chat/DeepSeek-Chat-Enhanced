@@ -1,7 +1,7 @@
 {
   "name": "deepseek-chat-enhanced",
-  "version": "0.1.1",
-  "description": "基于 DeepSeek API 的静态聊天应用。",
+  "version": "0.1.0",
+  "description": "DeepSeek网页聊天对话(增强版)",
   "author": "omdsc-dev",
   "license": "Apache-2.0",
   "repository": {

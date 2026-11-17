@@ -28,23 +28,25 @@ This branch adds the following **feature enhancements** to the source repository
 
 <!-- Every dsc plugin must start with `dsc-` -->
 
-Limited by traditional front-end technology, we cannot guarantee that everything can be made into a plugin, so we cautiously follow and propose "Something can be a Plugin".
-
 We follow some of the design philosophy and repository conventions of [DeepSeekRuntime](https://github.com/deepseek-ai/deepseek-harness), but made some **necessary changes** for the chat scenario. See the [DSC vs DSH differences](docs/intro/dsc-diff-dsh.md).
 
-Note that we only provide the creation, display, and distribution of **static web pages (no agent capabilities)**. We **do not provide** any external plugins, paid services, or backend services. Introducing external plugins is at your **own risk**; make sure you only introduce plugins you **trust**.
 
-You can [try the app online](https://omdsc-dev.github.io/chat/) or download the archive from [Releases](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced/releases), extract it, and double-click `index.html` to use it locally without installation or a build.
+## Try it online
+
+Click [try it online](https://omdsc-dev.github.io/chat/) to use it, or download the archive from [Releases](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced/releases), extract it, and double-click `index.html` to use it locally without installation or a build.
+
+Note that we only provide the creation, display, and distribution of **static web pages (no agent capabilities)** and a few necessary plugins (the same-origin plugins above). We **do not provide any** paid services or backend services. In addition, we also list some external plugins made by community developers; introducing those plugins is at the user's **own judgment and risk**, so make sure you only introduce plugins you **trust**.
 
 > [!WARNING]
-> Using DeepSeek-Chat-Enhanced and its online page still depends on a model API service and incurs charges, but these fees do not go into omdsc-dev's wallet.
-> Unless you subscribe to a Token Plan, use a channel with free quota, or have sufficient balance, do not use DeepSeek-Chat-Enhanced casually, to avoid extra charges.
+> Note: Using DeepSeek-Chat-Enhanced and its online page still depends on a model API service and incurs charges, but these fees do not go into omdsc-dev's wallet.<br>
+> Unless you subscribe to a Token Plan, use a channel with free quota, or have sufficient budget, do not use DeepSeek-Chat-Enhanced casually, to avoid unexpected charges.
 
 > [!CAUTION]
-> Protect your API key, because it is stored and exposed directly in browser storage.
-> Do not enable any plugin of unknown or untrusted origin, to prevent your API key and conversation content from leaking.
-> Plugins provided by [omdsc-dev/dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) will not attempt to leak your credentials or data.
-> Plugins provided by [OMDSC-Market](https://omdsc-market.com/) may have review omissions; verify their origin and safety before use. If you encounter a malicious plugin, you can [submit an issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new), [contact OMDSC-Market](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report), or even [contact omdsc-dev directly](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report) to report it and request removal. But we cannot recover your losses; remove the malicious plugin promptly and update your API key.
+> Protect your API key, because it is stored and exposed directly in browser storage.<br>
+> Do not enable any plugin of unknown or untrusted origin, to prevent your API key and conversation content from leaking.<br>
+> Plugins provided by [omdsc-dev/dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) will not attempt to leak your credentials or data.<br>
+> Plugins provided by [OMDSC-Market](https://omdsc-market.com/) may have review omissions; verify their origin and safety before use.<br>
+> If you encounter a malicious plugin, you can [submit an issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new), [contact OMDSC-Market](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report), or even [contact omdsc-dev directly](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report) to report it and request removal. But we cannot recover your losses; remove the malicious plugin promptly and update your API key.
 
 <!-- Link note: OMDSC-Market needs a preset emergency takedown process and broadcast announcement for malicious plugins -->
 
@@ -59,15 +61,16 @@ For plugin submission, see [omdsc-dev/awesome-dsc-plugin](https://github.com/omd
 
 Plugins listed in the market **must comply with** the [dsc plugin development specification](docs/user/develop/basic/plugin-develop-spec.md).
 
+
 ## Building plugins
 
-Every dsc plugin is an independent project during **development**. You can write the plugin logic in **any language**, as long as the **built runtime artifact** conforms to the [**dsc plugin artifact specification**](docs/user/develop/basic/plugin-product-spec.md) so the plugin is recognized and runs.
+Every dsc plugin is an independent project during **development**. You can write the plugin logic in **any programming language**, as long as the **built runtime artifact** conforms to the [**dsc plugin artifact specification**](docs/user/develop/basic/plugin-product-spec.md) so the plugin is recognized and runs.
 
-To keep plugins standardized and maintainable, and to make your plugin easier for others to use and extend, we recommend developing plugins with the [dsc plugin template](https://github.com/omdsc-dev/dsc-plugin-template) provided by omdsc-dev.
+To keep plugins standardized and maintainable, and to make your plugin easier for others to use and build upon, we recommend developing plugins with the [dsc plugin template](https://github.com/omdsc-dev/dsc-plugin-template) provided by omdsc-dev.
 
-Every dsc plugin is a `js script` conforming to the [dsc plugin artifact specification](docs/user/develop/basic/plugin-product-spec.md) at runtime, but it must ultimately be built into a standard plugin body that follows the interface specification.
+Every dsc plugin is a `js script` conforming to the [dsc plugin artifact specification](docs/user/develop/basic/plugin-product-spec.md) during **runtime**.
 
-A dsc plugin is loaded by `dsc-plugin-engine` and controls the whole Chat and its pages in a limited way through the standard interfaces provided by `dsc-plugin-engine`.
+A dsc plugin is loaded by `dsc-plugin-engine` and controls the whole Chat and its pages in a limited way through the standard interfaces provided by `dsc-plugin-engine`. Bypassing `dsc-plugin-engine` to interact with `dsc-core` directly is inappropriate; `dsc-plugin-engine` detects this behavior and raises an alert to the user.
 
 See [build-a-plugin.md](docs/user/develop/framework/build-a-plugin.md).
 
@@ -80,9 +83,14 @@ See [COPYRIGHT](COPYRIGHT) for details.
 
 New additions, modifications, and merges made on top of the source repository in this branch are licensed under [Apache-2.0](LICENSE) and distributed with the artifact.
 
-Content from the source repository remains under the [MIT](LICENSE.deepseek) license and is distributed with the artifact. Third-party dependencies follow their respective licenses.
+Content from the source repository remains under the [MIT](LICENSE.deepseek) license and is distributed with the artifact. Third-party dependencies and plugins follow their respective licenses.
 
 
 ## Security policy
 
-None for now.
+See the [security policy document](SECURITY.md).
+
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
