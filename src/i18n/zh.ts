@@ -179,7 +179,7 @@ export const zh = {
   pluginDataQuotaExceeded: '插件 {id} 的本地数据超过 64KB 上限',
   pluginDataInvalid: '插件 {id} 写入的数据无法序列化',
   pluginDataUnavailable: '插件 {id} 的本地数据不可读写',
-  pluginIndexFetchFailed: '插件索引拉取失败，已回退到本地缓存',
+  pluginIndexFetchFailed: '插件索引拉取失败',
   pluginIndexInvalid: '插件索引结构无效',
   pluginPanelTitle: '插件',
   pluginTabInstalled: '已安装',

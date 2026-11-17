@@ -187,7 +187,7 @@ export const en = {
   pluginDataQuotaExceeded: 'Local data for plugin {id} exceeds the 64KB limit',
   pluginDataInvalid: 'Data written by plugin {id} cannot be serialized',
   pluginDataUnavailable: 'Local data for plugin {id} cannot be read or written',
-  pluginIndexFetchFailed: 'Plugin index fetch failed; fell back to the local cache',
+  pluginIndexFetchFailed: 'Plugin index fetch failed',
   pluginIndexInvalid: 'Plugin index structure is invalid',
   pluginPanelTitle: 'Plugins',
   pluginTabInstalled: 'Installed',
