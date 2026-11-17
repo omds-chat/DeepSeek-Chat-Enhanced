@@ -1,3 +1,4 @@
+import { APP_NAME } from '../../brand.js'
 import { formatDate } from '../../utils/format.js'
 import * as db from './db.js'
 import { replaceHistory, useChatStore } from './store.js'
@@ -14,7 +15,7 @@ const enqueueBackup = <T>(run: () => Promise<T>): Promise<T> => {
   return task
 }
 
-const backupFileName = (date: Date) => `deepseek_data-${formatDate(date)}.zip`
+const backupFileName = (date: Date) => `${APP_NAME}_${formatDate(date)}.zip`
 
 /** 导出为历史会话导出格式的 ZIP，可再次导入。 */
 export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>

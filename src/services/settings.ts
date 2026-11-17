@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { APP_NAME } from '../brand.js'
 import type { TtsVoice } from './api/speech.js'
 import { normalizeLocation, type UserLocation } from './location.js'
 
@@ -20,14 +21,14 @@ type Settings = {
 }
 
 const KEYS = {
-  apiKey: 'chat-demo:api-key',
-  locale: 'chat-demo:locale',
-  location: 'chat-demo:location',
-  themePreference: 'chat-demo:theme-preference',
-  ttsVoice: 'chat-demo:tts-voice',
-  thinking: 'chat-demo:thinking',
-  search: 'chat-demo:search',
-  siderCollapsed: 'chat-demo:sider-collapsed',
+  apiKey: `${APP_NAME}:api-key`,
+  locale: `${APP_NAME}:locale`,
+  location: `${APP_NAME}:location`,
+  themePreference: `${APP_NAME}:theme-preference`,
+  ttsVoice: `${APP_NAME}:tts-voice`,
+  thinking: `${APP_NAME}:thinking`,
+  search: `${APP_NAME}:search`,
+  siderCollapsed: `${APP_NAME}:sider-collapsed`,
 } as const
 
 const read = (key: string) => {
