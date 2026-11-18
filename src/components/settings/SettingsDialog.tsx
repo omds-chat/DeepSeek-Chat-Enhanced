@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   IconDarkOutline16,
   IconDataOutline16,
@@ -28,6 +28,13 @@ import {
   type ThemePreference,
 } from '../../services/settings.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
+import {
+  clearAllPluginData,
+  clearPluginData,
+  listPluginData,
+  type PluginDataUsage,
+} from '../dsc-core/index.js'
+import { formatBytes } from '../../utils/format.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
@@ -121,6 +128,7 @@ const SettingsContent = () => {
                   </Button>
                 }
               />
+              <PluginDataSection />
               {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
             </>
           )}
@@ -129,6 +137,122 @@ const SettingsContent = () => {
       {historyImport.file ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
     </>
+  )
+}
+
+/** 清理确认的保持时间（毫秒），与插件页的更新确认同一节奏 */
+const CONFIRM_MS = 3000
+
+/** 整体清理的确认键；插件 id 由清单校验限定为字母开头，不会与它相同 */
+const ALL_PLUGIN_DATA = '*'
+
+/**
+ * 插件遗留数据：列出卸载后保留下来的插件数据，逐项与整体清理都走
+ * 「替换为确认按钮、3 秒内点击确认、超时回归初始状态」。
+ * 列表在打开设置时读取一次，每次清理后重新读取。
+ */
+const PluginDataSection = () => {
+  const t = useTranslate()
+  const [entries, setEntries] = useState<PluginDataUsage[]>(() => listPluginData())
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const confirmTimer = useRef(0)
+
+  useEffect(() => () => window.clearTimeout(confirmTimer.current), [])
+
+  /** 置为待确认状态，3 秒后回归 */
+  const arm = (target: string) => {
+    setConfirming(target)
+    window.clearTimeout(confirmTimer.current)
+    confirmTimer.current = window.setTimeout(() => setConfirming(null), CONFIRM_MS)
+  }
+
+  const refreshEntries = () => {
+    window.clearTimeout(confirmTimer.current)
+    setConfirming(null)
+    setEntries(listPluginData())
+  }
+
+  const clearOne = (pluginId: string) => {
+    try {
+      clearPluginData(pluginId)
+      showToast({ key: 'settingsPluginDataCleared', params: { id: pluginId } })
+    } catch {
+      showToast({ key: 'settingsPluginDataClearFailed', type: 'error' })
+    }
+    refreshEntries()
+  }
+
+  const clearAll = () => {
+    try {
+      clearAllPluginData()
+      showToast({ key: 'settingsPluginDataClearedAll' })
+    } catch {
+      showToast({ key: 'settingsPluginDataClearFailed', type: 'error' })
+    }
+    refreshEntries()
+  }
+
+  return (
+    <div className={styles.pluginData}>
+      <div className={styles.pluginDataHead}>
+        <div className={styles.label}>{t('settingsPluginDataTitle')}</div>
+        <div className={styles.description}>{t('settingsPluginDataDescription')}</div>
+      </div>
+      {entries.length === 0 ? (
+        <div className={styles.pluginDataEmpty}>{t('settingsPluginDataEmpty')}</div>
+      ) : (
+        <div className={styles.pluginDataList} role="list">
+          {entries.map((entry) => {
+            const armed = confirming === entry.pluginId
+            return (
+              <div key={entry.pluginId} className={styles.pluginDataRow} role="listitem">
+                <span className={styles.pluginDataId} title={entry.pluginId}>
+                  {entry.pluginId}
+                </span>
+                <span className={styles.pluginDataKeys}>
+                  {t('settingsPluginDataKeys', { count: entry.keys })}
+                </span>
+                <span className={styles.pluginDataSize}>{formatBytes(entry.bytes)}</span>
+                <Button
+                  variant={armed ? 'danger' : 'dangerOutlined'}
+                  size="s"
+                  onClick={() => {
+                    if (armed) {
+                      clearOne(entry.pluginId)
+                      return
+                    }
+                    arm(entry.pluginId)
+                  }}
+                >
+                  {t(armed ? 'settingsPluginDataClearConfirm' : 'settingsPluginDataClear')}
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+      <div className={styles.pluginDataFooter}>
+        <Button
+          variant={confirming === ALL_PLUGIN_DATA ? 'danger' : 'dangerOutlined'}
+          size="m"
+          className={styles.cellButton}
+          disabled={entries.length === 0}
+          onClick={() => {
+            if (confirming === ALL_PLUGIN_DATA) {
+              clearAll()
+              return
+            }
+            arm(ALL_PLUGIN_DATA)
+          }}
+        >
+          {t(
+            confirming === ALL_PLUGIN_DATA
+              ? 'settingsPluginDataClearAllConfirm'
+              : 'settingsPluginDataClearAll'
+          )}
+        </Button>
+      </div>
+    </div>
   )
 }
 

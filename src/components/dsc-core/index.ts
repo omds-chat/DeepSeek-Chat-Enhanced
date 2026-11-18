@@ -170,7 +170,13 @@ export type {
 export { PluginFetchError } from './net.js'
 export type { FetchRejectReason, FetchTextResult } from './net.js'
 export { PluginDataError } from './plugin-data.js'
-export type { PluginDataRejectReason, PluginDataStore } from './plugin-data.js'
+export type {
+  PluginDataRejectReason,
+  PluginDataStore,
+  PluginDataUsage,
+} from './plugin-data.js'
+/** 插件数据的宿主侧入口：只给引擎与设置界面的数据管理使用，不经过凭证门面 */
+export { clearAllPluginData, clearPluginData, hasPluginData, listPluginData } from './plugin-data.js'
 export {
   createCredential,
   issueTicket,

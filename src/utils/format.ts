@@ -16,6 +16,20 @@ export const formatDate = (
   return [pad(date.getFullYear(), 4), pad(date.getMonth() + 1), pad(date.getDate())].join(separator)
 }
 
+/** 字节数转人类可读：小于 1 KB 用 B，其余按 KB / MB 保留一位小数 */
+export const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B'
+  }
+  if (bytes < 1024) {
+    return `${Math.round(bytes)} B`
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export const monthKey = (value: string | number | Date): string | null => {
   const date = toDate(value)
   return date ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}` : null

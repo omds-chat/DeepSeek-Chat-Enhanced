@@ -7,6 +7,7 @@ import {
   getPluginEngine,
   type InstallSource,
   type PluginEngine,
+  type UnloadResult,
 } from '../dsc-plugin-engine/index.js'
 import type {
   PluginSourceType,
@@ -129,28 +130,27 @@ export const InstalledPlugins = ({
   /**
    * 置忙执行一次操作，完成后刷新列表。
    * 引擎自己会用 toast 说明启用、停用与卸载被拒的原因；引擎未就绪时返回 null，由调用方决定是否补充提示。
+   * 操作本身抛错时同样返回 null，由调用方按失败处理。
    */
-  const run = async (
+  const run = async <T,>(
     id: string,
     action: Busy['action'],
-    task: (engine: PluginEngine) => Promise<boolean>
-  ): Promise<boolean | null> => {
+    task: (engine: PluginEngine) => Promise<T>
+  ): Promise<T | null> => {
     const engine = getPluginEngine()
     if (!engine) {
       showToast({ type: 'error', key: 'pluginEngineUnavailable' })
       return null
     }
     setBusy({ id, action })
-    let ok = false
     try {
-      ok = await task(engine)
+      return await task(engine)
     } catch {
-      ok = false
+      return null
     } finally {
       setBusy(null)
       refresh()
     }
-    return ok
   }
 
   const toggle = async (plugin: PluginStateView) => {
@@ -169,13 +169,23 @@ export const InstalledPlugins = ({
     )
 
   const uninstall = async (plugin: PluginStateView) => {
-    const ok = await run(plugin.id, 'uninstall', (engine) => engine.unload(plugin.id))
+    const result = await run<UnloadResult>(plugin.id, 'uninstall', async (engine) => {
+      try {
+        return await engine.unload(plugin.id)
+      } catch {
+        return { removed: false, hasLeftoverData: false }
+      }
+    })
     // 引擎未就绪时已经提示过
-    if (ok === null) {
+    if (result === null) {
       return
     }
-    if (ok) {
+    if (result.removed) {
       setConfirming(null)
+      // 卸载默认保留插件本地数据，遗留数据只在有数据时提示清理入口
+      if (result.hasLeftoverData) {
+        showToast({ key: 'pluginUninstalledDataKept' })
+      }
       return
     }
     // 被依赖时引擎的 toast 已说明原因，再补一条会覆盖它
@@ -227,7 +237,7 @@ export const InstalledPlugins = ({
     setConfirmUpdate(null)
     setBusy({ id: plugin.id, action: 'update' })
     try {
-      if (!(await engine.unload(plugin.id))) {
+      if (!(await engine.unload(plugin.id)).removed) {
         showToast({ type: 'error', key: 'pluginUpdateUnloadFailed', params: { name: plugin.name } })
         return
       }
@@ -424,7 +434,8 @@ export const InstalledPlugins = ({
             </>
           }
         >
-          {t('pluginUninstallDescription', { name: confirming.name })}
+          <div>{t('pluginUninstallDescription', { name: confirming.name })}</div>
+          <div className={styles.caption}>{t('pluginUninstallKeepDataHint')}</div>
         </Modal>
       ) : null}
       {logs ? (

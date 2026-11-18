@@ -4,6 +4,7 @@ import { showToast } from '../base/toastState.js'
 import {
   CORE_VERSION,
   createCredential,
+  hasPluginData,
   issueTicket,
   openCore,
   readBypassEvents,
@@ -124,6 +125,16 @@ export const derivePluginBase = (dataBase: string): string => {
   return deriveDataBase(trimmed)
 }
 
+/**
+ * 卸载结论。
+ * removed 表示注册表记录与持久化记录是否已移除；hasLeftoverData 表示该插件是否还留有本地数据，
+ * 卸载默认保留这些数据，供插件回归后做旧数据迁移。
+ */
+export type UnloadResult = {
+  removed: boolean
+  hasLeftoverData: boolean
+}
+
 /** 插件引擎对外接口 */
 export type PluginEngine = {
   readonly version: string
@@ -146,7 +157,7 @@ export type PluginEngine = {
   installFromLocalFile(file: File): Promise<InstallResult>
   activate(id: string): Promise<boolean>
   deactivate(id: string): Promise<boolean>
-  unload(id: string): Promise<boolean>
+  unload(id: string): Promise<UnloadResult>
   list(): PluginStateView[]
   logs(id: string): readonly string[]
   /** 引擎自身的日志，例如落盘与恢复失败 */
@@ -382,38 +393,35 @@ export const installPluginEngine = (): PluginEngine => {
     return true
   }
 
-  const unloadNow = async (id: string): Promise<boolean> => {
+  const unloadNow = async (id: string): Promise<UnloadResult> => {
     const record = store.get(id)
     if (!record) {
-      return false
+      return { removed: false, hasLeftoverData: false }
     }
+    // 数据默认保留，卸载前先记录该插件是否遗留数据，由界面提示清理入口
+    const leftover = hasPluginData(id)
     const dependents = store.activeDependents(id)
     if (dependents.length > 0) {
       report('pluginUninstallRejected', {
         id,
         reason: pluginReasonText(`depended-on:${dependents.join(', ')}`),
       })
-      return false
+      return { removed: false, hasLeftoverData: leftover }
     }
     await deactivateNow(id)
     const removed = store.remove(id)
     if (!removed) {
-      return false
+      return { removed: false, hasLeftoverData: leftover }
     }
-    // 卸载即清理该插件的本地数据；清理失败只记引擎日志，不影响卸载结果
-    try {
-      core.clearPluginData({ credential, ticket: issueTicket('plugins:data-clear') }, id)
-    } catch (error) {
-      pushEngineLog(`clear plugin data failed: ${describeError(error)}`)
-    }
+    // 卸载只移除注册表与持久化记录；插件本地数据保留，交由设置的数据管理清理
     persist()
-    return true
+    return { removed: true, hasLeftoverData: leftover }
   }
 
   /** 生命周期入口：同一插件的操作排队执行，后一次等前一次结束后再读状态 */
   const activate = (id: string): Promise<boolean> => serialize(id, () => activateNow(id))
   const deactivate = (id: string): Promise<boolean> => serialize(id, () => deactivateNow(id))
-  const unload = (id: string): Promise<boolean> => serialize(id, () => unloadNow(id))
+  const unload = (id: string): Promise<UnloadResult> => serialize(id, () => unloadNow(id))
 
   /**
    * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。

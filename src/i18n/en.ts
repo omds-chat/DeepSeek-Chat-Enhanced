@@ -132,6 +132,18 @@ export const en = {
     'Locally saved attachments and unsent drafts will also be deleted.',
   historyDeleting: 'Deleting...',
   historyDeleted: 'Successfully deleted.',
+  settingsPluginDataTitle: 'Plugin data',
+  settingsPluginDataDescription:
+    'Local data kept after a plugin was uninstalled, so the plugin can migrate it when it comes back. Clearing it makes that data unreadable after reinstalling.',
+  settingsPluginDataEmpty: 'No leftover plugin data',
+  settingsPluginDataKeys: '{count} keys',
+  settingsPluginDataClear: 'Clear',
+  settingsPluginDataClearConfirm: 'Confirm clear',
+  settingsPluginDataClearAll: 'Clear all plugin data',
+  settingsPluginDataClearAllConfirm: 'Confirm clear all',
+  settingsPluginDataCleared: 'Cleared the data of plugin {id}',
+  settingsPluginDataClearedAll: 'Cleared all plugin data',
+  settingsPluginDataClearFailed: 'Failed to clear plugin data. Please try again.',
   historyDeleteFailed: 'Failed to delete chats. Please try again.',
   upload: 'Upload',
   uploadUnsupportedFormat:
@@ -227,8 +239,10 @@ export const en = {
   pluginEngineUnavailable: 'The plugin engine is not ready yet',
   pluginBuiltinUninstallHint: 'Built-in plugins are loaded by the host and cannot be uninstalled',
   pluginUninstallTitle: 'Uninstall plugin',
-  pluginUninstallDescription:
-    'Uninstalling {name} stops its features immediately; local data is cleared',
+  pluginUninstallDescription: 'Uninstalling {name} stops its features immediately',
+  pluginUninstallKeepDataHint: 'Uninstalling does not delete the local data of the plugin.',
+  pluginUninstalledDataKept:
+    'Plugin uninstalled. Its local data has been kept; to clean it up, use Settings -> Data.',
   pluginUninstallFailed: 'Plugin {id} could not be uninstalled',
   pluginUninstallRejected: 'Plugin {id} could not be uninstalled: {reason}',
   pluginReasonInvalidManifest: 'The plugin manifest is not valid',
@@ -309,7 +323,7 @@ export const en = {
   pluginUpdateConfirm: 'Confirm update',
   pluginUpdateLatest: 'Up to date',
   pluginUpdateHint:
-    'Updating uninstalls the old version and installs the latest one; the plugin local data is cleared',
+    'Updating uninstalls the old version and installs the latest one; the local data of the plugin is kept',
   pluginUpdated: 'Plugin {name} updated to {version}',
   pluginUpdateFailed: 'Plugin {name} failed to update: {reason}',
   pluginUpdateUnavailable: 'Plugin {name} has no usable version information, so it cannot be updated',

@@ -12,6 +12,15 @@ const MAX_KEY_LENGTH = 64
 /** 单个插件的键值对象 */
 export type PluginDataStore = Record<string, unknown>
 
+/** 单个插件遗留数据的占用统计 */
+export type PluginDataUsage = {
+  pluginId: string
+  /** 序列化后的字节数 */
+  bytes: number
+  /** 顶层键数量 */
+  keys: number
+}
+
 /** 插件数据被拒绝的原因；供引擎映射文案 */
 export type PluginDataRejectReason = 'invalid' | 'quota' | 'serialize' | 'storage'
 
@@ -128,9 +137,75 @@ export const removePluginEntry = (pluginId: string, key: string): void => {
   }
 }
 
+/** 统计单个键内的顶层条目数；无法解析时按 0 计 */
+const countEntries = (raw: string): number => {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return 0
+    }
+    return Object.keys(parsed).length
+  } catch {
+    return 0
+  }
+}
+
+/** 收集全部插件数据键；localStorage 不可用时返回空数组 */
+const collectKeys = (): string[] => {
+  const keys: string[] = []
+  try {
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index)
+      if (key !== null && key.startsWith(KEY_PREFIX)) {
+        keys.push(key)
+      }
+    }
+  } catch {
+    return []
+  }
+  return keys
+}
+
+/**
+ * 列出全部插件的遗留数据，按字节数降序。
+ * 卸载不再清理插件数据，这些条目就是卸载后保留的旧数据；localStorage 不可用时返回空数组。
+ */
+export const listPluginData = (): PluginDataUsage[] => {
+  const usages: PluginDataUsage[] = []
+  for (const key of collectKeys()) {
+    let raw: string | null
+    try {
+      raw = localStorage.getItem(key)
+    } catch {
+      return []
+    }
+    if (raw === null) {
+      continue
+    }
+    usages.push({
+      pluginId: key.slice(KEY_PREFIX.length),
+      bytes: encoder.encode(raw).byteLength,
+      keys: countEntries(raw),
+    })
+  }
+  return usages.sort((left, right) => right.bytes - left.bytes)
+}
+
+/** 判断单个插件是否遗留了数据；id 非法或 localStorage 不可用时按无数据计 */
+export const hasPluginData = (pluginId: string): boolean => {
+  if (!ID_PATTERN.test(pluginId)) {
+    return false
+  }
+  try {
+    return localStorage.getItem(`${KEY_PREFIX}${pluginId}`) !== null
+  } catch {
+    return false
+  }
+}
+
 /**
  * 清除单个插件的全部数据。
- * 插件数据按 id 收敛在一个键内，删除该键即清空；只由引擎在卸载时调用。
+ * 插件数据按 id 收敛在一个键内，删除该键即清空；由数据管理界面调用。
  */
 export const clearPluginData = (pluginId: string): void => {
   const target = storageKey(pluginId)
@@ -138,5 +213,16 @@ export const clearPluginData = (pluginId: string): void => {
     localStorage.removeItem(target)
   } catch {
     throw new PluginDataError('storage', 'localStorage write failed')
+  }
+}
+
+/** 清除全部插件数据；localStorage 不可用时静默返回 */
+export const clearAllPluginData = (): void => {
+  for (const key of collectKeys()) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      return
+    }
   }
 }

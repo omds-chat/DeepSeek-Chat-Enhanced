@@ -385,6 +385,73 @@
   }
 }
 
+/* 插件数据区块：标题、逐项列表与底部整体清理 */
+.pluginData {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px 0;
+  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.pluginDataHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pluginDataList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 每行四列：插件 id、键数量、占用大小、清理按钮；单元格文本一律水平居中 */
+.pluginDataRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 88px 88px;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+
+  & + & {
+    box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+  }
+}
+
+/* id 来自插件清单，长度不受控；截断而不是撑破列宽 */
+.pluginDataId {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pluginDataKeys,
+.pluginDataSize {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.pluginDataEmpty {
+  padding: 10px 0;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.pluginDataFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .mobileConfirm {
   display: block;
   flex-shrink: 0;
@@ -438,5 +505,21 @@
     white-space: normal;
     overflow-wrap: anywhere;
     max-width: 100%;
+  }
+
+  /* 窄屏只保留 id、键数量与大小三列，清理按钮换行居中，避免横向溢出 */
+  .pluginDataRow {
+    grid-template-columns: minmax(0, 1fr) 68px 72px;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .pluginDataRow > button {
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+
+  .pluginDataFooter {
+    justify-content: center;
   }
 }
