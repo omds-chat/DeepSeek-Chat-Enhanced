@@ -308,17 +308,17 @@ export const en = {
   pluginMarketMetaFailed: 'The plugin metadata could not be fetched',
   pluginMarketTrustTrusted: 'Trusted',
   pluginMarketTrustUntrusted: 'Untrusted',
-  pluginMarketTrustUnverified: 'Trust unverified',
+  pluginMarketTrustUnverified: 'Trust unknown',
   pluginMarketTrustUntrustedHint:
     'Source trust verification failed ({reason}); you can still install, but decide for yourself whether to continue',
   pluginMarketTrustUnverifiedHint:
-    'The online-data trust list has no entry for this source, so its certificate chain cannot be verified; confirm the source yourself before installing',
-  pluginMarketTrustReasonMissing: 'the trust list has no EEC certificate for this collection',
-  pluginMarketTrustReasonChain: 'the EEC certificate chain did not verify',
-  pluginMarketTrustReasonRevoked: 'the EEC certificate has been revoked',
-  pluginMarketTrustEecFromList: 'Certificate comes from the online-data trust list',
+    'The trustworthiness of this source cannot be confirmed; confirm the source yourself before installing',
+  pluginMarketTrustReasonMissing: 'the source certificate cannot be confirmed',
+  pluginMarketTrustReasonChain: 'the source certificate did not verify',
+  pluginMarketTrustReasonRevoked: 'the source certificate has been revoked',
+  pluginMarketTrustEecFromList: 'Source certificate verified by dsc',
   pluginMarketCountBadge: 'Download count',
-  pluginEndorsedBadge: 'dsc endorsed',
+  pluginEndorsedBadge: 'Maintained by dsc',
   pluginUpdateAvailable: 'Update available',
   pluginUpdateConfirm: 'Confirm update',
   pluginUpdateLatest: 'Up to date',
@@ -328,15 +328,14 @@ export const en = {
   pluginUpdateFailed: 'Plugin {name} failed to update: {reason}',
   pluginUpdateUnavailable: 'Plugin {name} has no usable version information, so it cannot be updated',
   pluginUpdateUnloadFailed: 'Plugin {name} could not be uninstalled before updating',
-  pluginMarketTrustEndorsed: 'dsc endorsed',
-  pluginMarketTrustEndorsedHint:
-    'This source is the internal plugin index directly endorsed by dsc; the trust list has no EEC for it, so installation verifies against the eec.pem shipped by the source',
+  pluginMarketTrustEndorsed: 'Maintained by dsc',
+  pluginMarketTrustEndorsedHint: 'This source is maintained by dsc and is safe to use',
   pluginMarketTrustEndorsedChainHint:
-    'This source is directly endorsed by dsc and its EEC certificate chain also verified; installation still runs the full signature verification',
+    'This source is maintained by dsc and its signature check passed',
   pluginMarketCountNotice:
     'This source enables download counting: installing sends the plugin name and the request time to the source',
   pluginMarketCountIpNotice:
-    'This source records the requesting IP, which the receiver takes from the request itself; the client never reports it',
+    'This source records the requesting IP; the client does not report it',
   pluginMarketInstallUntrusted:
     'Untrusted source; decide for yourself whether to continue',
   pluginMarketInstallConfirm: 'Confirm install',
@@ -379,11 +378,11 @@ export const en = {
   pluginLocalUnknown: 'Not provided',
   pluginLocalConfirm: 'Confirm install',
   trustListRootMismatch:
-    'The trust list root certificate does not match this build, so the list was ignored; decide for yourself whether to continue',
+    'The trust data of plugin sources does not match this build, so source trust checks were skipped; decide for yourself whether to continue',
   trustListCollectionsUntrusted:
-    'The EEC certificate chain failed to verify for {count} collection(s): {ids}. They are marked untrusted; decide for yourself whether to continue',
+    'The trustworthiness of {count} plugin source(s) could not be confirmed: {ids}. They are marked untrusted; decide for yourself whether to continue',
   trustListCollectionsRevoked:
-    'The EEC certificate of {count} collection(s) has been revoked: {ids}. They are marked untrusted; decide for yourself whether to continue',
+    'The certificate of {count} plugin source(s) has been revoked: {ids}. They are marked untrusted; decide for yourself whether to continue',
   webIntegrityFailed:
     'Web file signature check failed for {count} file(s): {files}. Files may have been modified; reload the page or download it again.',
   webIntegrityChainFailed:

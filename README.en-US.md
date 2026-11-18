@@ -28,8 +28,6 @@ This branch adds the following **feature enhancements** to the source repository
 
 Only `dsc-market` is loaded by the plugin engine and appears under Installed in the plugin panel; `dsc-core` and `dsc-plugin-engine` are host-side base modules and are not listed as plugins.
 
-<!-- Every dsc plugin must start with `dsc-` -->
-
 We follow some of the design philosophy and repository conventions of [DeepSeekRuntime](https://github.com/deepseek-ai/deepseek-harness), but made some **necessary changes** for the chat scenario. See the [DSC vs DSH differences](docs/intro/dsc-diff-dsh.md).
 
 
@@ -50,8 +48,6 @@ Note that we only provide the creation, display, and distribution of **static we
 > Plugins provided by [OMDSC-Market](https://omdsc-market.com/) may have review omissions; verify their origin and safety before use.<br>
 > If you encounter a malicious plugin, you can [submit an issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new), [contact OMDSC-Market](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report), or even [contact omdsc-dev directly](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report) to report it and request removal. But we cannot recover your losses; remove the malicious plugin promptly and update your API key.
 
-<!-- Link note: OMDSC-Market needs a preset emergency takedown process and broadcast announcement for malicious plugins -->
-
 
 ## Plugin panel
 
@@ -62,9 +58,9 @@ The plugin panel is where plugins are managed inside the app. Open it with the P
 | Installed | Lists each plugin's name, version, state, and source, and provides enable, disable, uninstall, and log viewing |
 | Plugin market | Reads the plugin index and lists installable plugins, and can refresh the index or install directly |
 
-The bottom of the panel provides Install from URL: paste the `https` address of a plugin artifact to install it; for local debugging, `http://localhost`, `http://127.0.0.1`, and `http://[::1]` addresses also work. The manifest comes from the `manifest` export bundled with the artifact.
+The bottom of the panel provides two install entries: Install from URL takes the `https` address of a plugin artifact and reads the manifest from the `manifest` export bundled with the artifact; Install from file takes an offline package and shows its name, version, author, and signature state for confirmation before installing.
 
-Install records and enable states are stored in browser storage and restored the next time the page loads.
+Install records and enable states are stored in browser storage and restored the next time the page loads. A plugin from an online source shows Update available when a newer version exists, and can be updated from the panel.
 
 For end-user instructions, see the [plugin user guide](docs/user/guide/plugins.md).
 
@@ -79,15 +75,11 @@ For plugin submission, see [omdsc-dev/awesome-dsc-plugin](https://github.com/omd
 
 Plugins listed in the market **must comply with** the [dsc plugin development specification](docs/user/develop/basic/plugin-develop-spec.md).
 
-Plugin sources follow a PKI signature scheme:
+Plugin sources follow a certificate-based signature scheme: each source holds a signing certificate issued by the omdsc-dev root certificate, plugin artifacts and web artifacts carry that signature, and the browser verifies it when installing, when starting a plugin, and when the page loads. A plugin author may also sign the same plugin with their own private key, and that signature exists alongside the source signature.
 
-1. omdsc-dev acts as the root certificate authority and issues end-entity signing certificates (EEC); a collection signs each plugin it lists with its EEC using CMS detached signatures, producing `plugin.js.sig` and `meta.json.sig` in the plugin version directory.
-2. A plugin author may also self-sign the same plugin with their own private key, producing `plugin.js.author.sig` alongside the collection signature.
-3. Each collection's EEC is issued by the root certificate, and the root certificate plus each collection's EEC are distributed through the online-data branch; a collection's trustworthiness is proven by the certificate chain, so no separate collection trust signature is issued.
+A source's trustworthiness is proven by the certificate chain, and the plugin market, the plugin panel, and the web runtime all verify the same certificates, with no separate collection trust signature. When verification fails you only get a warning: the install or the page still works, so decide for yourself whether to continue.
 
-The market verifies the certificate chain first, trusts that source's EEC only after it passes, and then uses it to verify plugin signatures; the web build verifies itself with the EEC's CMS signatures. When verification fails, the market warns you but does not block the install, so decide for yourself whether to continue. The chain cannot be delegated: a collection EEC cannot issue subordinate certificates.
-
-Runtime chain verification in the web build follows the scheme above; collection trust in the market is still migrating. See [trust chain and PKI signatures](docs/user/develop/basic/trust-chain.md) for the signing tools, revocation, and private key boundaries.
+See [trust chain and PKI signatures](docs/user/develop/basic/trust-chain.md) for the signing tools, revocation, and private key boundaries.
 
 
 ## Building plugins
@@ -98,23 +90,7 @@ To keep plugins standardized and maintainable, and to make your plugin easier fo
 
 Every dsc plugin is a `js script` conforming to the [dsc plugin artifact specification](docs/user/develop/basic/plugin-product-spec.md) during **runtime**.
 
-A plugin artifact can export a named `manifest`, so users do not need to supply one when installing from a URL:
-
-```js
-export const manifest = {
-  id: 'dsc-demo-log',
-  name: 'Demo Log',
-  version: '1.0.0',
-  capabilities: ['events:session', 'plugins:storage'],
-  contributions: ['session:changed'],
-}
-
-export const activate = (context) => {
-  context.log('demo log activated')
-}
-```
-
-The manifest may also live on the `default` export, and a top-level named export wins. When `installFromUrl(url, manifest)` receives a manifest explicitly, that manifest is used. If the artifact exports no manifest and none is supplied, the install is rejected.
+A plugin artifact can export a named `manifest`, so users do not need to supply one when installing from a URL; see the [dsc plugin artifact specification](docs/user/develop/basic/plugin-product-spec.md) for the manifest fields and export forms, and [building a plugin from scratch](docs/user/develop/framework/build-a-plugin.md) for a minimal example.
 
 A dsc plugin is loaded by `dsc-plugin-engine` and controls the whole Chat and its pages in a limited way through the standard interfaces provided by `dsc-plugin-engine`. Bypassing `dsc-plugin-engine` to interact with `dsc-core` directly is inappropriate; `dsc-plugin-engine` detects this behavior and raises an alert to the user.
 

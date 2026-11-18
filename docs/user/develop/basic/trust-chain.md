@@ -1,13 +1,13 @@
 # 信任链与 PKI 签名
 
-本文说明 dsc 的签名体系如何按 OpenSSL PKI 组织: 三个角色各持有什么、证书与签名产物是什么、吊销怎么做、信任数据如何分发,以及当前代码与目标的差距。内容与 `scripts/pki/ca.mjs`、`scripts/pki/pki.mjs`、`scripts/build-online-data.mjs` 的当前实现一致,未实现的能力不写入本文。
+本文说明 dsc 的签名体系如何按 OpenSSL PKI 组织: 三个角色各持有什么、证书与签名产物是什么、吊销怎么做、信任数据如何分发,。内容与 `scripts/pki/ca.mjs`、`scripts/pki/pki.mjs`、`scripts/build-online-data.mjs` 的当前实现一致,未实现的能力不写入本文。
 
 ## 角色
 
 | 角色 | 承担者 | 持有物 | 职责 |
 |:---:|:---:|:---:|:---:|
 | 根证书机构(CA) | DeepSeek-Chat-Enhanced 仓库 | 根私钥(离线,不入库)、根证书 | 签发终端签名证书(EEC),维护吊销列表 |
-| 终端签名方(EEC) | 插件合集,目前为 awesome-dsc-plugin | EEC 私钥(CI secret)、EEC 证书 | 用 CMS 分离签名给网页与插件文件签名 |
+| 终端签名方(EEC) | 插件合集,如 awesome-dsc-plugin 与 dsc-inner-plugin | EEC 私钥(CI secret)、EEC 证书 | 用 CMS 分离签名给网页与插件文件签名 |
 | 独立签名方 | 插件作者,含 omdsc-dev 自身 | 作者密钥对 | 用裸公钥分离签名给插件文件签名 |
 
 信任锚只有根证书。EEC 由根证书签发,不能再签发下级证书;作者签名与 EEC 签名是两条独立的信任路径,互不替代。
@@ -233,16 +233,16 @@ dist/
 
 根 CA 只签发 EEC,不参与日常签名;合集 CI 只用 EEC 私钥签文件,不接触根私钥。
 
-## 当前实现状态
+## 实现范围
 
-网页产物与合集信任都已按证书链落地,吊销检查也已接入运行时:
+网页产物与合集信任都按证书链校验,吊销检查也接入运行时:
 
-| 项 | 现状 | 下一步 |
-|:---:|:---:|:---:|
-| 网页产物签名 | `sign-web` 子命令产出 `<文件>.sig` 与 `web_files.json` 清单 | 已完成 |
-| 运行时校验 | 页面用内嵌根证书与 `web/eec.pem` 的证书链校验全部签名 | 已完成 |
-| 合集信任 | 市场按 online-data 的 `index.json` 取各合集 EEC,校验证书链后判定可信 | 已完成 |
-| 吊销检查 | `index.json` 登记 `crl` 时,网页 EEC 与合集 EEC 都按 CRL 检查吊销 | 已完成 |
+| 项 | 实现方式 |
+|:---:|:---:|
+| 网页产物签名 | `sign-web` 子命令产出 `<文件>.sig` 与 `web_files.json` 清单 |
+| 运行时校验 | 页面用内嵌根证书与 `web/eec.pem` 的证书链校验全部签名 |
+| 合集信任 | 市场按 online-data 的 `index.json` 取各合集 EEC,校验证书链后判定可信 |
+| 吊销检查 | `index.json` 登记 `crl` 时,网页 EEC 与合集 EEC 都按 CRL 检查吊销 |
 
 网页产物的签名范围、清单结构与校验流程见 [网页签名与运行时校验](web-signature.md)。
 

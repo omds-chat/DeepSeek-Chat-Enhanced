@@ -8,13 +8,13 @@
 </div>
 
 > [!IMPORTANT]
-> 本仓库是 DeepSeek 官方仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-demo/) 的增强分支,由社区维护,与DeepSeek官方无直接关联。
+> 本仓库是 DeepSeek 官方仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-demo/) 的增强分支,由社区维护,与 DeepSeek 官方无直接关联。
 
 DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-demo/) 是一个基于 DeepSeek API 的静态聊天示例。无需应用后端,浏览器直接请求配置的 API 服务。
 
 这是一个基于 [deepseek-ai/Chat-Demo](https://github.com/deepseek-ai/chat-demo/) 的分支版本,整合了 dsh 的部分增强功能,使您的聊天体验更加友好。
 
-本分支对源仓库做了以下 **功能增强** ：
+本分支对源仓库做了以下 **功能增强**：
 
 1. 效仿 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的理念 “Everything is a Plugin.”,引入了插件体系,制定了统一的插件规范。
 2. 内置了以下基础插件：
@@ -22,13 +22,11 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 | 插件名称 | 介绍 |
 |:---:|:---:|
 | `dsc-core` | dsc核心,运行Chat-Demo的基本服务 |
-| `dsc-plugin-engine` | dsc插件引擎,实现插件体系的中间层  |
+| `dsc-plugin-engine` | dsc插件引擎,实现插件体系的中间层 |
 | `dsc-market` | dsc插件市场,读取外源插件索引,为插件面板的「插件市场」提供列表与查询 |
 | 其他同源插件 | 详见 [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) |
 
 其中 `dsc-market` 由插件引擎装载,可在插件面板的「已安装」中看到;`dsc-core` 与 `dsc-plugin-engine` 是宿主侧的基础模块,不进入插件列表。
-
-<!-- 任何一个dsc插件都必须以 `dsc-` 开头 -->
 
 我们沿用了 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的部分设计理念和仓库规范,但针对 Chat 场景我们做了一些 **必要的改变**,详见 [DSC与DSH差异文档](docs/intro/dsc-diff-dsh.md)
 
@@ -50,8 +48,6 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 > 由 [OMDSC-Market](https://omdsc-market.com/) 提供的插件可能存在审查遗漏,使用前请先查证其来源和安全性。<br>
 > 如遇恶意插件,你可以 [提交Issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new) 或 [联系 OMDSC-Market](mailto:JularDepick@gmail.com?subject=恶意插件举报) 甚至 [直接联系 omdsc-dev](mailto:JularDepick@gmail.com?subject=恶意插件举报) 进行举报、要求移除。但我们无法挽回你的损失,请及时移除恶意插件并更新您的 API Key 。
 
-<!-- 链接事项: OMDSC-Market 需要预设恶意插件紧急下线流程、恶意插件广播公告 -->
-
 
 ## 插件面板
 
@@ -62,9 +58,9 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 | 已安装 | 列出插件的名称、版本、状态与来源,可启用、停用、卸载,并查看插件日志 |
 | 插件市场 | 读取插件索引并列出可安装的插件,可刷新索引并直接安装 |
 
-「已安装」标签页底部提供「从地址安装」:输入插件产物的 `https` 地址即可安装,本机调试也可用 `http://localhost`、`http://127.0.0.1` 或 `http://[::1]` 地址;清单由产物自带的 `manifest` 导出提供。
+「已安装」标签页底部提供两个安装入口:「从地址安装」输入插件产物的 `https` 地址即可安装,清单由产物自带的 `manifest` 导出提供;「从本地安装」选择一个离线包文件,安装前可在确认对话框中核对插件名称、版本、作者与签名状态。
 
-安装记录与启用状态保存在浏览器本地,下次打开页面时自动恢复。
+安装记录与启用状态保存在浏览器本地,下次打开页面时自动恢复。来自在线来源的插件在出现新版本时显示「可更新」,可在面板中直接更新。
 
 普通用户的操作说明见 [插件使用指南](docs/user/guide/plugins.md) 。
 
@@ -79,15 +75,11 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 插件市场收录的插件 **必须符合** [dsc插件开发规范](docs/user/develop/basic/plugin-develop-spec.md) 。
 
-插件来源遵循 PKI 签名体系:
+插件来源遵循证书签名体系:每个来源持有由 omdsc-dev 根证书签发的签名证书,插件产物与网页产物都带该来源的签名,浏览器在安装、启动插件与打开页面时校验。插件作者还可以用自己的私钥对同一插件额外签名,该签名与来源签名并存。
 
-1. omdsc-dev 作为根证书机构签发终端签名证书(EEC),合集用 EEC 对收录的插件做 CMS 分离签名,产物是插件版本目录的 `plugin.js.sig` 与 `meta.json.sig` 。
-2. 插件作者还可以用自己的私钥对同一插件自签名,产物是 `plugin.js.author.sig`,与合集签名并存。
-3. 合集的 EEC 由根证书签发,根证书与各合集 EEC 通过 online-data 分支分发;合集可信性由证书链证明,不再单独签发合集信任签名。
+来源可信性由证书链证明,插件市场、插件面板与网页运行时按同一套证书校验,没有额外的合集信任签名。校验不通过时只给出警告,不阻止安装或使用,由你自行判断是否继续。
 
-市场先校验证书链,通过后才信任该来源的 EEC,再用它校验插件签名;网页产物同样用 EEC 的 CMS 签名自校验。校验不通过时市场会给出警告,但不会阻止安装,由你自行判断是否继续使用。证书链不支持下级派生: 合集 EEC 不能签发下级证书。
-
-网页运行时的证书链校验已按上述约定实现,插件市场的合集信任仍在迁移。签发工具、重签时机、吊销与私钥边界见 [信任链与 PKI 签名](docs/user/develop/basic/trust-chain.md) 。
+签发工具、重签时机、吊销与私钥边界见 [信任链与 PKI 签名](docs/user/develop/basic/trust-chain.md) 。
 
 
 ## 制作插件
@@ -98,23 +90,7 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 每一个dsc插件在 **运行阶段** 都是一个符合 [dsc插件产物规范](docs/user/develop/basic/plugin-product-spec.md) 的 `js脚本` 。
 
-插件产物可以导出具名 `manifest`,用户从地址安装时就不需要再提供清单:
-
-```js
-export const manifest = {
-  id: 'dsc-demo-log',
-  name: 'Demo Log',
-  version: '1.0.0',
-  capabilities: ['events:session', 'plugins:storage'],
-  contributions: ['session:changed'],
-}
-
-export const activate = (context) => {
-  context.log('demo log activated')
-}
-```
-
-清单也可以挂在 `default` 导出对象上,模块顶层的具名导出优先;`installFromUrl(url, manifest)` 显式传入清单时以传入的为准。产物未导出清单且安装时也没有提供清单,安装会被拒绝。
+插件产物可以导出具名 `manifest`,用户从地址安装时就不需要再提供清单,清单字段与导出形态见 [dsc插件产物规范](docs/user/develop/basic/plugin-product-spec.md) ,最小示例见 [从零编写一个 dsc 插件](docs/user/develop/framework/build-a-plugin.md) 。
 
 dsc插件由 `dsc-plugin-engine` 负责引入,并通过交互 `dsc-plugin-engine` 提供的标准接口来有限地控制整个Chat及其页面。绕过 `dsc-plugin-engine` 直接交互 `dsc-core` 是不合适的,该行为会被 `dsc-plugin-engine` 识别并报出警报给用户。
 

@@ -31,16 +31,16 @@ dsc-market/
 
 一个来源由名称与一组 `base_url` 组成,`base_url` 按数组顺序尝试,单个请求最多等待 1 秒,失败自动切下一个。
 
-内置来源的列表顺序即默认优先级，`dsc-inner-plugin` 在前，`awesome-dsc-plugin` 在后。
+内置来源的列表顺序即默认优先级,`dsc-inner-plugin` 在前,`awesome-dsc-plugin` 在后。
 
-| 来源 | base_url（按优先级） |
+| 来源 | base_url(按优先级) |
 |:---:|:---:|
 | `dsc-inner-plugin` | `https://omdsc-dev.github.io/dsc-inner-plugin/` |
 | `awesome-dsc-plugin` | `https://cdn.jsdelivr.net/gh/omdsc-dev/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omdsc-dev/awesome-dsc-plugin/main/`、`https://omdsc-dev.github.io/awesome-dsc-plugin/` |
 
 来源 id 与合集目录名一致,因此可以直接命中 online-data 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。来源类型仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
 
-两个内置来源不可删除,可以改 `base_url` 列表与顺序;用户还可以新增、删除、排序自定义来源。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。界面默认选中列表第一个来源。
+内置来源不可删除,可以改 `base_url` 列表与顺序;用户还可以新增、删除、排序自定义来源。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。界面默认选中列表第一个来源。
 
 地址判定与引擎的插件来源判定一致:允许 `https://` 任意主机,或 `http://localhost`、`http://127.0.0.1`、`http://[::1]`。写入前统一去掉查询与哈希并补齐尾部斜杠。
 
@@ -54,18 +54,18 @@ dsc-market/
 4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息。
 5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `datalog.json` 反查。签名材料的地址同样交给引擎:合集证书在来源可信时取信任清单里的 `eec` 证书,否则交给引擎拉取 `<base_url>/eec.pem`;CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
 
-合集的可信性由「根 CA 签发的 EEC」证明,来源不再提供 `plugin_set_sign.json` 一类的信任签名。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
+合集的可信性由「根 CA 签发的 EEC」证明,没有额外的合集信任签名(旧结构见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md))。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
 
 ## 信任状态
 
 | 状态 | 判定 | 界面行为 |
 |:---:|:---:|:---:|
 | `trusted` | 信任清单里该来源的 EEC 证书链校验通过 | 允许浏览与安装 |
-| `endorsed` | 来源由 dsc 直接背书，即内置的 `dsc-inner-plugin` 内部插件索引；信任清单里登记了它的 EEC 时仍按证书链校验，两种判定都通过才记为背书，链校验不通过仍记为不可信 | 显示「dsc 背书」标识，与社区合集的「可信」区分；安装与验签流程与其他来源完全一致，不跳过任何校验 |
+| `endorsed` | 来源由 dsc 直接背书,即内置的 `dsc-inner-plugin` 内部插件索引;信任清单里登记了它的 EEC 时仍按证书链校验,两种判定都通过才记为背书,链校验不通过仍记为不可信 | 显示「dsc 官方维护」标识,与社区合集的「可信」区分;安装与验签流程与其他来源完全一致,不跳过任何校验 |
 | `untrusted` | 清单里有该来源,但证书链校验不通过或证书文件缺失 | 仍列出目录并保留「不可信」标识与警告;安装仍可进行,第一次点击转为 3 秒确认态 |
 | `unverified` | online-data 信任清单里没有该来源,或构建未注入根证书 `__ROOT_CA_PEM__` | 允许浏览;安装前需要用户二次确认风险 |
 
-`dsc-inner-plugin` 是 dsc 直接签名的内部插件索引，由 dsc 背书而不是由合集 EEC 链证明，因此单列 `endorsed` 状态。背书来源仍走与外部来源相同的安装通道：验签、落库与启动校验全部由 `dsc-plugin-engine` 完成，市场侧不为 inner 提供任何跳过校验的分支。用户自建的来源即使 id 与内部索引相同也不按背书处理，`isEndorsedSource` 要求来源是内置来源。
+`dsc-inner-plugin` 是 dsc 直接签名的内部插件索引,由 dsc 背书而不是由合集 EEC 链证明,因此单列 `endorsed` 状态。背书来源仍走与外部来源相同的安装通道：验签、落库与启动校验全部由 `dsc-plugin-engine` 完成,市场侧不为 inner 提供任何跳过校验的分支。用户自建的来源即使 id 与内部索引相同也不按背书处理,`isEndorsedSource` 要求来源是内置来源。
 
 信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时注入。信任清单里的 `root_ca.crt` 必须与内嵌根证书逐字一致,否则整份清单不被采信,所有来源按未校验处理;这可以避免镜像方自带根证书自签 EEC。
 
@@ -75,12 +75,12 @@ dsc-market/
 
 | 环节 | 做法 |
 |:---:|:---:|
-| 数据基址 | 优先取安装记录里的 `dataBase`；旧记录没有该字段时，由 `source_url` 去掉 `plugin.js` 得到版本目录 |
-| 最新版本 | 请求版本目录上一级的 `versions.json`，取其中的 `latest` |
-| 判定 | 本地 `manifest.version` 落后为「可更新」，相同或更高为「已是最新」，版本号不合法或没有来源时不显示任何标注 |
-| 请求约束 | 单个请求超时 1 秒，并发上限 4，失败静默；结果按插件目录缓存 5 分钟 |
+| 数据基址 | 优先取安装记录里的 `dataBase`;旧记录没有该字段时,由 `source_url` 去掉 `plugin.js` 得到版本目录 |
+| 最新版本 | 请求版本目录上一级的 `versions.json`,取其中的 `latest` |
+| 判定 | 本地 `manifest.version` 落后为「可更新」,相同或更高为「已是最新」,版本号不合法或没有来源时不显示任何标注 |
+| 请求约束 | 单个请求超时 1 秒,并发上限 4,失败静默;结果按插件目录缓存 5 分钟 |
 
-「可更新」是强提示，点击后按钮转为 3 秒确认态，确认后由 `reinstallPlan` 生成重新安装计划：产物与签名材料地址按已安装记录的版本目录推导，证书与吊销结论沿用同址来源的判定。引擎没有覆盖安装入口，因此界面先卸载旧记录再按最新版重新安装；新版本安装失败时按记录里的版本回滚。
+「可更新」是强提示,点击后按钮转为 3 秒确认态,确认后由 `reinstallPlan` 生成重新安装计划：产物与签名材料地址按已安装记录的版本目录推导,证书与吊销结论沿用同址来源的判定。引擎没有覆盖安装入口,因此界面先卸载旧记录再按最新版重新安装;新版本安装失败时按记录里的版本回滚。
 
 ## 下载计数
 
@@ -104,9 +104,9 @@ dsc-market/
 | 区域 | 内容 |
 |:---:|:---:|
 | 顶部 | 来源列表:名称、当前生效的 `base_url`、信任状态、下载计数标识、刷新、编辑、排序与删除;新增来源表单 |
-| 主体 | 选中来源的插件目录:插件名、作者、标签、最新版本、简介（来自该版本的 `meta.json`）与安装按钮 |
+| 主体 | 选中来源的插件目录:插件名、作者、标签、最新版本、简介(来自该版本的 `meta.json`)与安装按钮 |
 
-来源不可信与信任未校验时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。证书取自 online-data 信任清单时,目录上方显示「证书来自 online-data 信任清单」。
+来源不可信或信任未知时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。证书取自 online-data 信任清单时,目录上方显示「来源证书由 dsc 统一校验」。
 
 ## 对外接口
 
