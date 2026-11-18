@@ -57,17 +57,20 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 | `notify` | 10 次 / 10 秒 | 同步调用 | `context.ui.notify` |
 | `settings:locale` | 60 次 / 10 秒 | 3 秒 | `context.settings.locale` |
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
+| `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
 | `plugins:storage` | 100 次 / 10 秒 | 同步调用 | `context.storage.get`、`set`、`remove` |
 
 超限抛 `PluginRateLimitError`，未授予抛 `PluginCapabilityError`，超时抛 `PluginTimeoutError`，取消抛 `PluginAbortError`；限流与超时同时用既有 Toast 提示。
 
-`plugins:data-clear` 是引擎管理专用能力，不在 `CORE_CAPABILITIES` 内，插件清单申请它时按 `unknown-capability` 拒绝，也不会出现在插件上下文中。
+`plugins:data-clear` 是引擎管理专用能力，不在 `CORE_CAPABILITIES` 内，插件清单申请它时按 `unknown-capability` 拒绝，也不会出现在插件上下文中。`net:fetch-post` 同理：它是 `context.net.postJson` 背后的独立能力标识，有自己的限流窗口与超时，插件清单不能申请，只能通过 `net:fetch` 的授予间接使用。
 
 ### net:fetch 的可见性
 
 `net:fetch` 只对内置插件开放。引擎启动时把 `builtin.ts` 里的插件 id 登记进注册表；安装校验时若清单申请了 `net:fetch` 而 id 不在集合内，直接返回 `unknown-capability`，第三方插件无法把它与一个不存在的能力区分开。能力调用层会再校验一次，防止绕过安装校验直接拿到 `context.net`。
 
 请求约束全部由 `dsc-core` 的 `net.ts` 落实：只允许 https 与 GET，不发送 Cookie 与自定义请求头（`credentials: 'omit'`），只接受 `text/*` 与 `application/json` 响应，响应体上限 512KB，超时 10 秒并用 `AbortController` 真正中止请求。网络失败与解析失败由插件自行降级，引擎不弹宿主提示。
+
+`context.net.postJson` 面向不计结果的计数请求：只允许 https 与 JSON 请求体，请求体与响应体上限各 4KB，超时 5 秒，不跟随重定向，响应体丢弃只回传状态码。它复用 `net:fetch` 的授予口径，但用自己的限流窗口，避免计数请求挤占读取预算。
 
 ### 持久化与启动恢复
 

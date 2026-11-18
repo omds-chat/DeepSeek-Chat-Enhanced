@@ -5,7 +5,7 @@ import { renameSession, useChatStore } from '../../services/chat/store.js'
 import type { Message, ReplyBlock, Session, SessionSummary, TextPart } from '../../services/chat/types.js'
 import { useSettings, type Locale } from '../../services/settings.js'
 import { isCredential, recordBypass, type CoreCredential } from './guard.js'
-import { fetchText } from './net.js'
+import { fetchText, postJson } from './net.js'
 import {
   clearPluginData,
   readPluginEntry,
@@ -122,6 +122,7 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     registerCoreService('notify', notify)
     registerCoreService('settings:locale', currentLocale)
     registerCoreService('net:fetch', fetchText)
+    registerCoreService('net:fetch-post', postJson)
     registerCoreService('plugins:storage', pluginDataService)
     registerCoreService('plugins:data-clear', clearPluginData)
     opened = true
@@ -135,6 +136,8 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     notify: (call, key, params) => requireCoreService(call, 'notify')(key, params),
     subscribe: (call, listener) => requireCoreService(call, 'events:session')(listener),
     fetchText: (call, url, signal) => requireCoreService(call, 'net:fetch')(url, signal),
+    postJson: (call, url, body, signal) =>
+      requireCoreService(call, 'net:fetch-post')(url, body, signal),
     readPluginEntry: (call, pluginId, key) =>
       requireCoreService(call, 'plugins:storage')({
         op: 'read',

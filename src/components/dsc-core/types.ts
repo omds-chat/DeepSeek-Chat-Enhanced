@@ -15,6 +15,7 @@ export type CoreCapabilityId =
   | 'net:fetch'
   | 'plugins:storage'
   // 引擎管理专用，不在 CORE_CAPABILITIES 内，插件申请时按未知能力拒绝
+  | 'net:fetch-post'
   | 'plugins:data-clear'
 
 /** 全部核心能力；引擎据此校验插件申请 */
@@ -66,6 +67,12 @@ export type CoreFetchResult = {
   text: string
 }
 
+/** 计数请求结果；响应体被丢弃，只回传最终地址与状态码 */
+export type CorePostResult = {
+  url: string
+  status: number
+}
+
 /** 插件数据操作；三条能力共用 plugins:storage 服务 */
 export type CoreStorageCall =
   | { op: 'read'; pluginId: string; key: string }
@@ -82,6 +89,12 @@ export type CoreApi = {
   notify(call: CoreCall, key: TranslationKey, params?: TranslationParams): void
   subscribe(call: CoreCall, listener: (event: CoreEvent) => void): () => void
   fetchText(call: CoreCall, url: string, signal?: AbortSignal): Promise<CoreFetchResult>
+  postJson(
+    call: CoreCall,
+    url: string,
+    body: unknown,
+    signal?: AbortSignal
+  ): Promise<CorePostResult>
   readPluginEntry(call: CoreCall, pluginId: string, key: string): { value: unknown } | null
   writePluginEntry(call: CoreCall, pluginId: string, key: string, value: unknown): void
   removePluginEntry(call: CoreCall, pluginId: string, key: string): void

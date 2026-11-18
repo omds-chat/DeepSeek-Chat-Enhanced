@@ -77,9 +77,16 @@ export type NetResponse = {
   text: string
 }
 
-/** 外源请求能力；只支持 https 的 GET 文本请求 */
+/** 计数请求结果；响应体被丢弃，只回传最终地址与状态码 */
+export type NetPostResponse = {
+  url: string
+  status: number
+}
+
+/** 外源请求能力；GET 读文本，POST 只发一次 JSON 请求体且丢弃响应 */
 export type NetCapability = {
   getText(url: string, options?: CallOptions): Promise<NetResponse>
+  postJson(url: string, body: unknown, options?: CallOptions): Promise<NetPostResponse>
 }
 
 /** 插件数据能力；值必须可 JSON 序列化 */

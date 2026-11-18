@@ -31,6 +31,8 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'settings:locale': { limit: 60, windowMs: 10000, timeoutMs: 3000 },
   // 内层 10 秒超时由 dsc-core 的 net:fetch 自己中止请求，这里只做外层兜底
   'net:fetch': { limit: 10, windowMs: 10000, timeoutMs: 12000 },
+  // 内层 5 秒超时由 dsc-core 的计数请求自己中止，POST 与 GET 各用一个窗口，避免互相挤占
+  'net:fetch-post': { limit: 10, windowMs: 10000, timeoutMs: 7000 },
   'plugins:storage': { limit: 100, windowMs: 10000, timeoutMs: 3000 },
   // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
   'plugins:data-clear': { limit: 0, windowMs: 10000, timeoutMs: 3000 },
@@ -241,6 +243,13 @@ export const createPluginContext = ({
         ensureBuiltinOnly('net:fetch')
         // 网络与解析失败由插件自行降级，这里不弹宿主提示，避免离线时反复打扰
         return await core.fetchText(newCall('net:fetch'), url, options?.signal)
+      }),
+    postJson: (url, body, options) =>
+      invoke('net:fetch-post', options, async () => {
+        // POST 复用 net:fetch 的申请口径，插件清单仍只声明 net:fetch
+        ensureGranted('net:fetch')
+        ensureBuiltinOnly('net:fetch')
+        return await core.postJson(newCall('net:fetch-post'), url, body, options?.signal)
       }),
   }
 

@@ -4,6 +4,7 @@ import type {
   CoreCapabilityId,
   CoreEvent,
   CoreFetchResult,
+  CorePostResult,
   CoreSessionSummary,
   CoreSessionView,
   CoreStorageCall,
@@ -18,6 +19,7 @@ export type CoreServiceTable = {
   notify: (key: TranslationKey, params?: TranslationParams) => void
   'settings:locale': () => 'zh-CN' | 'en-US'
   'net:fetch': (url: string, signal?: AbortSignal) => Promise<CoreFetchResult>
+  'net:fetch-post': (url: string, body: unknown, signal?: AbortSignal) => Promise<CorePostResult>
   'plugins:storage': (call: CoreStorageCall) => unknown
   'plugins:data-clear': (pluginId: string) => void
 }

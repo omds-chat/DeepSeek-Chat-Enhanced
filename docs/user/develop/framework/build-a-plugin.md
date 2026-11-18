@@ -113,9 +113,11 @@ export const activate = (context) => {
 | `notify` | 全部插件 | `context.ui.notify` | 10 次 / 10 秒 |
 | `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
-| `net:fetch` | 仅内置插件 | `context.net.getText` | 10 次 / 10 秒 |
+| `net:fetch` | 仅内置插件 | `context.net.getText`、`context.net.postJson` | 10 次 / 10 秒 |
 
 `net:fetch` 只对内置插件开放。第三方插件在清单里申请它时,安装结果为 `unknown-capability`,与申请一个不存在的能力表现一致;调用层还会再校验一次。
+
+`context.net.postJson` 只发一次 JSON 请求体,不等待响应内容:只允许 https,请求体与响应体上限各 4KB,超时 5 秒,不跟随重定向,响应体被丢弃。它面向不计结果的计数类请求,插件清单仍然只声明 `net:fetch`。
 
 各能力的完整签名与可见数据范围见 [dsc 插件开发规范](../basic/plugin-develop-spec.md)。
 

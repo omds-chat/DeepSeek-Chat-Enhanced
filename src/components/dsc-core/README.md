@@ -30,7 +30,7 @@ dsc-core/
 ├── types.ts       # 核心接口与能力类型
 ├── registry.ts    # 核心服务注册表
 ├── guard.ts       # 调用凭证与绕过检测
-├── net.ts         # net:fetch 的唯一实现：https GET、体积与超时约束
+├── net.ts         # net:fetch 的唯一实现：https GET 读文本与受限 POST、体积与超时约束
 ├── plugin-data.ts # plugins:storage 的唯一实现：localStorage 与 64KB 配额
 └── README.md      # 归属边界与接口说明
 ```
@@ -48,6 +48,7 @@ dsc-core/
 | `notify` | `notify` | 复用既有 Toast 与 i18n 文案键 | 需限流 |
 | `settings:locale` | `currentLocale` | 只读当前语言 | 可开放 |
 | `net:fetch` | `fetchText` | 读取外源文本资源，只有 https 与 GET | 需限流 |
+| `net:fetch-post` | `postJson` | 发送一次 JSON POST，响应体丢弃，只回传状态码 | 仅引擎 |
 | `plugins:storage` | `readPluginEntry`、`writePluginEntry`、`removePluginEntry` | 插件自身的键值数据，单插件 64KB | 需限流 |
 | `plugins:data-clear` | `clearPluginData` | 清除单个插件的全部数据，只供引擎卸载时调用 | 仅引擎 |
 
@@ -66,7 +67,21 @@ dsc-core/
 | 响应体 | 上限 512KB，流式读取中超限立即中止并抛错 |
 | 超时 | 10 秒，超时用 `AbortController` 真正中止请求 |
 
-失败统一抛 `PluginFetchError`，`reason` 取值为 `url`、`protocol`、`timeout`、`aborted`、`status`、`content-type`、`too-large`、`network`。
+### 计数请求的额外约束
+
+`postJson` 是 `net:fetch-post` 的唯一实现，与 GET 分开注册，插件仍只申请 `net:fetch`：
+
+| 约束 | 规定 |
+|:---:|:---:|
+| 协议 | 只允许 `https:` |
+| 方法 | 只允许 POST，请求体固定 JSON，`Content-Type` 固定 `application/json` |
+| 请求头 | 不发送自定义请求头，`credentials` 固定 `omit` |
+| 重定向 | 不跟随，出现 3xx 或 `opaqueredirect` 直接拒绝 |
+| 请求体 | 上限 4KB，超出直接拒绝 |
+| 响应体 | 上限 4KB，读到上限即停止并丢弃，不交给调用方 |
+| 超时 | 5 秒，超时用 `AbortController` 真正中止请求 |
+
+失败统一抛 `PluginFetchError`，`reason` 取值为 `url`、`protocol`、`timeout`、`aborted`、`status`、`content-type`、`too-large`、`body`、`redirect`、`network`。
 
 ## 插件数据约束
 

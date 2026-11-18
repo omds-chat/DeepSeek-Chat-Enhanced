@@ -1,15 +1,18 @@
 # dsc-market
 
-`dsc-market` 是 dsc 的内置插件，负责拉取外源插件索引、校验结构、缓存到浏览器本地，并对外提供查询。它不渲染任何界面，后续插件市场页面通过 `market()` 取用。
+`dsc-market` 是 dsc 的内置插件,负责按来源拉取插件目录、校验来源信任链、组装安装计划并上报下载计数。它不渲染界面,插件面板的「插件市场」标签页通过 `market()` 取用。
 
 ## 目录结构
 
 ```
 dsc-market/
-├── index.ts   # 插件对象与清单导出（activate / deactivate）
-├── types.ts   # 索引条目与查询结果类型
-├── client.ts  # 索引拉取、校验、缓存、离线降级
-└── README.md  # 机制说明
+├── index.ts    # 插件对象与清单导出（activate / deactivate）
+├── client.ts   # 来源解析、目录拉取、缓存、安装计划
+├── sources.ts  # 来源配置：默认值、地址校验、持久化
+├── trust.ts    # 信任链校验：dsc 公钥验合集信任签名
+├── count.ts    # 下载计数上报
+├── types.ts    # 来源、目录条目与运行态类型
+└── README.md   # 机制说明
 ```
 
 ## 清单
@@ -21,58 +24,68 @@ dsc-market/
 | `engines` | `^1.0.0` |
 | `capabilities` | `net:fetch`、`plugins:storage` |
 
-`net:fetch` 只对内置插件开放，因此该插件必须由 `dsc-plugin-engine` 的 `builtin.ts` 装载，作为外部插件安装会因 `unknown-capability` 被拒绝。
+`net:fetch` 只对内置插件开放,因此该插件必须由 `dsc-plugin-engine` 的 `builtin.ts` 装载,作为外部插件安装会因 `unknown-capability` 被拒绝。计数请求走 `context.net.postJson`,它的能力标识是 `net:fetch-post`,由 `net:fetch` 的授予间接放行,清单不额外声明。
 
-## 索引格式
+## 来源模型
 
-默认地址为 `https://omdsc-dev.github.io/awesome-dsc-plugin/index.json`，该站点尚未上线，当前拉取属于预期失败。索引为 JSON 对象：
+一个来源由名称与一组 `base_url` 组成,`base_url` 按数组顺序尝试,单个请求最多等待 1 秒,失败自动切下一个。
 
-```json
-{
-  "schemaVersion": 1,
-  "plugins": [
-    {
-      "id": "demo-plugin",
-      "name": "Demo",
-      "version": "0.1.0",
-      "description": "示例插件",
-      "author": "omdsc-dev",
-      "homepage": "https://example.com/demo",
-      "download": "https://example.com/demo.js",
-      "manifest": {}
-    }
-  ]
-}
-```
-
-| 字段 | 必填 | 规定 |
-|:---:|:---:|:---:|
-| `schemaVersion` | 是 | 数字，当前只接受 `1` |
-| `plugins` | 是 | 数组 |
-| `plugins[].id` | 是 | 非空字符串 |
-| `plugins[].name` | 是 | 非空字符串 |
-| `plugins[].version` | 是 | 非空字符串 |
-| `plugins[].description` | 是 | 字符串，可为空 |
-| `plugins[].author` | 是 | 字符串，可为空 |
-| `plugins[].homepage` | 是 | 字符串，可为空 |
-| `plugins[].download` | 是 | 字符串，可为空 |
-| `plugins[].manifest` | 否 | 内联完整清单，形态不符时该条目的 `manifest` 被丢弃 |
-
-单条缺字段或类型不符时只跳过该条并计入 `skipped`，不影响整份索引。顶层结构不符（不是对象、`schemaVersion` 不是 1、`plugins` 不是数组）视为整份索引无效。
-
-## 缓存与降级
-
-| 情形 | 行为 |
+| 来源 | base_url（按优先级） |
 |:---:|:---:|
-| 缓存未过期（6 小时内） | 直接使用缓存，不发起请求 |
-| 缓存过期后拉取成功 | 覆盖缓存，状态 `ready` |
-| 网络失败或超时 | 回退到旧缓存，状态 `stale`，`error` 为 `pluginIndexFetchFailed` |
-| 解析失败或结构不符 | 回退到旧缓存，状态 `stale`，`error` 为 `pluginIndexInvalid` |
-| 无缓存且失败 | 返回空列表，状态 `stale`，同上 `error` |
+| `awesome` | `https://cdn.jsdelivr.net/gh/omdsc-dev/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omdsc-dev/awesome-dsc-plugin/main/`、`https://omdsc-dev.github.io/awesome-dsc-plugin/` |
+| `inner` | `https://omdsc-dev.github.io/dsc-inner-plugin/` |
 
-所有失败都收敛成状态，不向宿主抛出，也不弹提示。缓存写入失败（例如超过 `plugins:storage` 的 64KB 上限）不影响本次查询结果。
+两个内置来源不可删除,可以改 `base_url` 列表与顺序;用户还可以新增、删除、排序自定义来源。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。
 
-索引地址可在 `plugins:storage` 中改写：写入键 `index-url`，值为 `{ "url": "https://..." }`，只接受 https，否则退回默认地址。
+地址判定与引擎的插件来源判定一致:允许 `https://` 任意主机,或 `http://localhost`、`http://127.0.0.1`、`http://[::1]`。写入前统一去掉查询与哈希并补齐尾部斜杠。
+
+## 拉取与校验流程
+
+对每个来源依次执行:
+
+1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
+2. 取 `<base_url>/plugin_secret.pub` 与 `<base_url>/plugin_set_sign.json`,用内嵌的 dsc 公钥校验信任签名。被签名对象是该来源的 `plugin_secret.pub` 字节,先做 SHA-512 摘要再验 Ed25519,`signer` 必须为 `dsc`。
+3. 取 `<base_url>/datalog.json` 得到插件目录,每条包含 `plugin_name`、`author`、`tag`。
+4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息,同时取该版本目录下的 `plugin_sign.json` 取出 `for` 为 `plugin.js` 的签名。
+5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,用该来源的 `plugin_secret.pub` 作为 `pub`、第 4 步取到的签名作为 `sign`,调用引擎的 `installFromUrl(url, manifest, { sourceType, pub, sign })`。
+
+同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的公钥拼在一起。
+
+## 信任状态
+
+| 状态 | 判定 | 界面行为 |
+|:---:|:---:|:---:|
+| `trusted` | 某个 `base_url` 的信任签名校验通过 | 允许浏览与安装 |
+| `untrusted` | 可达但签名不通过,或缺少 `plugin_set_sign.json`、`plugin_secret.pub` | 仍列出目录,安装按钮禁用并说明原因 |
+| `unverified` | 构建未注入 `__WEB_PUBLIC_KEY__` | 允许浏览;安装前需要用户二次确认风险 |
+
+`__WEB_PUBLIC_KEY__` 由 `rspack.config.ts` 在构建时由 `WEB_PRIVATE_KEY` 推导注入,为空时无法校验信任链。
+
+## 下载计数
+
+来源的 `meta.json` 中 `DOWNLOAD_COUNT_ENABLE` 为真且 `DOWNLOAD_COUNT_API` 为合法地址时,每次安装成功都会向该地址发一次 POST:
+
+| 字段 | 说明 |
+|:---:|:---:|
+| `plugin` | 插件名称 |
+| `time` | 请求发送时间,ISO 8601 |
+
+请求不等待响应,失败静默,不阻塞安装。
+
+客户端不上报 IP。`API_NEED_IP` 为真表示该来源会记录请求来源 IP,由接收方从请求来源自行获取;客户端既不查询也不携带公网 IP,因此计数链路不产生任何第三方请求。该字段只用于界面提示,让用户知情。
+
+启用计数的来源在来源列表显示「下载计数」标识,并在目录上方给出说明;`API_NEED_IP` 为真时额外提示「该来源会记录请求来源 IP」。
+
+## 界面结构
+
+插件面板的「插件市场」标签页由 `src/components/plugins/MarketPlugins.tsx` 渲染:
+
+| 区域 | 内容 |
+|:---:|:---:|
+| 顶部 | 来源列表:名称、当前生效的 `base_url`、信任状态、下载计数标识、刷新、编辑、排序与删除;新增来源表单 |
+| 主体 | 选中来源的插件目录:插件名、作者、标签、最新版本、简介（来自该版本的 `meta.json`）与安装按钮 |
+
+来源不可信时安装按钮禁用并给出原因;信任未校验时安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎。
 
 ## 对外接口
 
@@ -80,11 +93,30 @@ dsc-market/
 import { market } from '../dsc-market/index.js'
 
 const client = market()
-await client?.refresh()        // 按 6 小时有效期拉取，force 为 true 时强制重拉
-client?.list('keyword')        // 列表，可按 id、名称、描述过滤
-client?.get('demo-plugin')     // 按 id 取单条
-client?.status()               // { state, fetchedAt, total, skipped, error }
-client?.url()                  // 当前生效的索引地址
+client?.sources()              // 来源列表
+client?.runtime('awesome')     // 来源运行态:state、baseUrl、trust、meta、plugins
+client?.selected()             // 当前选中的来源 id
+client?.select('awesome')
+await client?.refresh('awesome', true)  // 拉取并校验;force 为 true 时忽略缓存
+client?.addSource('自定义', ['https://example.com/plugins/'])
+client?.setBaseUrls('awesome', ['https://cdn.example.com/'])
+client?.moveSource('inner', -1)
+client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
+client?.plan('awesome', plugin)         // 安装计划:{ url, manifest?, sourceType, pub, sign }
+client?.countInstall('awesome', plugin) // 上报一次下载计数
 ```
 
-`list`、`get`、`status`、`url` 是同步快照，返回当前内存中的结果；`refresh` 是唯一的异步入口，并发调用会复用同一个请求。`status().error` 是文案键而不是文案本身，界面侧用宿主 i18n 翻译。
+`refresh`、`plan`、`countInstall` 之外的接口都是同步快照。界面用 `subscribe` 与 `version` 配合 `useSyncExternalStore` 订阅状态变化。
+
+## 缓存与失败处理
+
+| 情形 | 行为 |
+|:---:|:---:|
+| 目录已拉取且未超过 5 分钟 | 直接返回内存结果,不发起请求 |
+| 某个 `base_url` 超时或失败 | 切下一个 `base_url` |
+| 全部 `base_url` 失败 | 来源状态 `failed`,提示该来源所有地址都拉取失败 |
+| `datalog.json` 结构不符 | 目录为空并提示插件目录拉取失败 |
+| 单个插件 `versions.json` 或 `meta.json` 失败 | 该行标记失败原因,其余插件不受影响 |
+| 结构不符的目录条目 | 跳过并计入 `skipped` |
+
+目录缓存只在内存中,不写入 `plugins:storage`,避免 64KB 配额被大目录挤占。
