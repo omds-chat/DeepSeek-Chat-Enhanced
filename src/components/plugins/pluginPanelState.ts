@@ -1,16 +1,20 @@
 import { create } from 'zustand'
 
-/** 插件面板的标签页：已安装 / 插件市场 */
+/** 插件页的标签页：已安装 / 插件市场 */
 export type PluginPanelTab = 'installed' | 'market'
 
-/** 插件面板的开合状态与当前标签页 */
+/** 主区域的当前视图：对话 / 插件 */
+export type PluginView = 'chat' | 'plugins'
+
+/** 主区域视图与插件页的当前标签页 */
 export const usePluginPanel = create(() => ({
-  open: false,
+  view: 'chat' as PluginView,
   tab: 'installed' as PluginPanelTab,
 }))
 
-/** 打开面板；tab 为打开时选中的标签页 */
+/** 切到插件视图；tab 为进入时选中的标签页 */
 export const openPluginPanel = (tab: PluginPanelTab = 'installed') =>
-  usePluginPanel.setState({ open: true, tab })
+  usePluginPanel.setState({ view: 'plugins', tab })
 
-export const closePluginPanel = () => usePluginPanel.setState({ open: false })
+/** 回到对话视图 */
+export const showChat = () => usePluginPanel.setState({ view: 'chat' })

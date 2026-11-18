@@ -1,4 +1,3 @@
-import { APP_NAME } from '../brand.js'
 import type { zh } from './zh.js'
 
 export const en = {
@@ -15,7 +14,8 @@ export const en = {
     'Chats or attachments have not been saved locally. Retry before closing this page.',
   sessionDeleteFailed: 'Unable to delete this chat. Please try again.',
   settings: 'Settings',
-  appName: APP_NAME,
+  appNameLine1: 'DeepSeek-Chat',
+  appNameBadge: 'Enhanced',
   deleteSessionModalContentTitle: 'Delete chat?',
   deleteSessionWithFilesDescription:
     'This chat and its uploaded files will be permanently deleted and cannot be recovered. Delete this chat?',
@@ -190,6 +190,7 @@ export const en = {
   pluginIndexFetchFailed: 'Plugin index fetch failed',
   pluginIndexInvalid: 'Plugin index structure is invalid',
   pluginPanelTitle: 'Plugins',
+  pluginRefresh: 'Refresh',
   pluginTabInstalled: 'Installed',
   pluginTabMarket: 'Plugin market',
   pluginColumnName: 'Name',

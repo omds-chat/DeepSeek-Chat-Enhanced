@@ -16,7 +16,7 @@ import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { openSettings } from '../settings/settingsDialogState.js'
-import { openPluginPanel } from '../plugins/pluginPanelState.js'
+import { openPluginPanel, showChat, usePluginPanel } from '../plugins/pluginPanelState.js'
 import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
@@ -24,6 +24,7 @@ import styles from './Sider.module.css'
 /** 展开的侧边栏：名称与收起按钮、开启新对话、按时间分组的会话列表、底部设置；移动端放在抽屉里，收起按钮关闭抽屉 */
 export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const t = useTranslate()
+  const pluginView = usePluginPanel((state) => state.view)
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeId)
   const [now, setNow] = useState(Date.now)
@@ -58,8 +59,12 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   return (
     <div className={clsx(styles.sider, mobile && styles.mobile)}>
       <div className={styles.top}>
-        <div className={styles.appName}>{t('appName')}</div>
+        <div className={styles.appName}>
+          <span className={styles.appNameLine}>{t('appNameLine1')}</span>
+          <span className={styles.appNameBadge}>{t('appNameBadge')}</span>
+        </div>
         <IconButton
+          className={styles.topAction}
           size="m"
           icon={<IconPanelLeftOutline16 />}
           tooltip={t('collapseSiderbarButton')}
@@ -72,6 +77,7 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         className={styles.newChat}
         onClick={() => {
           newChat()
+          showChat()
           closeMobileSider()
         }}
       >
@@ -97,15 +103,26 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
           ))}
         </div>
       </div>
-      <div className={styles.pluginEntry}>
-        <button type="button" className={styles.settings} onClick={() => openPluginPanel()}>
+      <div className={styles.bottom}>
+        <button
+          type="button"
+          className={clsx(styles.settings, pluginView === 'plugins' && styles.settingsActive)}
+          aria-pressed={pluginView === 'plugins'}
+          onClick={() => {
+            if (pluginView === 'plugins') {
+              showChat()
+            } else {
+              openPluginPanel()
+            }
+            // 移动端抽屉里点入口后收起抽屉，直接看到主区域
+            closeMobileSider()
+          }}
+        >
           <span className={styles.settingsIcon}>
             <IconPluginOutline16 />
           </span>
           <span className={styles.settingsLabel}>{t('pluginPanelTitle')}</span>
         </button>
-      </div>
-      <div className={styles.bottom}>
         <button type="button" className={styles.settings} onClick={() => openSettings('general')}>
           <span className={styles.settingsIcon}>
             <IconSettingsOutline16 />

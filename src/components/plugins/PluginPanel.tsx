@@ -1,16 +1,19 @@
 import clsx from 'clsx'
 import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
+import { useIsMobile } from '../../app/viewport.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
 import { isPluginSourceAllowed } from '../dsc-plugin-engine/loader.js'
 import { Button } from '../base/Button.js'
-import { Modal } from '../base/Modal.js'
+import { IconButton } from '../base/IconButton.js'
+import { IconRefreshOutline16 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
 import { InstalledPlugins } from './InstalledPlugins.js'
 import { LocalInstall } from './LocalInstall.js'
 import { MarketPlugins } from './MarketPlugins.js'
-import { closePluginPanel, usePluginPanel, type PluginPanelTab } from './pluginPanelState.js'
+import { MobileHeader } from '../session/MobileHeader.js'
+import { usePluginPanel, type PluginPanelTab } from './pluginPanelState.js'
 import { usePluginList } from './usePluginList.js'
 import styles from './PluginPanel.module.css'
 
@@ -19,14 +22,13 @@ const tabs: { value: PluginPanelTab; label: TranslationKey }[] = [
   { value: 'market', label: 'pluginTabMarket' },
 ]
 
-/** 插件面板：侧边栏底部入口打开，内含「已安装」与「插件市场」两个标签页 */
+/**
+ * 插件页：占据主区域，与对话界面互斥。
+ * 顶部是标题与刷新，下面分段标签页，主体滚动，安装栏固定在底部。
+ */
 export const PluginPanel = () => {
-  const open = usePluginPanel((state) => state.open)
-  return open ? <PluginPanelContent /> : null
-}
-
-const PluginPanelContent = () => {
   const t = useTranslate()
+  const isMobile = useIsMobile()
   const tab = usePluginPanel((state) => state.tab)
   const { plugins, ready, refresh } = usePluginList()
   const installedIds = new Set(plugins.map((plugin) => plugin.id))
@@ -56,42 +58,50 @@ const PluginPanelContent = () => {
   }
 
   return (
-    <Modal
-      title={t('pluginPanelTitle')}
-      closable
-      className={styles.dialog}
-      mainClassName={styles.panelMain}
-      onClose={closePluginPanel}
-    >
-      <div role="tablist" className={styles.tabs} onKeyDown={onTabKeyDown}>
-        {tabs.map((item, index) => (
-          <button
-            key={item.value}
-            ref={(node) => {
-              tabRefs.current[index] = node
-            }}
-            id={tabId(item.value)}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.value}
-            aria-controls={panelId}
-            tabIndex={tab === item.value ? 0 : -1}
-            className={clsx(styles.tab, tab === item.value && styles.tabActive)}
-            onClick={() => usePluginPanel.setState({ tab: item.value })}
-          >
-            {t(item.label)}
-          </button>
-        ))}
+    <div className={styles.page}>
+      {isMobile ? <MobileHeader /> : null}
+      <div className={styles.header}>
+        <h1 className={styles.title}>{t('pluginPanelTitle')}</h1>
+        <IconButton
+          icon={<IconRefreshOutline16 />}
+          tooltip={t('pluginRefresh')}
+          tooltipPlacement="bottom"
+          onClick={refresh}
+        />
+      </div>
+      <div className={styles.tabsBar}>
+        <div role="tablist" className={styles.tabs} onKeyDown={onTabKeyDown}>
+          {tabs.map((item, index) => (
+            <button
+              key={item.value}
+              ref={(node) => {
+                tabRefs.current[index] = node
+              }}
+              id={tabId(item.value)}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.value}
+              aria-controls={panelId}
+              tabIndex={tab === item.value ? 0 : -1}
+              className={clsx(styles.tab, tab === item.value && styles.tabActive)}
+              onClick={() => usePluginPanel.setState({ tab: item.value })}
+            >
+              {t(item.label)}
+            </button>
+          ))}
+        </div>
       </div>
       <div className={styles.body} role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
         {tab === 'installed' ? (
-          <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
+          <div className={styles.scroll}>
+            <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
+          </div>
         ) : (
           <MarketPlugins installedIds={installedIds} onInstalled={refresh} />
         )}
       </div>
-      <InstallFromUrl onInstalled={refresh} />
-    </Modal>
+      {tab === 'installed' ? <InstallFromUrl onInstalled={refresh} /> : null}
+    </div>
   )
 }
 

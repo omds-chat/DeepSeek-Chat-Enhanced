@@ -3,12 +3,13 @@ import { useTranslate } from '../../i18n/index.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { newChat } from '../../services/chat/store.js'
 import { IconButton } from '../base/IconButton.js'
-import { openPluginPanel } from '../plugins/pluginPanelState.js'
+import { openPluginPanel, showChat, usePluginPanel } from '../plugins/pluginPanelState.js'
 import styles from './Sider.module.css'
 
 /** 收起后左上角的按钮组 */
 export const CollapsedSider = () => {
   const t = useTranslate()
+  const pluginView = usePluginPanel((state) => state.view)
   return (
     <div className={styles.collapsed}>
       <div className={styles.collapsedGroup}>
@@ -24,14 +25,17 @@ export const CollapsedSider = () => {
           tone="primary"
           icon={<NewChatIcon />}
           tooltip={t('newChat')}
-          onClick={newChat}
+          onClick={() => {
+            newChat()
+            showChat()
+          }}
         />
         <IconButton
           size="m"
           tone="primary"
           icon={<IconPluginOutline16 />}
           tooltip={t('pluginPanelTitle')}
-          onClick={() => openPluginPanel()}
+          onClick={() => (pluginView === 'plugins' ? showChat() : openPluginPanel())}
         />
       </div>
     </div>

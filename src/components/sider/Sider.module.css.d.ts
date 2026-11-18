@@ -2,6 +2,9 @@ declare const styles: {
   readonly "sider": string;
   readonly "top": string;
   readonly "appName": string;
+  readonly "appNameLine": string;
+  readonly "appNameBadge": string;
+  readonly "topAction": string;
   readonly "newChat": string;
   readonly "newChatIcon": string;
   readonly "listWrap": string;
@@ -10,6 +13,7 @@ declare const styles: {
   readonly "sectionHeader": string;
   readonly "bottom": string;
   readonly "settings": string;
+  readonly "settingsActive": string;
   readonly "settingsIcon": string;
   readonly "settingsLabel": string;
   readonly "collapsed": string;
@@ -19,4 +23,3 @@ declare const styles: {
   readonly "mobile": string;
 };
 export = styles;
-

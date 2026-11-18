@@ -6,6 +6,7 @@ import { renameSession, selectSession } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
+import { showChat } from '../plugins/pluginPanelState.js'
 import { closeMobileSider } from './mobileSiderState.js'
 import styles from './SessionItem.module.css'
 
@@ -52,6 +53,7 @@ export const SessionItem = memo(function SessionItem({
       className={clsx(styles.item, active && styles.active)}
       onClick={() => {
         selectSession(session.id)
+        showChat()
         closeMobileSider()
       }}
     >

@@ -17,6 +17,7 @@ import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { PluginPanel } from '../components/plugins/PluginPanel.js'
+import { usePluginPanel } from '../components/plugins/pluginPanelState.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
@@ -50,6 +51,8 @@ export const App = () => {
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
   )
   const activeId = useChatStore((state) => state.activeId)
+  // 主区域在对话与插件页之间切换
+  const pluginView = usePluginPanel((state) => state.view)
 
   usePreventPageScroll(isMobile)
 
@@ -94,7 +97,9 @@ export const App = () => {
           ) : null}
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
-            {!ready || (activeId !== null && !session) ? (
+            {pluginView === 'plugins' ? (
+              <PluginPanel />
+            ) : !ready || (activeId !== null && !session) ? (
               <div className={styles.loadingView}>
                 {isMobile ? <MobileHeader /> : null}
                 <div className={styles.loadingState} role="status" aria-live="polite">
@@ -134,7 +139,6 @@ export const App = () => {
         <SearchPanel />
       </div>
       <SettingsDialog />
-      <PluginPanel />
       <Toast />
     </>
   )

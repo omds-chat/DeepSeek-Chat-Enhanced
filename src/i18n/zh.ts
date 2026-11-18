@@ -1,5 +1,3 @@
-import { APP_NAME } from '../brand.js'
-
 export const zh = {
   welcomeMessageChat250808: '今天有什么可以帮到你？',
   contentCaveat: '内容由 AI 生成，请仔细甄别',
@@ -13,7 +11,8 @@ export const zh = {
   sessionSaveFailed: '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
   sessionDeleteFailed: '删除对话失败，请重试',
   settings: '设置',
-  appName: APP_NAME,
+  appNameLine1: 'DeepSeek-Chat',
+  appNameBadge: '增强版',
   deleteSessionModalContentTitle: '永久删除对话',
   deleteSessionWithFilesDescription: '删除后，该对话及其中上传的文件将不可恢复。确认删除吗？',
   cancel: '取消',
@@ -182,6 +181,7 @@ export const zh = {
   pluginIndexFetchFailed: '插件索引拉取失败',
   pluginIndexInvalid: '插件索引结构无效',
   pluginPanelTitle: '插件',
+  pluginRefresh: '刷新',
   pluginTabInstalled: '已安装',
   pluginTabMarket: '插件市场',
   pluginColumnName: '名称',
