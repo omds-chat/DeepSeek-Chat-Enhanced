@@ -8,7 +8,9 @@ import {
   type InstallResult,
   type PluginManifest,
   type PluginSource,
+  type PluginSourceType,
   type PluginState,
+  type SignatureState,
 } from './types.js'
 
 /** 单个插件的日志上限 */
@@ -20,6 +22,26 @@ const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/
 /** 版本范围规则 */
 const RANGE_PATTERN = /^(\^|~|>=|<=|=)?(\d+\.\d+\.\d+)$/
 
+/** 落盘用的来源元数据；宿主直接注册的插件没有这一层 */
+export type PluginOrigin = {
+  sourceType: PluginSourceType
+  /** 在线插件的 plugin.js 地址；local 来源没有 */
+  sourceUrl?: string
+  /** 获取插件时拿到的公钥 PEM */
+  pub?: string
+  /** 插件 plugin.js 的签名 base64 */
+  sign?: string
+  installedAt: number
+  /** 启动校验失败后置为 false；缺省视为可信 */
+  trusted: boolean
+}
+
+/** 写入记录时附带的存储元数据 */
+export type RecordOptions = {
+  origin?: PluginOrigin | null
+  signature?: SignatureState
+}
+
 /** 已安装插件的运行记录 */
 export type PluginRecord = {
   manifest: PluginManifest
@@ -27,6 +49,10 @@ export type PluginRecord = {
   plugin: DscPlugin | null
   /** 恢复来源；宿主直接注册的插件为 null，不参与落盘 */
   source: PluginSource | null
+  /** 存储元数据；宿主直接注册的插件为 null，不参与落盘 */
+  origin: PluginOrigin | null
+  /** 签名校验状态 */
+  signature: SignatureState
   /** 用户期望的运行状态 */
   enabled: boolean
   state: PluginState
@@ -214,12 +240,15 @@ export const get = (id: string): PluginRecord | undefined => records.get(id)
 export const add = (
   manifest: PluginManifest,
   plugin: DscPlugin,
-  source: PluginSource | null
+  source: PluginSource | null,
+  options: RecordOptions = {}
 ): PluginRecord => {
   const record: PluginRecord = {
     manifest,
     plugin,
     source,
+    origin: options.origin ?? null,
+    signature: options.signature ?? 'unverified',
     enabled: false,
     state: 'registered',
     contributions: new Map(),
@@ -234,12 +263,15 @@ export const add = (
 export const addFailed = (
   manifest: PluginManifest,
   source: PluginSource | null,
-  reason: string
+  reason: string,
+  options: RecordOptions = {}
 ): PluginRecord => {
   const record: PluginRecord = {
     manifest,
     plugin: null,
     source,
+    origin: options.origin ?? null,
+    signature: options.signature ?? 'unverified',
     enabled: true,
     state: 'failed',
     error: reason,

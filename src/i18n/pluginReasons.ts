@@ -19,6 +19,7 @@ const REASONS: Record<string, ReasonSpec> = {
   'load-failed': { key: 'pluginReasonLoadFailed' },
   'invalid-plugin': { key: 'pluginReasonInvalidPlugin' },
   'no-plugin-instance': { key: 'pluginReasonNoInstance' },
+  'signature-invalid': { key: 'pluginReasonSignatureInvalid' },
 }
 
 /**

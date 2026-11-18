@@ -105,6 +105,17 @@
   word-break: break-word;
 }
 
+/* 签名状态只做简短标识，与错误提示共用字号，颜色区分结论 */
+.signatureText {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.signatureFailed {
+  color: var(--dsw-alias-state-error-primary);
+}
+
 /* 版本与作者来自清单或索引，长度不受控；截断而不是撑破固定列宽 */
 .versionCell,
 .authorCell {

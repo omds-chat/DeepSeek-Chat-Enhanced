@@ -21,6 +21,15 @@ export type CallOptions = { signal?: AbortSignal }
 /** 插件来源；内置或运行时地址，宿主直接注册的插件没有来源 */
 export type PluginSource = { kind: 'builtin' } | { kind: 'url'; url: string }
 
+/**
+ * 插件来源类型。
+ * inner 随本体分发，awesome 来自精选合集，outer 来自其他在线来源，local 由用户上传。
+ */
+export type PluginSourceType = 'inner' | 'awesome' | 'outer' | 'local'
+
+/** 插件签名校验状态；unverified 表示没有可校验的签名材料 */
+export type SignatureState = 'verified' | 'unverified' | 'failed'
+
 /** 插件清单 */
 export type PluginManifest = {
   /** 唯一标识；小写字母开头，可含数字与连字符 */
@@ -125,6 +134,7 @@ export type InstallRejection =
   | 'conflict'
   | 'load-failed'
   | 'invalid-plugin'
+  | 'signature-invalid'
 
 /** 安装结果 */
 export type InstallResult = { ok: true } | { ok: false; reason: InstallRejection; detail?: string }
@@ -137,6 +147,10 @@ export type PluginStateView = {
   state: PluginState
   /** 恢复来源；宿主直接注册的插件为 null */
   source: PluginSource | null
+  /** 来源类型；宿主直接注册的插件按 inner 处理 */
+  sourceType: PluginSourceType
+  /** 签名校验状态 */
+  signatureVerified: SignatureState
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */
   enabled: boolean
   /** 清单声明的依赖插件 id */

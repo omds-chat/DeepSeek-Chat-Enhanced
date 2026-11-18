@@ -2,24 +2,24 @@ import { APP_NAME } from '../../brand.js'
 import { readManifest } from './registry.js'
 import type { PluginManifest, PluginSource } from './types.js'
 
-/** 安装记录的 localStorage 键 */
+/** 旧版安装记录的 localStorage 键；迁移到 IndexedDB 后只用于读取与清理 */
 const STORAGE_KEY = `${APP_NAME}:plugins`
 
-/** 一条持久化的安装记录 */
-export type PersistedPlugin = {
+/** 一条旧版安装记录 */
+export type LegacyPlugin = {
   manifest: PluginManifest
   source: PluginSource
   enabled: boolean
 }
 
-/** 读取结果；problem 描述读取过程中丢弃的内容 */
-export type LoadInstalledResult = {
-  entries: PersistedPlugin[]
+/** 旧版记录的读取结果 */
+export type LegacyReadResult = {
+  entries: LegacyPlugin[]
+  /** localStorage 中是否存在旧键；用于判断是否需要迁移 */
+  present: boolean
+  /** 读取或解析过程中丢弃的内容 */
   problem: string | null
 }
-
-/** 落盘结果；失败不抛错，由调用方记日志 */
-export type SaveInstalledResult = { ok: true } | { ok: false; reason: string }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -37,7 +37,7 @@ const readSource = (value: unknown): PluginSource | null => {
   return null
 }
 
-const readEntry = (value: unknown): PersistedPlugin | null => {
+const readEntry = (value: unknown): LegacyPlugin | null => {
   if (!isRecord(value)) {
     return null
   }
@@ -49,27 +49,27 @@ const readEntry = (value: unknown): PersistedPlugin | null => {
   return { manifest, source, enabled: value.enabled === true }
 }
 
-/** 读取安装记录；单条损坏只丢弃该条，不整体失败 */
-export const loadInstalled = (): LoadInstalledResult => {
+/** 读取旧版记录；单条损坏只丢弃该条，不整体失败 */
+export const readLegacyInstalled = (): LegacyReadResult => {
   let raw: string | null
   try {
     raw = localStorage.getItem(STORAGE_KEY)
   } catch {
-    return { entries: [], problem: 'localStorage is not available' }
+    return { entries: [], present: false, problem: 'localStorage is not available' }
   }
   if (raw === null) {
-    return { entries: [], problem: null }
+    return { entries: [], present: false, problem: null }
   }
   let parsed: unknown
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { entries: [], problem: 'stored plugin list is not valid JSON' }
+    return { entries: [], present: true, problem: 'stored plugin list is not valid JSON' }
   }
   if (!Array.isArray(parsed)) {
-    return { entries: [], problem: 'stored plugin list is not an array' }
+    return { entries: [], present: true, problem: 'stored plugin list is not an array' }
   }
-  const entries: PersistedPlugin[] = []
+  const entries: LegacyPlugin[] = []
   let dropped = 0
   for (const item of parsed) {
     const entry = readEntry(item)
@@ -79,15 +79,19 @@ export const loadInstalled = (): LoadInstalledResult => {
       dropped += 1
     }
   }
-  return { entries, problem: dropped > 0 ? `${dropped} stored entries were dropped` : null }
+  return {
+    entries,
+    present: true,
+    problem: dropped > 0 ? `${dropped} stored entries were dropped` : null,
+  }
 }
 
-/** 写入安装记录；失败只回传原因 */
-export const saveInstalled = (entries: readonly PersistedPlugin[]): SaveInstalledResult => {
+/** 删除旧版记录；迁移成功后调用，失败只回传 false */
+export const clearLegacyInstalled = (): boolean => {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries))
-    return { ok: true }
-  } catch (error) {
-    return { ok: false, reason: error instanceof Error ? error.message : String(error) }
+    localStorage.removeItem(STORAGE_KEY)
+    return true
+  } catch {
+    return false
   }
 }

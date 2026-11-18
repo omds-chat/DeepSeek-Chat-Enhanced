@@ -11,7 +11,9 @@ dsc-plugin-engine/
 ├── loader.ts       # 浏览器内加载插件运行时 js 产物
 ├── capabilities.ts # 能力白名单与受限代理（安全封装层）
 ├── registry.ts     # 插件注册表、依赖与冲突校验、内置 id 集合
-├── storage.ts      # 安装记录持久化（localStorage）
+├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
+├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
+├── signature.ts    # 插件产物签名校验：拉取字节并验签
 ├── builtin.ts      # 内置插件清单与工厂
 └── README.md       # 机制说明与 dsh 映射表
 ```
@@ -32,6 +34,8 @@ dsc-plugin-engine/
 | `contributions` | 否 | 订阅的贡献点，必须在贡献点表内且不得重复 |
 
 清单可以随产物一起导出：`export const manifest = {...}`，也可以挂在 `default` 导出对象上，模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`；两者都没有时安装被拒绝，原因为 `invalid-manifest`。
+
+`installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一，缺省按 `outer` 处理；`pub` 与 `sign` 同时给出时，安装阶段先拉取产物字节做 SHA-512 摘要并验签，不通过则以 `signature-invalid` 拒绝安装。
 
 ### 生命周期
 
@@ -67,15 +71,22 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 ### 持久化与启动恢复
 
-安装记录写入 localStorage 的 `<APP_NAME>:plugins` 键，每项包含 `manifest`、`source` 与 `enabled`；`source` 为 `{ kind: 'builtin' }` 或 `{ kind: 'url', url }`。安装、卸载、启用与停用都立即落盘；落盘失败只写入 `engineLogs()`，不影响内存状态。
+安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库（版本 1，对象仓库 `plugins`，主键 `id`），与聊天历史库分开建库，互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`pub`、`sign`、`enabled`、`installed_at`，校验失败的记录另带 `trusted: false`。
+
+`source_type` 取 `inner`（随本体分发）、`awesome`（精选合集）、`outer`（其他在线来源）、`local`（用户上传）之一；`source_url` 只对在线插件存在，存其 `plugin.js` 地址；`pub` 与 `sign` 是获取插件时拿到的公钥 PEM 与 `plugin.js` 签名 base64，缺失表示该记录没有可校验的签名材料。
+
+安装、卸载、启用与停用都立即落盘；落盘失败只写入 `engineLogs()`，不影响内存状态。IndexedDB 不可用时降级为内存存储，同样只记引擎日志，不抛错。
+
+旧版 localStorage 键 `<APP_NAME>:plugins` 在首次启动时迁移一次：`source.kind === 'url'` 的记录转为 `outer` 并保留地址，`builtin` 转为 `inner`，`pub` 与 `sign` 留空；迁移成功后删除旧键，失败只记日志、不阻断启动。
 
 `installPluginEngine()` 保持同步返回，恢复在内部异步进行，不阻塞首屏渲染：
 
 ```
 installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、返回实例
-  └── restore()         # 异步：读取安装记录
+  └── restore()         # 异步：读取安装记录并完成旧版迁移
       ├── 先装载 builtin.ts 的内置插件（首次出现默认启用）
-      └── 再恢复 url 来源的插件，import 失败则标记 failed 并在 list() 中可见
+      ├── 再并发校验外部插件签名（上限 4），不通过的记录标记不可信且不激活
+      └── 最后按存储顺序恢复在线插件，加载失败则标记 failed 并在 list() 中可见
 ```
 
 宿主通过 `install()` 直接注册的插件没有可恢复来源，不写入安装记录。恢复失败的占位记录没有插件实例，`activate()` 会拒绝并提示 `pluginRestoreFailed`，但允许重新安装覆盖。
@@ -85,6 +96,16 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 ### 运行时加载与跨源
 
 `installFromUrl()` 用 `import()` 在页面内加载产物：与页面同源时直接可用；跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`，缺失时 `import()` 被拒绝，引擎按 `load-failed` 拒绝安装，原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机，不介入 CORS。
+
+### 签名校验
+
+插件产物按签名约定做 hash-then-sign：对 `plugin.js` 字节取 SHA-512 摘要，再用公钥验证摘要的 Ed25519 签名，签名编码为 base64。验签直接复用 `src/services/integrity/ed25519.ts` 的 `sha512`、`verifyEd25519`、`readPublicKey`，只新增 `base64ToBytes` 与 `verifyBytesSignature` 两个入口。
+
+- 安装阶段：`installFromUrl` 传入 `pub` 与 `sign` 时先校验，不通过返回 `signature-invalid` 并拒绝安装。
+- 启动阶段：`restore()` 对每条带 `source_url`、`pub`、`sign` 的记录重新拉取当前字节并验签，并发上限 4。
+- 校验不通过：不激活该插件，记录标记为不可信（`trusted: false`），提示用户「插件签名校验未通过，建议重新下载」，记录保留在 `list()` 中供用户手动卸载。
+- 字节拉取失败：视为网络问题而不是篡改，按 `pluginRestoreFailed` 处理，不标记不可信。
+- 拉取使用 `cache: 'no-store'`，避免命中旧缓存得出错误的通过结论。
 
 ### 内置插件
 
@@ -109,7 +130,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 | 能力/贡献点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册贡献点并返回释放函数 | `capabilities.ts` |
 | 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单；插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
 | 错误隔离与降级 | 单条目失败只影响自身，其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
-| 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 `<APP_NAME>:plugins`，插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>` | `storage.ts`、`../dsc-core/plugin-data.ts` |
+| 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 IndexedDB `<APP_NAME>-plugins` 的 `plugins` 仓库，插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>` | `db.ts`、`../dsc-core/plugin-data.ts` |
 | 内置插件 | dsh 自带插件包与内置 bundle | `builtin.ts` 清单，启动时先于外部插件装载 | `builtin.ts` |
 | 热重载 | `dsh-hmr` | 未实现，刷新页面重新加载 | 无 |
 
@@ -123,7 +144,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 installPluginEngine()
 ```
 
-之后通过 `getPluginEngine()` 取实例，用 `install`、`installFromUrl`、`activate`、`deactivate`、`unload`、`list` 管理插件，用 `logs(id)`、`engineLogs()`、`bypassEvents()` 排查问题。`installFromUrl(url, manifest?)` 的清单可以省略，省略时取产物自带的 `manifest` 导出。
+之后通过 `getPluginEngine()` 取实例，用 `install`、`installFromUrl`、`activate`、`deactivate`、`unload`、`list` 管理插件，用 `logs(id)`、`engineLogs()`、`bypassEvents()` 排查问题。`installFromUrl(url, manifest?, source?)` 的清单可以省略，省略时取产物自带的 `manifest` 导出；`source` 省略时来源记为 `outer` 且不校验签名。`install()` 直接注册的宿主内联插件不写安装记录。
 
 ## 示例
 
@@ -159,5 +180,12 @@ await engine?.installFromUrl('https://example.com/demo-plugin.js', {
   name: 'Demo',
   version: '1.0.0',
   capabilities: ['notify'],
+})
+
+// 带来源与签名材料：安装阶段先验签，不通过返回 signature-invalid
+await engine?.installFromUrl('https://example.com/demo-plugin.js', undefined, {
+  sourceType: 'awesome',
+  pub: publicKeyPem,
+  sign: signatureBase64,
 })
 ```

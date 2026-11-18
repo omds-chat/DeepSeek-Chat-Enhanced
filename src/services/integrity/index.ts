@@ -1,5 +1,5 @@
 import { showToast } from '../../components/base/toastState.js'
-import { readPublicKey, sha512, verifyEd25519 } from './ed25519.js'
+import { base64ToBytes, readPublicKey, sha512, verifyEd25519 } from './ed25519.js'
 
 /** 签名清单文件名，与 index.html 同目录 */
 const SIGN_FILE = 'web_sign.json'
@@ -48,19 +48,6 @@ const isLocalPath = (value: string): boolean =>
   !value.startsWith('/') &&
   !value.includes('..') &&
   !/^[a-z][a-z0-9+.-]*:/i.test(value)
-
-const base64ToBytes = (value: string): Uint8Array | null => {
-  try {
-    const binary = atob(value)
-    const bytes = new Uint8Array(binary.length)
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index)
-    }
-    return bytes
-  } catch {
-    return null
-  }
-}
 
 const fetchBytes = async (url: string): Promise<Uint8Array | null> => {
   try {

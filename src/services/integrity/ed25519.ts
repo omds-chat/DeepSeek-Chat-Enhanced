@@ -65,3 +65,37 @@ export const readPublicKey = (pem: string): Uint8Array | null => {
   }
   return der.subarray(SPKI_PREFIX.length)
 }
+
+/** base64 文本转字节；非法输入返回 null */
+export const base64ToBytes = (value: string): Uint8Array | null => {
+  try {
+    const binary = atob(value)
+    const bytes = new Uint8Array(binary.length)
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index)
+    }
+    return bytes
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 校验 hash-then-sign 产物签名：对 bytes 做 SHA-512 摘要，再用 PEM 公钥验证 base64 签名。
+ * 公钥或签名非法、验签失败都返回 false，不抛出异常。
+ */
+export const verifyBytesSignature = async (
+  bytes: Uint8Array,
+  signatureBase64: string,
+  publicKeyPem: string
+): Promise<boolean> => {
+  const publicKey = readPublicKey(publicKeyPem)
+  if (!publicKey) {
+    return false
+  }
+  const signature = base64ToBytes(signatureBase64)
+  if (!signature) {
+    return false
+  }
+  return await verifyEd25519(signature, await sha512(bytes), publicKey)
+}

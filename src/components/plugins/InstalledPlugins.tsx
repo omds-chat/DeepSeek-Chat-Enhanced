@@ -3,7 +3,12 @@ import { useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { getPluginEngine, type PluginEngine } from '../dsc-plugin-engine/index.js'
-import type { PluginSource, PluginState, PluginStateView } from '../dsc-plugin-engine/types.js'
+import type {
+  PluginSourceType,
+  PluginState,
+  PluginStateView,
+  SignatureState,
+} from '../dsc-plugin-engine/types.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
@@ -17,11 +22,28 @@ const stateLabels: Record<PluginState, TranslationKey> = {
   registered: 'pluginStateRegistered',
 }
 
-const sourceLabel = (source: PluginSource | null): TranslationKey => {
-  if (!source) {
+/** 来源类型文案；内置与宿主直接注册的插件另有文案 */
+const sourceTypeLabels: Record<PluginSourceType, TranslationKey> = {
+  inner: 'pluginSourceSameOrigin',
+  awesome: 'pluginSourceAwesome',
+  outer: 'pluginSourceOuter',
+  local: 'pluginSourceLocal',
+}
+
+/** 签名状态文案；只对在线分发的插件展示 */
+const signatureLabels: Record<SignatureState, TranslationKey> = {
+  verified: 'pluginSignatureVerified',
+  unverified: 'pluginSignatureUnverified',
+  failed: 'pluginSignatureFailed',
+}
+
+const sourceLabel = (plugin: PluginStateView): TranslationKey => {
+  if (!plugin.source) {
     return 'pluginSourceHost'
   }
-  return source.kind === 'builtin' ? 'pluginSourceBuiltin' : 'pluginSourceExternal'
+  return plugin.source.kind === 'builtin'
+    ? 'pluginSourceBuiltin'
+    : sourceTypeLabels[plugin.sourceType]
 }
 
 /** 正在进行的操作；用于按钮的忙碌文案与禁用 */
@@ -144,6 +166,16 @@ export const InstalledPlugins = ({
               <div className={styles.nameCell} role="cell">
                 <span className={styles.name}>{plugin.name}</span>
                 <span className={styles.caption}>{plugin.id}</span>
+                {plugin.source?.kind === 'url' ? (
+                  <span
+                    className={clsx(
+                      styles.signatureText,
+                      plugin.signatureVerified === 'failed' && styles.signatureFailed
+                    )}
+                  >
+                    {t(signatureLabels[plugin.signatureVerified])}
+                  </span>
+                ) : null}
                 {plugin.error ? (
                   <span className={styles.errorText}>{pluginReasonText(plugin.error)}</span>
                 ) : null}
@@ -156,7 +188,7 @@ export const InstalledPlugins = ({
               </div>
               <div role="cell">{t(stateLabels[plugin.state])}</div>
               <div className={styles.sourceCell} role="cell">
-                {t(sourceLabel(plugin.source))}
+                {t(sourceLabel(plugin))}
               </div>
               <div className={styles.actions} role="cell">
                 <Button
