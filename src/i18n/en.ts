@@ -214,6 +214,8 @@ export const en = {
   pluginSignatureFailed: 'Signature failed',
   pluginSignatureInvalid:
     'Plugin {id} failed signature verification; use it only if you accept the risk',
+  pluginSignatureRevoked:
+    'The signing certificate of plugin {id} has been revoked; use it only if you accept the risk',
   pluginActionEnable: 'Enable',
   pluginActionDisable: 'Disable',
   pluginActionUninstall: 'Uninstall',
@@ -243,6 +245,8 @@ export const en = {
   pluginReasonNoInstance: 'The plugin instance is missing; reinstall the plugin',
   pluginReasonSignatureInvalid:
     'Plugin signature verification failed; use it only if you accept the risk',
+  pluginReasonCertificateRevoked:
+    'The plugin signing certificate has been revoked; use it only if you accept the risk',
   pluginReasonUnsupportedPackage: 'Only .zip and .tgz offline packages are supported',
   pluginReasonCorruptPackage: 'The offline package cannot be read; the file may be damaged',
   pluginReasonMissingMeta: 'The offline package has no meta.json',
@@ -292,6 +296,7 @@ export const en = {
     'The online-data trust list has no entry for this source, so its certificate chain cannot be verified; confirm the source yourself before installing',
   pluginMarketTrustReasonMissing: 'the trust list has no EEC certificate for this collection',
   pluginMarketTrustReasonChain: 'the EEC certificate chain did not verify',
+  pluginMarketTrustReasonRevoked: 'the EEC certificate has been revoked',
   pluginMarketTrustEecFromList: 'Certificate comes from the online-data trust list',
   pluginMarketCountBadge: 'Download count',
   pluginMarketCountNotice:
@@ -343,6 +348,8 @@ export const en = {
     'The trust list root certificate does not match this build, so the list was ignored; decide for yourself whether to continue',
   trustListCollectionsUntrusted:
     'The EEC certificate chain failed to verify for {count} collection(s): {ids}. They are marked untrusted; decide for yourself whether to continue',
+  trustListCollectionsRevoked:
+    'The EEC certificate of {count} collection(s) has been revoked: {ids}. They are marked untrusted; decide for yourself whether to continue',
   webIntegrityFailed:
     'Web file signature check failed for {count} file(s): {files}. Files may have been modified; reload the page or download it again.',
   webIntegrityChainFailed:

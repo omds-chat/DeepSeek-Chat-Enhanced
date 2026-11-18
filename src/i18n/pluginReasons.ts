@@ -20,6 +20,7 @@ const REASONS: Record<string, ReasonSpec> = {
   'invalid-plugin': { key: 'pluginReasonInvalidPlugin' },
   'no-plugin-instance': { key: 'pluginReasonNoInstance' },
   'signature-invalid': { key: 'pluginReasonSignatureInvalid' },
+  'certificate-revoked': { key: 'pluginReasonCertificateRevoked' },
   'unsupported-package': { key: 'pluginReasonUnsupportedPackage' },
   'corrupt-package': { key: 'pluginReasonCorruptPackage' },
   'missing-meta': { key: 'pluginReasonMissingMeta' },

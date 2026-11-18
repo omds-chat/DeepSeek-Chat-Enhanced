@@ -205,6 +205,7 @@ export const zh = {
   pluginSignatureUnverified: '未校验',
   pluginSignatureFailed: '校验失败',
   pluginSignatureInvalid: '插件 {id} 签名校验未通过，请自行判断是否继续使用',
+  pluginSignatureRevoked: '插件 {id} 的签名证书已被吊销，请自行判断是否继续使用',
   pluginActionEnable: '启用',
   pluginActionDisable: '停用',
   pluginActionUninstall: '卸载',
@@ -230,6 +231,7 @@ export const zh = {
   pluginReasonInvalidPlugin: '插件产物不是有效的插件',
   pluginReasonNoInstance: '插件实例缺失，需要重新安装',
   pluginReasonSignatureInvalid: '插件签名校验未通过，请自行判断是否继续使用',
+  pluginReasonCertificateRevoked: '插件签名证书已被吊销，请自行判断是否继续使用',
   pluginReasonUnsupportedPackage: '只支持 .zip 与 .tgz 两种离线包',
   pluginReasonCorruptPackage: '离线包无法解析，文件可能已损坏',
   pluginReasonMissingMeta: '离线包内缺少 meta.json',
@@ -277,6 +279,7 @@ export const zh = {
     'online-data 信任清单里没有该来源，无法校验证书链；安装前请自行确认来源可靠',
   pluginMarketTrustReasonMissing: '信任清单缺少该来源的 EEC 证书',
   pluginMarketTrustReasonChain: 'EEC 证书链校验未通过',
+  pluginMarketTrustReasonRevoked: 'EEC 证书已被吊销',
   pluginMarketTrustEecFromList: '证书来自 online-data 信任清单',
   pluginMarketCountBadge: '下载计数',
   pluginMarketCountNotice: '该来源启用了下载计数：安装时会向来源上报插件名与请求时间',
@@ -321,6 +324,8 @@ export const zh = {
   trustListRootMismatch: '信任清单的根证书与当前构建不一致，已忽略该清单，请自行判断是否继续使用',
   trustListCollectionsUntrusted:
     '合集 {ids}（共 {count} 个）的 EEC 证书链校验未通过，已标记为不可信，请自行判断是否继续使用',
+  trustListCollectionsRevoked:
+    '合集 {ids}（共 {count} 个）的 EEC 证书已被吊销，已标记为不可信，请自行判断是否继续使用',
   webIntegrityFailed:
     '网页文件签名校验未通过：{count} 个文件 ({files})，文件可能已被改动，请刷新或重新下载页面',
   webIntegrityChainFailed:

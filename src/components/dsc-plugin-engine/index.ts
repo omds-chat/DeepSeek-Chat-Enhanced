@@ -74,6 +74,8 @@ export type InstallSource = {
   authorPubUrl?: string
   /** 作者签名地址；缺省为 <url>.author.sig */
   authorSigUrl?: string
+  /** 信任清单给出的吊销结论；revoked 表示合集 EEC 证书已被吊销 */
+  trustFailure?: 'revoked'
 }
 
 /** 插件引擎对外接口 */
@@ -435,6 +437,11 @@ export const installPluginEngine = (): PluginEngine => {
         warn('pluginSignatureInvalid', { id: target })
       }
     }
+    if (source?.trustFailure === 'revoked') {
+      // 证书已被吊销同样只提示，不阻断安装；安装记录标记为不可信
+      pushEngineLog(`install ${target}: certificate-revoked, install anyway`)
+      warn('pluginSignatureRevoked', { id: target })
+    }
     let loadedModule: unknown
     try {
       loadedModule = await loadPluginModule(url)
@@ -464,7 +471,7 @@ export const installPluginEngine = (): PluginEngine => {
       sourceType,
       sourceUrl: url,
       installedAt: Date.now(),
-      trusted: true,
+      trusted: source?.trustFailure !== 'revoked',
     }
     const result = register(resolved, loaded.plugin, { kind: 'url', url }, { origin, signature })
     if (!result.ok) {

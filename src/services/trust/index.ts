@@ -39,7 +39,11 @@ const warnOnce = (list: TrustList): void => {
   }
   const listed = failed.slice(0, MAX_REPORTED).map((item) => item.id).join(', ')
   const ids = failed.length > MAX_REPORTED ? listed + ' ...' : listed
-  showToast({ key: 'trustListCollectionsUntrusted', params: { count: failed.length, ids } })
+  // 证书被吊销与证书链校验失败分开提示，便于用户判断原因
+  const key = failed.some((item) => item.reason === 'revoked')
+    ? 'trustListCollectionsRevoked'
+    : 'trustListCollectionsUntrusted'
+  showToast({ key, params: { count: failed.length, ids } })
 }
 
 /**

@@ -38,10 +38,14 @@ const trustKey = (runtime: SourceRuntime | null): TranslationKey => {
   return 'pluginMarketTrustUnverified'
 }
 
-const trustReasonKey = (runtime: SourceRuntime | null): TranslationKey =>
-  runtime?.trustFailure === 'chain'
+const trustReasonKey = (runtime: SourceRuntime | null): TranslationKey => {
+  if (runtime?.trustFailure === 'revoked') {
+    return 'pluginMarketTrustReasonRevoked'
+  }
+  return runtime?.trustFailure === 'chain'
     ? 'pluginMarketTrustReasonChain'
     : 'pluginMarketTrustReasonMissing'
+}
 
 const statusKey = (runtime: SourceRuntime | null): TranslationKey => {
   if (!runtime || runtime.state === 'idle' || runtime.state === 'loading') {
@@ -241,6 +245,8 @@ export const MarketPlugins = ({
     }
     setBusyKey(plugin.key)
     try {
+      // 信任清单判定证书已被吊销时，把该结论一并交给引擎，安装记录标记为不可信
+      const trustFailure = runtime?.trustFailure
       const result = await engine.installFromUrl(plan.url, plan.manifest, {
         sourceType: plan.sourceType,
         ...(plan.eec === undefined ? {} : { eec: plan.eec }),
@@ -248,6 +254,7 @@ export const MarketPlugins = ({
         sigUrl: plan.sigUrl,
         authorPubUrl: plan.authorPubUrl,
         authorSigUrl: plan.authorSigUrl,
+        ...(trustFailure === 'revoked' ? { trustFailure } : {}),
       })
       if (result.ok) {
         instance.countInstall(selectedId, plugin)

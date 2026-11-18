@@ -1,5 +1,6 @@
+import type { CertificateRevocationList } from 'pkijs'
 import { showToast } from '../../components/base/toastState.js'
-import { requestBytes, TRUST_MIRRORS } from '../trust/fetch.js'
+import { parseTrustIndex, requestBytes, TRUST_MIRRORS } from '../trust/fetch.js'
 import { derEquals, pemToDer } from './pem.js'
 
 /** 解析与验签模块按需加载，未注入根证书时不会进入首屏代码 */
@@ -14,6 +15,8 @@ const MANIFEST_FILE = 'web_files.json'
 const SIGNATURE_SUFFIX = '.sig'
 /** 清单结构版本 */
 const SCHEMA_VERSION = 1
+/** online-data 上的信任清单路径，用于取吊销列表 */
+const INDEX_FILE = 'index.json'
 /** online-data 上的根证书路径 */
 const ROOT_CA_PATH = 'root_ca.crt'
 /** online-data 上的网页 EEC 证书路径 */
@@ -126,7 +129,7 @@ export const verifyWebIntegrity = async (): Promise<void> => {
   if (anchorPem.trim() === '') {
     return
   }
-  const { ensurePkijsEngine, parseCertificate, verifyCertificateChain, verifyDetachedCms } =
+  const { ensurePkijsEngine, parseCertificate, parseCrl, verifyCertificateChainWithCrl, verifyDetachedCms } =
     await loadVerifier()
   if (!ensurePkijsEngine()) {
     return
@@ -157,7 +160,20 @@ export const verifyWebIntegrity = async (): Promise<void> => {
     warnChain()
     return
   }
-  const chain = await verifyCertificateChain(anchor, eec)
+  // 清单登记了吊销列表时必须拿到并校验 CRL；拿不到或解析失败直接判失败，不静默退化为只校验证书链
+  const indexBytes = await fetchFromMirrors(INDEX_FILE)
+  const indexText = indexBytes === null ? null : new TextDecoder().decode(indexBytes)
+  const crlPath = indexText === null ? null : (parseTrustIndex(indexText)?.crl ?? null)
+  let crl: CertificateRevocationList | null = null
+  if (crlPath !== null) {
+    const crlBytes = await fetchFromMirrors(crlPath)
+    crl = crlBytes === null ? null : parseCrl(new TextDecoder().decode(crlBytes))
+    if (crl === null) {
+      warnChain()
+      return
+    }
+  }
+  const chain = await verifyCertificateChainWithCrl(anchor, eec, crl)
   if (!chain.ok) {
     warnChain()
     return

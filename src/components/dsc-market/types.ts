@@ -4,8 +4,11 @@ import type { PluginManifest, PluginSourceType } from '../dsc-plugin-engine/type
 /** 来源信任状态；unverified 表示 online-data 信任清单里没有该来源,或构建未注入根证书 */
 export type SourceTrust = 'trusted' | 'untrusted' | 'unverified'
 
-/** 信任失败原因；missing 表示清单登记或证书文件缺失，chain 表示证书链校验未通过 */
-export type TrustFailure = 'missing' | 'chain'
+/**
+ * 信任失败原因。
+ * missing 表示清单登记或证书文件缺失，chain 表示证书链校验未通过，revoked 表示 EEC 证书已被吊销。
+ */
+export type TrustFailure = 'missing' | 'chain' | 'revoked'
 
 /** 用户可配置的来源；base_url 按顺序尝试 */
 export type MarketSource = {

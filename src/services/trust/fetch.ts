@@ -1,4 +1,4 @@
-import type { Certificate } from 'pkijs'
+import type { Certificate, CertificateRevocationList } from 'pkijs'
 import type { TrustCollection, TrustFailureReason, TrustList } from './types.js'
 
 /** 信任清单的镜像地址；按顺序尝试，前者失败才用后者 */
@@ -24,8 +24,11 @@ type IndexCollection = { id: string; eec: string }
 /** 清单解析结果 */
 type TrustIndex = { rootCa: string; crl: string | null; collections: IndexCollection[] }
 
+/** 证书链校验结论；revoked 表示失败原因是 EEC 证书已被吊销 */
+type ChainOutcome = { ok: boolean; revoked: boolean }
+
 /** 证书链校验函数；由调用方按需加载 pkijs 后传入，避免清单模块自带密码学依赖 */
-type ChainCheck = (eecPem: string) => Promise<boolean>
+type ChainCheck = (eecPem: string) => Promise<ChainOutcome>
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -140,8 +143,9 @@ const verifyCollection = async (
   if (eecText === null || eecText.trim() === '') {
     return untrusted(entry.id, 'missing')
   }
-  if (!(await check(eecText))) {
-    return untrusted(entry.id, 'chain')
+  const outcome = await check(eecText)
+  if (!outcome.ok) {
+    return untrusted(entry.id, outcome.revoked ? 'revoked' : 'chain')
   }
   return { id: entry.id, eec: eecText, trust: 'trusted', reason: null }
 }
@@ -199,20 +203,59 @@ export const fetchTrustListFrom = async (
   if (embeddedRootPem.trim() === '' || normalizePem(rootText) !== normalizePem(embeddedRootPem)) {
     return { rootMatched: false, origin: base, rootCa: rootText, crl: index.crl, collections: [] }
   }
-  const { ensurePkijsEngine, parseCertificate, verifyCertificateChain } = await import(
-    '../integrity/x509.js'
-  )
+  const { ensurePkijsEngine, isRevoked, parseCertificate, parseCrl, verifyCertificateChain, verifyCrl } =
+    await import('../integrity/x509.js')
   const root: Certificate | null = ensurePkijsEngine() ? parseCertificate(rootText) : null
   if (!root) {
     return emptyCollections(base, rootText, index.crl)
   }
+
+  /**
+   * 拉取并校验清单登记的 CRL：必须由同一根证书签发、未过期，且签名可用根证书公钥验证。
+   * 任何一步失败都返回 null，由调用方按吊销状态未知处理。
+   */
+  const loadRegisteredCrl = async (
+    crlPath: string,
+    issuer: Certificate
+  ): Promise<CertificateRevocationList | null> => {
+    const text = await requestText(base + crlPath)
+    if (text === null) {
+      return null
+    }
+    const parsed = parseCrl(text)
+    if (!parsed) {
+      return null
+    }
+    const verdict = await verifyCrl(parsed, issuer)
+    return verdict.ok ? parsed : null
+  }
+
+  // 清单登记了 CRL 却拿不到或校验不过时，吊销状态无法确认，整份清单按不可信处理
+  const crl = index.crl === null ? null : await loadRegisteredCrl(index.crl, root)
+  if (index.crl !== null && crl === null) {
+    return {
+      rootMatched: true,
+      origin: base,
+      rootCa: rootText,
+      crl: index.crl,
+      collections: index.collections.map((entry) => untrusted(entry.id, 'chain')),
+    }
+  }
+
   const check: ChainCheck = async (eecPem) => {
     const eec = parseCertificate(eecPem)
     if (!eec) {
-      return false
+      return { ok: false, revoked: false }
     }
     const chain = await verifyCertificateChain(root, eec)
-    return chain.ok
+    if (!chain.ok) {
+      return { ok: false, revoked: false }
+    }
+    // crl 为 null 表示清单没有登记吊销列表，跳过吊销检查
+    if (crl !== null && isRevoked(eec, crl)) {
+      return { ok: false, revoked: true }
+    }
+    return { ok: true, revoked: false }
   }
   const collections = await mapLimited(index.collections, CONCURRENCY, (entry) =>
     verifyCollection(base, entry, check)

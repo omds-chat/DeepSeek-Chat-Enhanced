@@ -1,8 +1,11 @@
 /** 合集信任结论；untrusted 表示 EEC 证书链校验未通过或材料缺失 */
 export type CollectionTrust = 'trusted' | 'untrusted'
 
-/** 合集不可信的原因；missing 表示清单登记或证书文件缺失，chain 表示证书链校验未通过 */
-export type TrustFailureReason = 'missing' | 'chain'
+/**
+ * 合集不可信的原因。
+ * missing 表示清单登记或证书文件缺失，chain 表示证书链校验未通过，revoked 表示 EEC 证书已被吊销。
+ */
+export type TrustFailureReason = 'missing' | 'chain' | 'revoked'
 
 /** 信任清单中的单个合集；不可信的条目同样列出，只是不给证书 */
 export type TrustCollection = {

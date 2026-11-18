@@ -99,7 +99,16 @@ ROOT_CA_SECRET=<根私钥路径> ROOT_CA_CERT=<根证书路径> \
 
 `--revoke` 可重复给出,接受十六进制与冒号分隔写法,取证书的 `serial`。OpenSSL 3.5 已移除 `openssl crl -gen`,因此工具改用 `openssl ca -gencrl`,并在临时目录自建 `index.txt`、`serial`、`crlnumber` 的最小 CA 结构。
 
-CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字段登记。验证方启用吊销检查时,被吊销的 EEC 会让签名校验失败并给出 `certificate revoked`。
+CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字段登记。命令行验证方启用吊销检查时,被吊销的 EEC 会让签名校验失败并给出 `certificate revoked`。
+
+运行时按 `index.json` 的 `crl` 字段决定是否做吊销检查:
+
+| `crl` 取值 | 运行时行为 |
+|:---:|:---:|
+| `"crl.pem"` | 拉取 CRL,校验根证书 `keyUsage` 含 `cRLSign`、CRL 由同一张根证书签发、当前时间落在本次更新与下次更新之间、签名可用根证书公钥验证,再逐个比对清单内 EEC 的序列号 |
+| `null` | 跳过吊销检查,只校验证书链 |
+
+被吊销的 EEC 让该合集判定为不可信,市场与插件面板给出的原因是「证书已被吊销」。CRL 拉取失败、解析失败、已过期或与根证书不配对时,吊销状态无法确认,两条路径都判失败:信任清单把相关合集标为不可信,网页产物只给出证书链警告,均不静默退化为只校验证书链。
 
 ## 重签时机
 
@@ -226,13 +235,14 @@ dist/
 
 ## 当前实现状态
 
-网页产物已按证书链落地,合集信任仍在迁移:
+网页产物与合集信任都已按证书链落地,吊销检查也已接入运行时:
 
 | 项 | 现状 | 下一步 |
 |:---:|:---:|:---:|
 | 网页产物签名 | `sign-web` 子命令产出 `<文件>.sig` 与 `web_files.json` 清单 | 已完成 |
 | 运行时校验 | 页面用内嵌根证书与 `web/eec.pem` 的证书链校验全部签名 | 已完成 |
-| 合集信任 | `plugin_set_sign.json` 由 dsc 私钥签发,运行时按 Ed25519 验签 | 由根 CA 签发的 EEC 证书链取代 |
+| 合集信任 | 市场按 online-data 的 `index.json` 取各合集 EEC,校验证书链后判定可信 | 已完成 |
+| 吊销检查 | `index.json` 登记 `crl` 时,网页 EEC 与合集 EEC 都按 CRL 检查吊销 | 已完成 |
 
 网页产物的签名范围、清单结构与校验流程见 [网页签名与运行时校验](web-signature.md)。
 
@@ -246,6 +256,8 @@ dist/
 | `verify-web` 报 `certificate revoked` | EEC 已被 `gen-crl` 吊销 |
 | `build:online-data` 报 EEC 不是由该根证书签发 | 传入的 `eec.pem` 与 `--root-ca` 不配对 |
 | 网页运行时提示证书链校验未通过 | online-data 缺少 `web/eec.pem`,或该证书不是当前根证书签发的 |
+| 市场提示「证书已被吊销」 | 该合集的 EEC 序列号已写进 `crl.pem`,需要签发新 EEC 并重新生成 CRL,`--revoke` 只列仍需吊销的序列号 |
+| 市场把整份清单判为不可信 | `crl.pem` 拉取失败、已过期、不是当前根证书签发的,或根证书 `keyUsage` 缺 `cRLSign` |
 | `init-root` 报不得写入仓库被追踪的路径 | 根私钥只能写到仓库外的目录或 git 忽略的临时目录 |
 
 ## 延伸阅读
