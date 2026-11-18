@@ -79,6 +79,16 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 插件市场收录的插件 **必须符合** [dsc插件开发规范](docs/user/develop/basic/plugin-develop-spec.md) 。
 
+插件来源遵循信任签名体系:
+
+1. dsc 用组织私钥为受信任的插件合集签发合集信任签名,产物是合集根目录的 `plugin_set_sign.json` 。
+2. 受信任的合集用合集私钥为自己收录的每个插件签名,产物是插件版本目录的 `plugin_sign.json` 。
+3. 插件作者还可以用自己的私钥对同一插件自签名,与合集签名并存。
+
+市场先校验合集信任签名,通过后才信任该来源的公钥,再用它校验插件签名。校验不通过时市场会给出警告并禁用该来源的安装,不会静默放行。信任签名不支持下级派生: 合集不能为其他合集签发信任签名。
+
+签发工具、重签时机与私钥边界见 [信任链与合集信任签名](docs/user/develop/basic/trust-chain.md) 。
+
 
 ## 制作插件
 

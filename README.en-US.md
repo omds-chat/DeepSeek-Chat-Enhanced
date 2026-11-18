@@ -79,6 +79,16 @@ For plugin submission, see [omdsc-dev/awesome-dsc-plugin](https://github.com/omd
 
 Plugins listed in the market **must comply with** the [dsc plugin development specification](docs/user/develop/basic/plugin-develop-spec.md).
 
+Plugin sources follow a trust-signature chain:
+
+1. dsc signs a trusted plugin collection with the organization private key; the artifact is `plugin_set_sign.json` at the collection root.
+2. The trusted collection signs each plugin it lists with the collection private key; the artifact is `plugin_sign.json` in the plugin version directory.
+3. A plugin author may also self-sign the same plugin with their own private key, alongside the collection signature.
+
+The market verifies the collection trust signature first, trusts that source's public key only after it passes, and then uses it to verify plugin signatures. When verification fails, the market warns and blocks installs from that source instead of letting them through silently. Trust signatures cannot be delegated: a collection cannot issue trust signatures for another collection.
+
+See [trust chain and collection trust signatures](docs/user/develop/basic/trust-chain.md) for the signing tool, re-signing triggers, and private key boundaries.
+
 
 ## Building plugins
 
