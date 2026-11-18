@@ -87,7 +87,9 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 市场先校验合集信任签名,通过后才信任该来源的公钥,再用它校验插件签名;公钥优先取自 dsc 的 online-data 信任清单。校验不通过时市场会给出警告,但不会阻止安装,由你自行判断是否继续使用。信任签名不支持下级派生: 合集不能为其他合集签发信任签名。
 
-签发工具、重签时机与私钥边界见 [信任链与合集信任签名](docs/user/develop/basic/trust-chain.md) 。
+签名体系正在迁移到 OpenSSL PKI: omdsc-dev 作为根证书机构签发终端签名证书(EEC),合集用 EEC 做 CMS 分离签名,根证书与各合集的 EEC 通过 online-data 分支分发;网页与市场的运行时校验尚未切换到证书链。
+
+签发工具、重签时机、吊销与私钥边界见 [信任链与 PKI 签名](docs/user/develop/basic/trust-chain.md) 。
 
 
 ## 制作插件

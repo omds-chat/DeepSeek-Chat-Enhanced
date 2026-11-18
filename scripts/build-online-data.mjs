@@ -1,53 +1,70 @@
 #!/usr/bin/env node
 /**
- * 生成 online-data 分支的信任数据。
- * 由 WEB_PRIVATE_KEY 推导 dsc 公钥，为每个合集根目录的 plugin_secret.pub 签发信任签名，
- * 写出 web_public.pem、collections/<合集>/plugin_secret.pub、plugin_set_sign.json 与 index.json
+ * 生成 online-data 分支的 PKI 信任数据。
+ *
+ * 输入: 根证书、可选的 CRL、以及若干「合集名=eec 证书路径」。
+ * 产出: index.json、root_ca.crt、crl.pem(可选)、collections/<合集名>/eec.pem。
+ *
+ * 写盘前用 openssl verify 自检每张 EEC 确实由该根证书签发,任一项不通过则不写出任何文件。
  */
-
-import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import {
+  PkiError,
+  describeCertificate,
+  hasDigitalSignature,
+  verifyChain,
+} from './pki/pki.mjs'
 
-const PRIVATE_KEY_ENV = 'WEB_PRIVATE_KEY'
-/** 合集根目录下的公钥文件；被签名对象 */
-const PUB_FILE = 'plugin_secret.pub'
-/** 合集信任签名文件名 */
-const SET_SIGN_FILE = 'plugin_set_sign.json'
-/** dsc 网页签名公钥文件名；内容由私钥推导 */
-const WEB_PUB_FILE = 'web_public.pem'
 /** 信任清单文件名 */
 const INDEX_FILE = 'index.json'
-/** 信任签名与信任清单固定的签名者标识 */
-const SIGNER = 'dsc'
+/** 根证书文件名 */
+const ROOT_CA_FILE = 'root_ca.crt'
+/** 吊销列表文件名 */
+const CRL_FILE = 'crl.pem'
+/** 合集终端签名证书文件名 */
+const EEC_FILE = 'eec.pem'
 /** 信任清单结构版本 */
-const SCHEMA_VERSION = 1
-/** 合集 id 只允许安全字符，避免拼出越界路径 */
+const SCHEMA_VERSION = 2
+/** 合集 id 只允许安全字符,避免拼出越界路径 */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+/** 旧结构留下的文件,生成新结构时清理 */
+const LEGACY_ROOT_FILES = ['web_public.pem']
+/** 旧结构在合集目录下留下的文件 */
+const LEGACY_COLLECTION_FILES = ['plugin_secret.pub', 'plugin_set_sign.json']
 
 const USAGE = [
-  '用法: node scripts/build-online-data.mjs --out <目录> <合集目录>...',
+  '用法: node scripts/build-online-data.mjs --root-ca <根证书> [--crl <吊销列表>] --eec <合集名>=<eec 证书> [--eec ...] --out <目录>',
   '',
-  '  --out <目录>      输出目录，不存在时自动创建；已存在的同名文件直接覆盖',
-  '  <合集目录>...     一个或多个插件合集根目录，每个目录必须存在 plugin_secret.pub',
-  '  --help            打印用法',
+  '  --root-ca <路径>   根证书,作为信任锚写入输出目录',
+  '  --crl <路径>       可选的吊销列表,写入输出目录并在 index.json 中登记',
+  '  --eec <名>=<路径>  合集名与该合集的 EEC 证书,可重复给出',
+  '  --out <目录>       输出目录,不存在时创建',
+  '  --help             打印用法',
   '',
-  '环境变量:',
-  '  WEB_PRIVATE_KEY   dsc 私钥（PKCS#8 PEM，Ed25519），用于推导公钥与签发信任签名',
-  '',
-  '在 pnpm 中传递参数时写作: pnpm run build:online-data -- --out <目录> <合集目录>...',
+  '在 pnpm 中传递参数时写作: pnpm run build:online-data -- --root-ca root_ca.crt --eec awesome-dsc-plugin=../awesome-dsc-plugin/eec.pem --out single-branch/online-data',
 ].join('\n')
 
 const fail = (message) => {
   throw new Error(message)
 }
 
-/** 解析命令行参数：一个 --out 与至少一个合集目录 */
+/** 把路径转成便于阅读的形式: 工作目录内的路径用相对路径 */
+const display = (target) => {
+  const relativePath = path.relative(process.cwd(), target)
+  if (relativePath === '' || relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+    return target
+  }
+  return relativePath
+}
+
+/** 解析命令行参数 */
 const parseArgs = (argv) => {
-  const options = { out: '', collections: [], help: false }
+  const options = { out: '', rootCa: '', crl: '', eec: [], help: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
-    // pnpm 传参时会插入一个单独的 -- 分隔符，直接忽略
+    // pnpm 传参时会插入一个单独的 -- 分隔符,直接忽略
     if (arg === '--') {
       continue
     }
@@ -55,152 +72,160 @@ const parseArgs = (argv) => {
       options.help = true
       continue
     }
-    if (arg === '--out' || arg.startsWith('--out=')) {
-      const value = arg === '--out' ? argv[index + 1] : arg.slice('--out='.length)
-      if (value === undefined || value === '' || value.startsWith('-')) {
-        fail('--out 缺少输出目录' + '\n' + USAGE)
-      }
-      options.out = value
-      if (arg === '--out') {
-        index += 1
-      }
-      continue
-    }
-    if (arg.startsWith('-')) {
+    const equal = arg.indexOf('=')
+    const name = equal === -1 ? arg : arg.slice(0, equal)
+    if (name !== '--out' && name !== '--root-ca' && name !== '--crl' && name !== '--eec') {
       fail('未知选项 ' + arg + '\n' + USAGE)
     }
-    options.collections.push(arg)
+    const inlineValue = equal === -1 ? undefined : arg.slice(equal + 1)
+    const value = inlineValue === undefined ? argv[index + 1] : inlineValue
+    if (value === undefined || value === '' || (inlineValue === undefined && value.startsWith('-'))) {
+      fail(name + ' 缺少值' + '\n' + USAGE)
+    }
+    if (inlineValue === undefined) {
+      index += 1
+    }
+    if (name === '--eec') {
+      const separator = value.indexOf('=')
+      if (separator <= 0 || separator === value.length - 1) {
+        fail('--eec 的值必须写成 <合集名>=<eec 证书路径>,收到 ' + value)
+      }
+      options.eec.push({ id: value.slice(0, separator), cert: value.slice(separator + 1) })
+      continue
+    }
+    const key = name === '--out' ? 'out' : name === '--crl' ? 'crl' : 'rootCa'
+    if (options[key] !== '') {
+      fail(name + ' 重复给出')
+    }
+    options[key] = value
   }
   return options
 }
 
-/** 把路径转成便于阅读的形式：工作目录内的路径用相对路径 */
-const display = (target) => {
-  const relative = path.relative(process.cwd(), target)
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
-    return target
-  }
-  return relative
-}
-
-const statOf = async (target) => {
+const isFile = (target) => {
   try {
-    return await stat(target)
+    return statSync(target).isFile()
   } catch {
-    return null
+    return false
   }
 }
 
-/** PEM 统一为纯 ASCII 的 LF 文本，且以单个换行结尾 */
-const normalizePem = (pem) => pem.replace(/\r\n?/g, '\n').trimEnd() + '\n'
-
-/** 读取 dsc 私钥，确认存在且算法为 Ed25519 */
-const readPrivateKey = () => {
-  const pem = process.env[PRIVATE_KEY_ENV]
-  if (!pem || pem.trim() === '') {
-    fail(
-      '缺少环境变量 ' +
-        PRIVATE_KEY_ENV +
-        '（PKCS#8 PEM 格式的 Ed25519 私钥），无法推导 dsc 公钥与签发合集信任签名；' +
-        '该私钥属于 dsc，不应下发到合集仓库'
-    )
-  }
-  let privateKey
+const isDirectory = (target) => {
   try {
-    privateKey = createPrivateKey(pem)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    fail(PRIVATE_KEY_ENV + ' 不是有效的 PKCS#8 PEM 私钥：' + reason)
+    return statSync(target).isDirectory()
+  } catch {
+    return false
   }
-  if (privateKey.asymmetricKeyType !== 'ed25519') {
-    fail(
-      PRIVATE_KEY_ENV +
-        ' 的算法为 ' +
-        String(privateKey.asymmetricKeyType) +
-        '，需要 Ed25519 私钥'
-    )
-  }
-  return privateKey
-}
-
-/** 读取并校验合集公钥，返回文件字节；签名对象就是这些字节 */
-const readCollectionPublicKey = async (pubPath) => {
-  const info = await statOf(pubPath)
-  if (info === null || !info.isFile()) {
-    fail(
-      '未找到 ' +
-        display(pubPath) +
-        '，合集根目录必须存在该文件（SPKI PEM 格式的 Ed25519 公钥）'
-    )
-  }
-  const bytes = await readFile(pubPath)
-  if (bytes.length === 0) {
-    fail(display(pubPath) + ' 是空文件，无法作为合集公钥')
-  }
-  let publicKey
-  try {
-    publicKey = createPublicKey(bytes)
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    fail(display(pubPath) + ' 无法解析为 SPKI 公钥：' + reason)
-  }
-  if (publicKey.asymmetricKeyType !== 'ed25519') {
-    fail(
-      display(pubPath) +
-        ' 的算法为 ' +
-        String(publicKey.asymmetricKeyType) +
-        '，需要 Ed25519 SPKI 公钥'
-    )
-  }
-  return bytes
 }
 
 /**
- * 为全部合集签名并自检。
- * 自检不通过时不写出任何文件；自检通过后由调用方统一写盘。
+ * 用 openssl crl -verify 确认 CRL 确实由该根证书签发。
+ * pki.mjs 不提供 CRL 校验,这里直接调用 openssl。
  */
-const signCollections = async (privateKey, publicKey, collectionDirs) => {
-  const entries = []
-  const taken = new Map()
-  for (const dir of collectionDirs) {
-    const resolved = path.resolve(dir)
-    const info = await statOf(resolved)
-    if (info === null || !info.isDirectory()) {
-      fail('合集目录不存在或不是目录：' + display(resolved))
-    }
-    const id = path.basename(resolved)
-    if (!ID_PATTERN.test(id)) {
-      fail(
-        '合集目录名 ' +
-          id +
-          ' 不能作为合集 id：只允许字母、数字、点、下划线与连字符，且不能以符号开头'
-      )
-    }
-    const duplicated = taken.get(id)
-    if (duplicated !== undefined) {
-      fail(
-        '合集 id 重复：' +
-          id +
-          '，分别来自 ' +
-          display(duplicated) +
-          ' 与 ' +
-          display(resolved) +
-          '；合集 id 取自目录名，必须唯一'
-      )
-    }
-    taken.set(id, resolved)
-    const pubBytes = await readCollectionPublicKey(path.join(resolved, PUB_FILE))
-    const digest = createHash('sha512').update(pubBytes).digest()
-    const value = sign(null, digest, privateKey).toString('base64')
-    if (!verify(null, digest, publicKey, Buffer.from(value, 'base64'))) {
-      fail('合集 ' + id + ' 的信任签名自检未通过，未写出任何文件')
-    }
-    entries.push({ id, dir: resolved, pubBytes, value })
+const verifyCrlIssuer = (crlPath, rootCaPath) => {
+  try {
+    execFileSync(process.env.OPENSSL_BIN || 'openssl', ['crl', '-in', crlPath, '-noout', '-CAfile', rootCaPath], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    return { ok: true, reason: null }
+  } catch (error) {
+    const text = String((error && error.stderr) || '') || String((error && error.message) || '')
+    return { ok: false, reason: text.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 2).join(' ') }
   }
-  return entries
 }
 
-const main = async () => {
+/** 校验根证书: 必须是 CA,且带 keyCertSign */
+const checkRootCa = (rootCaPath) => {
+  if (!isFile(rootCaPath)) {
+    fail('根证书不存在: ' + display(rootCaPath))
+  }
+  const info = describeCertificate(rootCaPath)
+  if (info.isCa !== true) {
+    fail('根证书 ' + display(rootCaPath) + ' 的 basicConstraints 不是 CA:TRUE,不能作为信任锚')
+  }
+  // openssl x509 -ext keyUsage 输出的是展示名 "Certificate Sign",不是扩展名 keyCertSign
+  const usages = info.keyUsage.map((item) => item.toLowerCase().replace(/\s+/g, ''))
+  if (!usages.includes('keycertsign') && !usages.includes('certificatesign')) {
+    fail('根证书 ' + display(rootCaPath) + ' 的 keyUsage 缺少 keyCertSign,不能签发证书')
+  }
+  return info
+}
+
+/** 校验单个 EEC: 由根证书签发、可签名、不是 CA */
+const checkEec = (entry, rootCaPath) => {
+  const certPath = path.resolve(entry.cert)
+  if (!isFile(certPath)) {
+    fail('合集 ' + entry.id + ' 的 EEC 证书不存在: ' + display(certPath))
+  }
+  const chain = verifyChain(certPath, rootCaPath)
+  if (!chain.ok) {
+    fail(
+      '合集 ' + entry.id + ' 的 EEC 证书不是由 ' + display(rootCaPath) + ' 签发: ' + String(chain.reason)
+    )
+  }
+  const info = describeCertificate(certPath)
+  if (!hasDigitalSignature(info.keyUsage)) {
+    fail('合集 ' + entry.id + ' 的 EEC 证书缺少 digitalSignature 用途,不能用于 CMS 签名')
+  }
+  if (info.isCa === true) {
+    fail('合集 ' + entry.id + ' 的 EEC 证书 basicConstraints 为 CA:TRUE,不能作为终端签名证书')
+  }
+  if (!info.validNow) {
+    fail('合集 ' + entry.id + ' 的 EEC 证书已过期: ' + String(info.notAfter))
+  }
+  const commonName = (String(info.subject).match(/CN\s*=\s*([^,]+)/) || [])[1]
+  if (commonName !== undefined && commonName.trim() !== entry.id) {
+    console.warn(
+      '[build-online-data] 警告: 合集 ' + entry.id + ' 的 EEC 证书 CN 为 ' + commonName.trim() + ',与合集名不一致'
+    )
+  }
+  return { certPath, info }
+}
+
+/** 清理旧结构留下的文件;不认识的残留只告警,不删除 */
+const cleanLegacy = (outDir, keepIds) => {
+  const removed = []
+  for (const name of LEGACY_ROOT_FILES) {
+    const target = path.join(outDir, name)
+    if (isFile(target)) {
+      rmSync(target, { force: true })
+      removed.push(name)
+    }
+  }
+  const collectionsDir = path.join(outDir, 'collections')
+  if (!isDirectory(collectionsDir)) {
+    return removed
+  }
+  for (const entry of readdirSync(collectionsDir, { withFileTypes: true })) {
+    const target = path.join(collectionsDir, entry.name)
+    if (!entry.isDirectory()) {
+      continue
+    }
+    for (const name of LEGACY_COLLECTION_FILES) {
+      const legacyFile = path.join(target, name)
+      if (isFile(legacyFile)) {
+        rmSync(legacyFile, { force: true })
+        removed.push('collections/' + entry.name + '/' + name)
+      }
+    }
+    if (keepIds.has(entry.name)) {
+      continue
+    }
+    const left = readdirSync(target)
+    if (left.every((name) => name === EEC_FILE)) {
+      rmSync(target, { recursive: true, force: true })
+      removed.push('collections/' + entry.name + '/')
+      continue
+    }
+    if (left.length > 0) {
+      console.warn('[build-online-data] 警告: collections/' + entry.name + ' 不在本次清单内,但含未识别文件,保留不删')
+    }
+  }
+  return removed
+}
+
+const main = () => {
   const options = parseArgs(process.argv.slice(2))
   if (options.help) {
     console.log(USAGE)
@@ -209,63 +234,89 @@ const main = async () => {
   if (options.out === '') {
     fail('缺少 --out 参数' + '\n' + USAGE)
   }
-  if (options.collections.length === 0) {
-    fail('缺少合集目录参数，至少需要一个' + '\n' + USAGE)
+  if (options.rootCa === '') {
+    fail('缺少 --root-ca 参数' + '\n' + USAGE)
+  }
+  if (options.eec.length === 0) {
+    fail('缺少 --eec 参数,至少需要一个合集' + '\n' + USAGE)
   }
 
-  const privateKey = readPrivateKey()
-  const publicKey = createPublicKey(privateKey)
-  const webPublicPem = normalizePem(
-    publicKey.export({ type: 'spki', format: 'pem' }).toString()
-  )
+  const rootCaPath = path.resolve(options.rootCa)
+  checkRootCa(rootCaPath)
 
-  // 先完成全部签名与自检，再统一写盘，避免失败时留下半套数据
-  const entries = await signCollections(privateKey, publicKey, options.collections)
+  let crlPath = ''
+  if (options.crl !== '') {
+    crlPath = path.resolve(options.crl)
+    if (!isFile(crlPath)) {
+      fail('CRL 不存在: ' + display(crlPath))
+    }
+    const crlCheck = verifyCrlIssuer(crlPath, rootCaPath)
+    if (!crlCheck.ok) {
+      fail('CRL 不是由 ' + display(rootCaPath) + ' 签发: ' + String(crlCheck.reason))
+    }
+  }
+
+  const seen = new Map()
+  const entries = []
+  for (const entry of options.eec) {
+    if (!ID_PATTERN.test(entry.id)) {
+      fail('合集名 ' + entry.id + ' 不能作为合集 id: 只允许字母、数字、点、下划线与连字符,且不能以符号开头')
+    }
+    if (seen.has(entry.id)) {
+      fail('合集 id 重复: ' + entry.id)
+    }
+    seen.set(entry.id, true)
+    entries.push({ id: entry.id, ...checkEec(entry, rootCaPath) })
+  }
 
   const outDir = path.resolve(options.out)
-  await mkdir(outDir, { recursive: true })
-  await writeFile(path.join(outDir, WEB_PUB_FILE), webPublicPem, 'utf8')
+  mkdirSync(outDir, { recursive: true })
+
+  const removed = cleanLegacy(outDir, new Set(entries.map((entry) => entry.id)))
+  if (options.crl === '' && isFile(path.join(outDir, CRL_FILE))) {
+    rmSync(path.join(outDir, CRL_FILE), { force: true })
+    removed.push(CRL_FILE)
+  }
+
+  copyFileSync(rootCaPath, path.join(outDir, ROOT_CA_FILE))
+  if (crlPath !== '') {
+    copyFileSync(crlPath, path.join(outDir, CRL_FILE))
+  }
 
   const collections = []
   for (const entry of entries) {
     const targetDir = path.join(outDir, 'collections', entry.id)
-    await mkdir(targetDir, { recursive: true })
-    // 公钥按原字节写出：信任签名覆盖的是这些字节，任何重新编码都会让签名失效
-    await writeFile(path.join(targetDir, PUB_FILE), entry.pubBytes)
-    await writeFile(
-      path.join(targetDir, SET_SIGN_FILE),
-      JSON.stringify({ sign: [{ value: entry.value, signer: SIGNER }] }, null, 2) + '\n',
-      'utf8'
-    )
-    collections.push({
-      id: entry.id,
-      publicKey: 'collections/' + entry.id + '/' + PUB_FILE,
-      trustSignature: 'collections/' + entry.id + '/' + SET_SIGN_FILE,
-    })
+    mkdirSync(targetDir, { recursive: true })
+    copyFileSync(entry.certPath, path.join(targetDir, EEC_FILE))
+    collections.push({ id: entry.id, eec: 'collections/' + entry.id + '/' + EEC_FILE })
   }
 
   const index = {
     schemaVersion: SCHEMA_VERSION,
-    webPublicKey: WEB_PUB_FILE,
+    rootCa: ROOT_CA_FILE,
+    crl: crlPath === '' ? null : CRL_FILE,
     collections,
   }
-  await writeFile(path.join(outDir, INDEX_FILE), JSON.stringify(index, null, 2) + '\n', 'utf8')
+  writeFileSync(path.join(outDir, INDEX_FILE), JSON.stringify(index, null, 2) + '\n', 'utf8')
 
-  console.log('[build-online-data] 输出目录：' + display(outDir))
-  console.log('[build-online-data] 已写出：' + WEB_PUB_FILE + '（dsc 公钥，SPKI PEM）')
+  console.log('[build-online-data] 输出目录: ' + display(outDir))
+  console.log('[build-online-data] 已写出: ' + ROOT_CA_FILE + '(根证书)')
+  console.log(
+    '[build-online-data] 已写出: ' + (crlPath === '' ? '(无 CRL)' : CRL_FILE + '(吊销列表)')
+  )
   for (const entry of entries) {
-    console.log(
-      '[build-online-data] 合集 ' +
-        entry.id +
-        '：' +
-        entry.pubBytes.length +
-        ' 字节公钥，信任签名自检通过'
-    )
+    console.log('[build-online-data] 合集 ' + entry.id + ': EEC 由根证书签发,自检通过')
   }
-  console.log('[build-online-data] 已写出：' + INDEX_FILE + '（' + entries.length + ' 个合集）')
+  console.log('[build-online-data] 已写出: ' + INDEX_FILE + '(' + entries.length + ' 个合集)')
+  if (removed.length > 0) {
+    console.log('[build-online-data] 已清理旧结构文件: ' + removed.join('、'))
+  }
 }
 
-main().catch((error) => {
-  console.error('[build-online-data] ' + (error instanceof Error ? error.message : String(error)))
+try {
+  main()
+} catch (error) {
+  const message = error instanceof PkiError ? error.message : error instanceof Error ? error.message : String(error)
+  console.error('[build-online-data] ' + message)
   process.exit(1)
-})
+}

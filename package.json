@@ -17,6 +17,7 @@
     "sign": "node scripts/sign-web.mjs",
     "sign:collection": "node scripts/sign-collection.mjs",
     "build:online-data": "node scripts/build-online-data.mjs",
+    "pki": "node scripts/pki/ca.mjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
     "format": "oxfmt --write ."
