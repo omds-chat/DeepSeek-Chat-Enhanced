@@ -18,8 +18,14 @@ export type ContributionHandler = (event: CoreEvent) => void
 /** 调用选项 */
 export type CallOptions = { signal?: AbortSignal }
 
-/** 插件来源；内置或运行时地址，宿主直接注册的插件没有来源 */
-export type PluginSource = { kind: 'builtin' } | { kind: 'url'; url: string }
+/**
+ * 插件来源；内置、运行时地址或本地离线包。
+ * 宿主直接注册的插件没有来源，local 没有可重新拉取的地址。
+ */
+export type PluginSource =
+  | { kind: 'builtin' }
+  | { kind: 'url'; url: string }
+  | { kind: 'local' }
 
 /**
  * 插件来源类型。
@@ -130,7 +136,7 @@ export type LoadedPlugin = { plugin: DscPlugin; manifest?: PluginManifest }
 /** 插件状态 */
 export type PluginState = 'registered' | 'active' | 'inactive' | 'failed'
 
-/** 安装拒绝原因 */
+/** 安装拒绝原因；后五项只由本地离线包产生 */
 export type InstallRejection =
   | 'invalid-manifest'
   | 'unknown-capability'
@@ -142,9 +148,48 @@ export type InstallRejection =
   | 'load-failed'
   | 'invalid-plugin'
   | 'signature-invalid'
+  /** 扩展名不是 .zip 或 .tgz */
+  | 'unsupported-package'
+  /** 压缩包无法解压，或包内文件不是合法文本 */
+  | 'corrupt-package'
+  /** 离线包内缺少 meta.json */
+  | 'missing-meta'
+  /** 离线包内缺少 plugin.js */
+  | 'missing-plugin'
+  /** meta.json 无法解析，或缺少必填字段、版本号不是三段数字 */
+  | 'invalid-meta'
+  /** 插件代码超过单个插件上限 */
+  | 'package-too-large'
 
 /** 安装结果 */
 export type InstallResult = { ok: true } | { ok: false; reason: InstallRejection; detail?: string }
+
+/** 双语文本；缺失的一侧用另一侧补 */
+export type LocalizedText = { 'zh-CN': string; 'en-US': string }
+
+/** 离线包待安装信息；只用于二次确认，不进入安装记录 */
+export type LocalPackageInfo = {
+  /** 由 meta.json 的 name 推导，与市场使用同一条规则 */
+  id: string
+  name: string
+  version: string
+  author: string
+  /** 缺失时为空串，由界面显示占位文案 */
+  license: string
+  description: LocalizedText
+  /** 包内签名材料齐全且校验通过为 verified，否则为 unverified */
+  signatureVerified: SignatureState
+  /** 已存在同 id 的安装记录 */
+  installed: boolean
+}
+
+/**
+ * 离线包预检结果。
+ * 通过时返回待安装信息与提交函数：确认在界面层完成，提交前不改动任何状态。
+ */
+export type LocalPackageInspection =
+  | { ok: true; info: LocalPackageInfo; commit: () => Promise<InstallResult> }
+  | { ok: false; reason: InstallRejection; detail?: string }
 
 /** 插件状态视图 */
 export type PluginStateView = {

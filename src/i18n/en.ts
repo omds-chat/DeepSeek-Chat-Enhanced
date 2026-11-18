@@ -242,6 +242,14 @@ export const en = {
   pluginReasonNoInstance: 'The plugin instance is missing; reinstall the plugin',
   pluginReasonSignatureInvalid:
     'Plugin signature verification failed; download the plugin again',
+  pluginReasonUnsupportedPackage: 'Only .zip and .tgz offline packages are supported',
+  pluginReasonCorruptPackage: 'The offline package cannot be read; the file may be damaged',
+  pluginReasonMissingMeta: 'The offline package has no meta.json',
+  pluginReasonMissingPlugin: 'The offline package has no plugin.js',
+  pluginReasonInvalidMeta:
+    'meta.json cannot be parsed, or name, version or author is missing, or the version is not three numbers',
+  pluginReasonPackageTooLarge:
+    'The plugin code exceeds the 1 MB limit; trim the artifact and package it again',
   pluginReasonUnknown: 'Unknown cause; see the plugin logs for details',
   pluginLogsTitle: 'Plugin logs: {name}',
   pluginLogsEmpty: 'No logs yet',
@@ -304,6 +312,27 @@ export const en = {
   pluginOperationBusy: 'Working',
   pluginInstalled: 'Plugin {id} installed',
   pluginInstallDone: 'Plugin installed',
+  pluginInstallFromLocal: 'Install from file',
+  pluginLocalFileLabel: 'Offline package file',
+  pluginLocalDialogTitle: 'Install plugin from file',
+  pluginLocalInspecting: 'Reading the offline package',
+  pluginLocalFile: 'File',
+  pluginLocalName: 'Plugin name',
+  pluginLocalVersion: 'Version',
+  pluginLocalAuthor: 'Author',
+  pluginLocalLicense: 'License',
+  pluginLocalSignature: 'Signature',
+  pluginLocalSignatureVerified: 'Signed and verified',
+  pluginLocalSignatureUnverified: 'No signature provided',
+  pluginLocalUnsignedNotice:
+    'This plugin provides no signature, so its code cannot be checked after install; only install packages from sources you trust',
+  pluginLocalInstalledState: 'Installed',
+  pluginLocalInstalledYes: 'A plugin with the same id is installed',
+  pluginLocalInstalledNo: 'Not installed',
+  pluginLocalDuplicateNotice:
+    'A plugin with the same id is installed; uninstall it before installing again',
+  pluginLocalUnknown: 'Not provided',
+  pluginLocalConfirm: 'Confirm install',
   webIntegrityFailed:
     'Web file signature check failed for {count} file(s): {files}. Files may have been modified; reload the page or download it again.',
 } satisfies Record<keyof typeof zh, string>

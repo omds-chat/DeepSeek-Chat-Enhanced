@@ -14,6 +14,16 @@ export const fetchArtifactBytes = async (url: string): Promise<Uint8Array | null
 }
 
 /**
+ * 校验插件代码文本的签名：对代码字节做 SHA-512 摘要后用 pub 验签。
+ * 本地插件没有可拉取的地址，签名材料与代码都存在安装记录里。
+ */
+export const verifyCodeSignature = async (
+  code: string,
+  sign: string,
+  pub: string
+): Promise<boolean> => await verifyBytesSignature(new TextEncoder().encode(code), sign, pub)
+
+/**
  * 校验插件产物签名：拉取当前 plugin.js 字节，做 SHA-512 摘要后用 pub 验签。
  * 字节拉取失败返回 unreachable，由调用方按恢复失败处理，不误报篡改。
  */

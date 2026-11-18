@@ -8,6 +8,7 @@ import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { InstalledPlugins } from './InstalledPlugins.js'
+import { LocalInstall } from './LocalInstall.js'
 import { MarketPlugins } from './MarketPlugins.js'
 import { closePluginPanel, usePluginPanel, type PluginPanelTab } from './pluginPanelState.js'
 import { usePluginList } from './usePluginList.js'
@@ -139,7 +140,10 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
 
   return (
     <div className={styles.installBar}>
-      <div className={styles.installTitle}>{t('pluginInstallFromUrl')}</div>
+      <div className={styles.installHeader}>
+        <div className={styles.installTitle}>{t('pluginInstallFromUrl')}</div>
+        <LocalInstall onInstalled={onInstalled} />
+      </div>
       <div className={styles.installRow}>
         <input
           className={clsx(styles.input, styles.inputUrl, invalid && styles.inputInvalid)}

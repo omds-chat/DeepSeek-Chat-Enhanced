@@ -65,20 +65,15 @@ export const resolvePluginModule = async (module: unknown): Promise<LoadedPlugin
   return manifest ? { plugin, manifest } : { plugin }
 }
 
-/** 运行时加载插件产物；只接受 http(s) 地址 */
-export const loadPluginModule = async (
-  url: string,
-  timeoutMs: number = DEFAULT_TIMEOUT
-): Promise<unknown> => {
-  const target = new URL(url, window.location.href)
-  if (!isPluginSourceAllowed(target.href)) {
-    throw new Error('dsc-plugin-engine: plugin source must use https or a local http host')
-  }
-  // 运行时导入绕过打包器，产物按普通 ESM 加载
-  const importModule = new Function('specifier', 'return import(specifier)') as unknown as (
+/**
+ * 导入模块并施加超时。
+ * 运行时导入绕过打包器，产物按普通 ESM 加载；地址判定由调用方负责。
+ */
+const importModule = async (specifier: string, timeoutMs: number): Promise<unknown> => {
+  const importRuntime = new Function('specifier', 'return import(specifier)') as unknown as (
     specifier: string
   ) => Promise<unknown>
-  const loading = importModule(target.href)
+  const loading = importRuntime(specifier)
   void loading.catch(() => undefined)
   let timer = 0
   const timeout = new Promise<never>((_resolve, reject) => {
@@ -90,5 +85,33 @@ export const loadPluginModule = async (
     return await Promise.race([loading, timeout])
   } finally {
     window.clearTimeout(timer)
+  }
+}
+
+/** 运行时加载插件产物；只接受 http(s) 地址 */
+export const loadPluginModule = async (
+  url: string,
+  timeoutMs: number = DEFAULT_TIMEOUT
+): Promise<unknown> => {
+  const target = new URL(url, window.location.href)
+  if (!isPluginSourceAllowed(target.href)) {
+    throw new Error('dsc-plugin-engine: plugin source must use https or a local http host')
+  }
+  return await importModule(target.href, timeoutMs)
+}
+
+/**
+ * 加载存进安装记录的插件代码：先建 Blob URL 再导入，导入结束后立即释放。
+ * 本地插件没有分发地址，启动恢复只能走这条路径；代码是单文件 ESM，不解析相对导入。
+ */
+export const loadPluginModuleFromCode = async (
+  code: string,
+  timeoutMs: number = DEFAULT_TIMEOUT
+): Promise<unknown> => {
+  const url = URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
+  try {
+    return await importModule(url, timeoutMs)
+  } finally {
+    URL.revokeObjectURL(url)
   }
 }

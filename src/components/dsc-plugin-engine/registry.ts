@@ -17,8 +17,8 @@ import {
 const MAX_LOG = 100
 /** 插件 id 规则 */
 const ID_PATTERN = /^[a-z][a-z0-9-]{2,63}$/
-/** 版本号规则 */
-const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/
+/** 版本号规则；严格三段且无前导零，与运行时 meta schema 一致 */
+const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 /** 版本范围规则 */
 const RANGE_PATTERN = /^(\^|~|>=|<=|=)?(\d+\.\d+\.\d+)$/
 
@@ -31,6 +31,8 @@ export type PluginOrigin = {
   pub?: string
   /** 插件 plugin.js 的签名 base64 */
   sign?: string
+  /** 本地插件的代码文本；本地插件没有可重新拉取的地址，恢复时靠它重建模块 */
+  code?: string
   installedAt: number
   /** 启动校验失败后置为 false；缺省视为可信 */
   trusted: boolean

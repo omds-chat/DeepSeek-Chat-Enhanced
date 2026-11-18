@@ -16,13 +16,21 @@ import {
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
 import { loadPluginRecords, writePluginRecords, type StoredPluginRecord } from './db.js'
-import { loadPluginModule, resolvePluginModule } from './loader.js'
+import {
+  inspectPackageFiles,
+  readLocalPackage,
+  toPluginId,
+  type PackageInspection,
+} from './localPackage.js'
+import { loadPluginModule, loadPluginModuleFromCode, resolvePluginModule } from './loader.js'
 import * as store from './registry.js'
-import { verifyArtifactSignature, type ArtifactVerdict } from './signature.js'
+import { verifyArtifactSignature, verifyCodeSignature, type ArtifactVerdict } from './signature.js'
 import type {
   DscPlugin,
   InstallResult,
   LoadedPlugin,
+  LocalPackageInfo,
+  LocalPackageInspection,
   PluginManifest,
   PluginSource,
   PluginSourceType,
@@ -58,6 +66,13 @@ export type PluginEngine = {
     manifest?: PluginManifest,
     source?: InstallSource
   ): Promise<InstallResult>
+  /**
+   * 本地离线包预检：解包、校验清单与签名，返回待安装信息与提交函数。
+   * 不改动任何状态；二次确认在界面层完成，确认后才调用返回的提交函数。
+   */
+  inspectLocalPackage(file: File): Promise<LocalPackageInspection>
+  /** 从本地离线包安装：预检通过后直接提交，不包含界面确认 */
+  installFromLocalFile(file: File): Promise<InstallResult>
   activate(id: string): Promise<boolean>
   deactivate(id: string): Promise<boolean>
   unload(id: string): Promise<boolean>
@@ -138,6 +153,9 @@ export const installPluginEngine = (): PluginEngine => {
     }
     if (origin.sign) {
       stored.sign = origin.sign
+    }
+    if (origin.code) {
+      stored.code = origin.code
     }
     if (!origin.trusted) {
       stored.trusted = false
@@ -405,6 +423,103 @@ export const installPluginEngine = (): PluginEngine => {
     return result
   }
 
+  /**
+   * 提交离线包：用包内代码建模块并注册。
+   * 同 id 已存在时直接拒绝，不覆盖已有记录。
+   */
+  const commitLocalPackage = async (inspection: PackageInspection): Promise<InstallResult> => {
+    const fallbackId =
+      inspection.manifest?.id ?? toPluginId(inspection.meta.name) ?? inspection.meta.name
+    if (store.get(fallbackId)) {
+      report('pluginInstallRejected', { id: fallbackId, reason: pluginReasonText('duplicate') })
+      return { ok: false, reason: 'duplicate' }
+    }
+    let loaded: LoadedPlugin
+    try {
+      loaded = await resolvePluginModule(await loadPluginModuleFromCode(inspection.codeText))
+    } catch (error) {
+      const detail = describeError(error)
+      // 原始错误只进引擎日志，界面用可读文案
+      pushEngineLog(`install local ${fallbackId} failed: ${detail}`)
+      report('pluginInstallRejected', { id: fallbackId, reason: pluginReasonText('load-failed') })
+      return { ok: false, reason: 'load-failed', detail }
+    }
+    const resolved = inspection.manifest ?? loaded.manifest
+    if (!resolved) {
+      report('pluginManifestMissing', { id: fallbackId })
+      return { ok: false, reason: 'invalid-manifest' }
+    }
+    const origin: store.PluginOrigin = {
+      sourceType: 'local',
+      installedAt: Date.now(),
+      trusted: true,
+      code: inspection.codeText,
+    }
+    if (inspection.pub) {
+      origin.pub = inspection.pub
+    }
+    if (inspection.sign) {
+      origin.sign = inspection.sign
+    }
+    const signature: SignatureState = inspection.pub && inspection.sign ? 'verified' : 'unverified'
+    const result = register(resolved, loaded.plugin, { kind: 'local' }, { origin, signature })
+    if (!result.ok) {
+      return result
+    }
+    await activate(resolved.id)
+    persist()
+    return result
+  }
+
+  /** 离线包预检：只读文件并校验，不改动注册表与安装记录 */
+  const inspectLocalPackage = async (file: File): Promise<LocalPackageInspection> => {
+    let bytes: Uint8Array
+    try {
+      bytes = new Uint8Array(await file.arrayBuffer())
+    } catch (error) {
+      return { ok: false, reason: 'corrupt-package', detail: describeError(error) }
+    }
+    const read = readLocalPackage(file.name, bytes)
+    if (!read.ok) {
+      return read
+    }
+    const inspected = await inspectPackageFiles(read.files)
+    if (!inspected.ok) {
+      return inspected
+    }
+    const inspection = inspected.inspection
+    const id =
+      inspection.manifest?.id ?? toPluginId(inspection.meta.name) ?? inspection.meta.name
+    if (inspection.incompleteSignature) {
+      pushEngineLog(
+        `local package ${file.name}: signature material is incomplete, install as unverified`
+      )
+    }
+    const info: LocalPackageInfo = {
+      id,
+      name: inspection.meta.name,
+      version: inspection.meta.version,
+      author: inspection.meta.author,
+      license: inspection.meta.license,
+      description: inspection.meta.description,
+      signatureVerified: inspection.pub && inspection.sign ? 'verified' : 'unverified',
+      installed: store.get(id) !== undefined,
+    }
+    return { ok: true, info, commit: () => commitLocalPackage(inspection) }
+  }
+
+  const installFromLocalFile = async (file: File): Promise<InstallResult> => {
+    const inspected = await inspectLocalPackage(file)
+    if (!inspected.ok) {
+      report('pluginInstallRejected', {
+        id: file.name,
+        reason: pluginReasonText(inspected.reason, inspected.detail),
+      })
+      return { ok: false, reason: inspected.reason, detail: inspected.detail }
+    }
+    return await inspected.commit()
+  }
+
   /** 存储记录转成注册表用的来源元数据 */
   const toOrigin = (entry: StoredPluginRecord): store.PluginOrigin => {
     const origin: store.PluginOrigin = {
@@ -420,6 +535,9 @@ export const installPluginEngine = (): PluginEngine => {
     }
     if (entry.sign) {
       origin.sign = entry.sign
+    }
+    if (entry.code) {
+      origin.code = entry.code
     }
     return origin
   }
@@ -490,6 +608,58 @@ export const installPluginEngine = (): PluginEngine => {
   }
 
   /**
+   * 恢复本地插件：用存储的代码重建 Blob 模块，有签名材料时先对代码验签。
+   * 验签不通过的记录保留在列表中并标记不可信，供用户看到并手动卸载。
+   */
+  const restoreLocal = async (entry: StoredPluginRecord): Promise<void> => {
+    const id = entry.manifest.id
+    const origin = toOrigin(entry)
+    const source: PluginSource = { kind: 'local' }
+    const code = entry.code ?? ''
+    if (code === '') {
+      // 没有代码就无法重建模块，只能等用户重新安装
+      const record = store.addFailed(entry.manifest, source, 'no-plugin-instance', { origin })
+      record.enabled = entry.enabled
+      report('pluginRestoreFailed', { id, reason: pluginReasonText('no-plugin-instance') })
+      return
+    }
+    let signature: SignatureState = 'unverified'
+    if (entry.pub && entry.sign) {
+      if (!(await verifyCodeSignature(code, entry.sign, entry.pub))) {
+        const record = store.addFailed(entry.manifest, source, 'signature-invalid', {
+          origin: { ...origin, trusted: false },
+          signature: 'failed',
+        })
+        record.enabled = entry.enabled
+        store.pushLog(record, 'signature-invalid')
+        report('pluginSignatureInvalid', { id })
+        return
+      }
+      signature = 'verified'
+    }
+    let loaded: LoadedPlugin
+    try {
+      loaded = await resolvePluginModule(await loadPluginModuleFromCode(code))
+    } catch (error) {
+      const reason = describeError(error)
+      // 原始错误随占位记录写入插件日志，界面用可读文案
+      const record = store.addFailed(entry.manifest, source, reason, { origin, signature })
+      record.enabled = entry.enabled
+      report('pluginRestoreFailed', { id, reason: pluginReasonText(reason) })
+      return
+    }
+    const result = register(entry.manifest, loaded.plugin, source, { origin, signature })
+    const record = store.get(id)
+    if (!result.ok || !record) {
+      return
+    }
+    record.enabled = entry.enabled
+    if (record.enabled) {
+      await activate(id)
+    }
+  }
+
+  /**
    * 启动恢复：先装载内置插件，再恢复外部插件。
    * 外部插件先并发校验签名（上限 4），再按存储顺序逐个加载，保证依赖先于下游注册。
    * 单个插件失败只记录为 failed，不阻塞其余插件与宿主渲染。
@@ -524,13 +694,18 @@ export const installPluginEngine = (): PluginEngine => {
     // 校验只给出结论，不改动注册表；激活顺序仍按存储顺序
     const verdicts = new Map<string, ArtifactVerdict>()
     await runLimited(externals, VERIFY_CONCURRENCY, async (entry) => {
-      if (!entry.source_url || !entry.pub || !entry.sign) {
+      // 本地插件没有可拉取的地址，验签在 restoreLocal 里对存储的代码完成
+      if (entry.source_type === 'local' || !entry.source_url || !entry.pub || !entry.sign) {
         return
       }
       verdicts.set(entry.id, await verifyArtifactSignature(entry.source_url, entry.pub, entry.sign))
     })
     for (const entry of externals) {
-      await restoreExternal(entry, verdicts.get(entry.id))
+      if (entry.source_type === 'local') {
+        await restoreLocal(entry)
+      } else {
+        await restoreExternal(entry, verdicts.get(entry.id))
+      }
     }
     restoring = false
     persist()
@@ -563,6 +738,8 @@ export const installPluginEngine = (): PluginEngine => {
     version: CORE_VERSION,
     install,
     installFromUrl,
+    inspectLocalPackage,
+    installFromLocalFile,
     activate,
     deactivate,
     unload,
@@ -595,6 +772,8 @@ export type {
   EventsCapability,
   InstallResult,
   LoadedPlugin,
+  LocalPackageInfo,
+  LocalPackageInspection,
   NetCapability,
   NetResponse,
   PluginContext,

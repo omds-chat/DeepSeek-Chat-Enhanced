@@ -20,6 +20,12 @@ const REASONS: Record<string, ReasonSpec> = {
   'invalid-plugin': { key: 'pluginReasonInvalidPlugin' },
   'no-plugin-instance': { key: 'pluginReasonNoInstance' },
   'signature-invalid': { key: 'pluginReasonSignatureInvalid' },
+  'unsupported-package': { key: 'pluginReasonUnsupportedPackage' },
+  'corrupt-package': { key: 'pluginReasonCorruptPackage' },
+  'missing-meta': { key: 'pluginReasonMissingMeta' },
+  'missing-plugin': { key: 'pluginReasonMissingPlugin' },
+  'invalid-meta': { key: 'pluginReasonInvalidMeta' },
+  'package-too-large': { key: 'pluginReasonPackageTooLarge' },
 }
 
 /**

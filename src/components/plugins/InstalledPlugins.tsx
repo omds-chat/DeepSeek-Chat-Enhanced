@@ -41,9 +41,13 @@ const sourceLabel = (plugin: PluginStateView): TranslationKey => {
   if (!plugin.source) {
     return 'pluginSourceHost'
   }
-  return plugin.source.kind === 'builtin'
-    ? 'pluginSourceBuiltin'
-    : sourceTypeLabels[plugin.sourceType]
+  if (plugin.source.kind === 'builtin') {
+    return 'pluginSourceBuiltin'
+  }
+  if (plugin.source.kind === 'local') {
+    return 'pluginSourceLocal'
+  }
+  return sourceTypeLabels[plugin.sourceType]
 }
 
 /** 正在进行的操作；用于按钮的忙碌文案与禁用 */
@@ -166,7 +170,7 @@ export const InstalledPlugins = ({
               <div className={styles.nameCell} role="cell">
                 <span className={styles.name}>{plugin.name}</span>
                 <span className={styles.caption}>{plugin.id}</span>
-                {plugin.source?.kind === 'url' ? (
+                {plugin.source !== null && plugin.source.kind !== 'builtin' ? (
                   <span
                     className={clsx(
                       styles.signatureText,

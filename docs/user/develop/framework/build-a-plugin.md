@@ -150,15 +150,49 @@ export const activate = (context) => {
 - 若必须拆分代码,被拆出的 chunk 与资源要一起部署,入口地址保持稳定。
 - 构建完成后在浏览器控制台直接 `import('https://example.com/dsc-demo-log.js')` 一次,确认没有语法错误与缺失依赖。
 
+## 打包成离线包
+
+用户也可以拿到一个文件直接本地安装,不必自己搭静态服务器。引擎接受两种离线包:
+
+| 格式 | 目录布局 | 生成方式 |
+|:---:|:---:|:---:|
+| zip | 根目录直接放 `meta.json` 与 `plugin.js`,可选 `plugin_sign.json` 与 `plugin_secret.pub` | 进入 `dist/` 后打包:`zip -r ../dsc-demo-log-1.0.0.zip .` |
+| npm 包(`.tgz`) | 产物在 `package/dist/` 下 | 在插件项目根目录执行 `pnpm pack` |
+
+zip 的要点:
+
+- 压缩包根目录就是 `dist/` 的内容,不能再套一层目录;根目录下多一层 `dist/` 会导致安装时提示缺少 `meta.json`。
+- 只识别 `meta.json`、`plugin.js` 与两个签名文件,其余文件会被忽略,不影响安装。
+- 用命令行打包,避免系统压缩工具写入额外的元数据目录。
+- Windows 上不要直接用 `Compress-Archive` 压缩 `dist` 目录,它会把目录名套进包内;进入 `dist` 后执行 `tar -a -c -f ..\plugin.zip *`,或用资源管理器选中目录内的文件再压缩。
+
+npm 包的要点:
+
+- 用 `pnpm pack` 或 `npm pack` 生成,包内路径固定为 `package/dist/...`。
+- `package.json` 的 `files` 需要包含 `dist`,否则产物不会进包。
+- `package/` 下的其他内容被忽略,只安装 `package/dist/` 下的文件。
+
+`meta.json` 是安装依据:引擎只校验 `name`、`version`、`author` 非空且版本号为三段数字;清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。
+
+带签名的离线包:
+
+1. 生成密钥对,私钥保存为 `secret`(PKCS#8 PEM),公钥导出为 `secret.pub`(SPKI PEM)。
+2. 对 `plugin.js` 的字节做 SHA-512 摘要,再用私钥对摘要签名,签名值按 base64 写入 `plugin_sign.json` 的 `value`,同一条目写 `for: "plugin.js"` 与 `signer`。
+3. 把 `plugin_sign.json` 与 `plugin_secret.pub` 一起放进包内,与 `meta.json`、`plugin.js` 同级。
+
+只带其中一个文件时,引擎按未提供签名处理,并在确认对话框里提示未校验。
+
 ## 让用户安装
 
 | 方式 | 入口 | 清单来源 |
 |:---:|:---:|:---:|
 | 从地址安装 | 插件面板底部的「从地址安装」 | 产物自带的 `manifest` 导出 |
+| 从本地安装 | 插件面板底部的「从本地安装」 | `meta.json` 的 `capabilities`,缺该字段时用产物自带的 `manifest` |
 | 插件市场 | 插件面板的「插件市场」标签页 | 索引条目内联的清单优先,否则用产物自带的 `manifest` |
 | 宿主注册 | 宿主代码调用 `engine.install(manifest, plugin)` | 调用方传入 |
 
 - 通过地址安装成功后插件自动激活;安装记录写入浏览器本地,下次打开页面时自动恢复。
+- 从本地安装的插件把代码文本一并存进安装记录,下次打开页面时用保存的代码恢复,不再读取离线包;离线包只需保留用于重装。
 - 产物地址失效时,恢复失败只把该插件标记为 `failed`,不影响其他插件与页面渲染。
 - 市场索引的结构与收录要求由插件市场侧维护,产物仍须导出 `manifest`,或由索引条目内联清单。
 - 卸载会清除该插件的本地数据,`context.storage` 写入的内容不会跨卸载保留。
@@ -181,6 +215,11 @@ export const activate = (context) => {
 | `load-failed` | 地址协议不支持、网络失败或加载超过 10 秒 | 检查地址与网络 |
 | `load-failed`（跨源托管） | 产物与页面不同源,响应里没有 `Access-Control-Allow-Origin`,浏览器拒绝导入模块 | 在托管侧配置 CORS;或把产物放到与页面同源的地址 |
 | `invalid-plugin` | 产物没有导出 `activate`,或导出形态不被识别 | 检查导出形态 |
+| `missing-meta` / `missing-plugin` | 离线包根目录不是 `dist/` 的内容,或 npm 包里没有 `dist/` | 按打包要求重新生成离线包 |
+| `invalid-meta` | `meta.json` 缺少 `name`、`version`、`author`,或版本号不是三段数字 | 修正 `meta.json` |
+| `signature-invalid`(本地包) | 打包后改动了 `plugin.js`,或签名与公钥不匹配 | 重新签名后再打包 |
+| `corrupt-package` | 压缩包损坏,或 `plugin.js` 不是 UTF-8 文本 | 重新打包 |
+| `package-too-large` | `plugin.js` 超过 1 MB | 精简产物(行压缩、去掉内联资源)后重新打包 |
 
 运行阶段的现象:
 

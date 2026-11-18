@@ -13,6 +13,7 @@ dsc-plugin-engine/
 ├── registry.ts     # 插件注册表、依赖与冲突校验、内置 id 集合
 ├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
+├── localPackage.ts # 本地离线包解析与校验：zip、tgz、meta.json、签名
 ├── signature.ts    # 插件产物签名校验：拉取字节并验签
 ├── builtin.ts      # 内置插件清单与工厂
 └── README.md       # 机制说明与 dsh 映射表
@@ -74,9 +75,11 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 ### 持久化与启动恢复
 
-安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库（版本 1，对象仓库 `plugins`，主键 `id`），与聊天历史库分开建库，互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`pub`、`sign`、`enabled`、`installed_at`，校验失败的记录另带 `trusted: false`。
+安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库（版本 1，对象仓库 `plugins`，主键 `id`），与聊天历史库分开建库，互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`pub`、`sign`、`code`、`enabled`、`installed_at`，校验失败的记录另带 `trusted: false`。
 
-`source_type` 取 `inner`（随本体分发）、`awesome`（精选合集）、`outer`（其他在线来源）、`local`（用户上传）之一；`source_url` 只对在线插件存在，存其 `plugin.js` 地址；`pub` 与 `sign` 是获取插件时拿到的公钥 PEM 与 `plugin.js` 签名 base64，缺失表示该记录没有可校验的签名材料。
+`source_type` 取 `inner`（随本体分发）、`awesome`（精选合集）、`outer`（其他在线来源）、`local`（用户上传）之一；`source_url` 只对在线插件存在，存其 `plugin.js` 地址，`local` 来源留空；`pub` 与 `sign` 是获取插件时拿到的公钥 PEM 与 `plugin.js` 签名 base64，缺失表示该记录没有可校验的签名材料。
+
+`code` 只对 `local` 来源存在,保存插件代码文本:本地插件没有可重新拉取的地址,启动恢复时用它重建 Blob URL 再 `import()`;在线插件不写该字段,恢复时按 `source_url` 重新加载。写入前已确认代码文本可以还原成原始字节,签名针对原始字节计算,因此重建后的字节与验签时一致。
 
 安装、卸载、启用与停用都立即落盘；落盘失败只写入 `engineLogs()`，不影响内存状态。IndexedDB 不可用时降级为内存存储，同样只记引擎日志，不抛错。
 
@@ -88,8 +91,9 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、返回实例
   └── restore()         # 异步：读取安装记录并完成旧版迁移
       ├── 先装载 builtin.ts 的内置插件（首次出现默认启用）
-      ├── 再并发校验外部插件签名（上限 4），不通过的记录标记不可信且不激活
-      └── 最后按存储顺序恢复在线插件，加载失败则标记 failed 并在 list() 中可见
+      ├── 再并发校验在线插件签名(上限 4),不通过的记录标记不可信且不激活
+      ├── 接着按存储顺序恢复在线插件,加载失败则标记 failed 并在 list() 中可见
+      └── 最后恢复本地插件：按存储的 code 重建模块，带签名材料时先对代码验签
 ```
 
 宿主通过 `install()` 直接注册的插件没有可恢复来源，不写入安装记录。恢复失败的占位记录没有插件实例，`activate()` 会拒绝并提示 `pluginRestoreFailed`，但允许重新安装覆盖。
@@ -105,10 +109,39 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 插件产物按签名约定做 hash-then-sign：对 `plugin.js` 字节取 SHA-512 摘要，再用公钥验证摘要的 Ed25519 签名，签名编码为 base64。验签直接复用 `src/services/integrity/ed25519.ts` 的 `sha512`、`verifyEd25519`、`readPublicKey`，只新增 `base64ToBytes` 与 `verifyBytesSignature` 两个入口。
 
 - 安装阶段：`installFromUrl` 传入 `pub` 与 `sign` 时先校验，不通过返回 `signature-invalid` 并拒绝安装。
-- 启动阶段：`restore()` 对每条带 `source_url`、`pub`、`sign` 的记录重新拉取当前字节并验签，并发上限 4。
+- 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节验签,不通过返回 `signature-invalid`,包内没有签名材料时按 `unverified` 安装。
+- 启动阶段:`restore()` 对每条带 `source_url`、`pub`、`sign` 的记录重新拉取当前字节并验签,并发上限 4;`local` 记录改用存储的 `code` 字节验签,不再发起网络请求。
 - 校验不通过：不激活该插件，记录标记为不可信（`trusted: false`），提示用户「插件签名校验未通过，建议重新下载」，记录保留在 `list()` 中供用户手动卸载。
 - 字节拉取失败：视为网络问题而不是篡改，按 `pluginRestoreFailed` 处理，不标记不可信。
 - 拉取使用 `cache: 'no-store'`，避免命中旧缓存得出错误的通过结论。
+
+### 本地安装与离线包
+
+`inspectLocalPackage(file)` 做预检,`installFromLocalFile(file)` 是预检加提交的组合入口。二次确认在界面层完成:预检只读文件并校验,返回待安装信息与提交函数,提交前不改动注册表与安装记录,也不把 `File` 放进引擎状态。
+
+| 包格式 | 产物位置 | 说明 |
+|:---:|:---:|:---:|
+| zip | 包根目录 | 根目录直接放 `meta.json`、`plugin.js`,可选 `plugin_sign.json` 与 `plugin_secret.pub`;子目录内容忽略 |
+| tgz(npm 包) | `package/dist/` | 只取该目录下的文件,`package/` 下的其他内容一律忽略 |
+
+zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最小 tar 读取器 `readTarEntries`,它只收普通文件条目,pax 头、GNU 长名头与目录条目跳过。两者都不新增依赖。
+
+预检的校验顺序与失败原因:
+
+| 检查 | 失败原因 |
+|:---:|:---:|
+| 扩展名为 `.zip` 或 `.tgz` | `unsupported-package` |
+| 压缩包可解压 | `corrupt-package` |
+| 存在 `meta.json` | `missing-meta` |
+| 存在 `plugin.js` | `missing-plugin` |
+| `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | `invalid-meta` |
+| `plugin.js` 是可还原的 UTF-8 文本 | `corrupt-package` |
+| 同时有 `plugin_sign.json` 与 `plugin_secret.pub` 时,`for` 为 `plugin.js` 的签名通过 | `signature-invalid` |
+| `plugin.js` 不超过 1 MB | `package-too-large` |
+
+包内只有一半签名材料时按 `unverified` 安装,并在引擎日志里记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
+
+提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝。安装记录写入 `source_type: "local"`、留空 `source_url`、按包内材料填 `pub` 与 `sign`,并保存 `code`。
 
 ### 内置插件
 
@@ -147,7 +180,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 installPluginEngine()
 ```
 
-之后通过 `getPluginEngine()` 取实例，用 `install`、`installFromUrl`、`activate`、`deactivate`、`unload`、`list` 管理插件，用 `logs(id)`、`engineLogs()`、`bypassEvents()` 排查问题。`installFromUrl(url, manifest?, source?)` 的清单可以省略，省略时取产物自带的 `manifest` 导出；`source` 省略时来源记为 `outer` 且不校验签名。`install()` 直接注册的宿主内联插件不写安装记录。
+之后通过 `getPluginEngine()` 取实例，用 `install`、`installFromUrl`、`inspectLocalPackage`、`installFromLocalFile`、`activate`、`deactivate`、`unload`、`list` 管理插件，用 `logs(id)`、`engineLogs()`、`bypassEvents()` 排查问题。`installFromUrl(url, manifest?, source?)` 的清单可以省略，省略时取产物自带的 `manifest` 导出；`source` 省略时来源记为 `outer` 且不校验签名。`install()` 直接注册的宿主内联插件不写安装记录。
 
 ## 示例
 
@@ -191,4 +224,16 @@ await engine?.installFromUrl('https://example.com/demo-plugin.js', undefined, {
   pub: publicKeyPem,
   sign: signatureBase64,
 })
+
+// 本地离线包:先预检,界面确认后再提交
+const inspected = await engine?.inspectLocalPackage(file)
+if (inspected?.ok) {
+  console.log(inspected.info.name, inspected.info.version, inspected.info.signatureVerified)
+  if (!inspected.info.installed) {
+    await inspected.commit()
+  }
+}
+
+// 不需要界面确认时也可以一次完成预检与提交
+await engine?.installFromLocalFile(file)
 ```

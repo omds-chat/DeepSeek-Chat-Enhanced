@@ -24,6 +24,12 @@ export type StoredPluginRecord = {
   source_url?: string
   pub?: string
   sign?: string
+  /**
+   * 本地插件的插件代码文本。
+   * 本地插件没有可重新拉取的地址，启动恢复时用它重建 Blob 模块；
+   * 在线插件不写该字段，恢复时按 source_url 重新加载。
+   */
+  code?: string
   enabled: boolean
   installed_at: number
   /** 启动校验失败后置为 false；缺省视为可信 */
@@ -83,6 +89,10 @@ const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   const sign = readOptionalText(value.sign)
   if (sign) {
     record.sign = sign
+  }
+  const code = readOptionalText(value.code)
+  if (code) {
+    record.code = code
   }
   if (value.trusted === false) {
     record.trusted = false

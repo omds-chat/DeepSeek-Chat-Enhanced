@@ -195,6 +195,14 @@
   box-shadow: inset 0 1px 0 var(--dsw-alias-border-l2-darkmode-thin);
 }
 
+/* 安装栏标题行：左侧标题，右侧「从本地安装」按钮 */
+.installHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .installTitle {
   font-size: 13px;
   line-height: 20px;
@@ -241,6 +249,36 @@
 .fieldError {
   font-size: 12px;
   line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+  word-break: break-word;
+}
+
+/* 离线包选择框只由「从本地安装」按钮触发，不占布局 */
+.fileInput {
+  display: none;
+}
+
+/* 离线包确认对话框的信息表：左侧字段名，右侧取值 */
+.infoGrid {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 6px 12px;
+  padding-bottom: 8px;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: left;
+}
+
+.infoLabel {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.infoValue {
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+}
+
+.infoWarn {
   color: var(--dsw-alias-state-error-primary);
   word-break: break-word;
 }

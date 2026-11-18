@@ -91,17 +91,45 @@
 
 不满足时表现为安装失败:引擎把 `import` 抛出的错误写入 `engineLogs()`,安装结果为 `load-failed`,界面提示插件产物加载失败。`import()` 被拒绝时给出的错误文本不含 CORS 细节,具体原因只在浏览器控制台可见。
 
+## 本地离线包
+
+本地插件由用户上传,面板一次只接受一个文件,扩展名为 `.zip` 或 `.tgz`。包内产物形态:
+
+| 包格式 | 产物位置 | 说明 |
+|:---:|:---:|:---:|
+| zip | 包根目录 | 根目录直接放 `meta.json` 与 `plugin.js`,可选 `plugin_sign.json` 与 `plugin_secret.pub`;子目录内容忽略 |
+| tgz(npm 包) | `package/dist/` | 只取该目录下的文件,`package/` 下的其他内容一律忽略 |
+
+`meta.json` 遵循运行时 meta schema,引擎只做最小校验:`name`、`version`、`author` 非空,`version` 为三段数字。`meta.json` 里的 `capabilities` 用于推导安装清单(与插件市场同一 id 规则);缺该字段时使用产物导出的 `manifest`,两者都没有时安装被拒绝,原因为 `invalid-manifest`。
+
+签名规则:包内同时提供 `plugin_sign.json` 与 `plugin_secret.pub` 时,`for` 为 `plugin.js` 的签名必须通过校验(先 SHA-512 摘要再 Ed25519),失败即拒绝安装;包内没有签名材料时允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。
+
+单个插件的 `plugin.js` 上限 1 MB,超出即拒绝安装,原因为 `package-too-large`:本地插件的代码文本要存进 IndexedDB,异常大的包会挤占存储配额,而本地插件没有外部来源可回退。
+
+安装分两步,便于界面在中间插入二次确认:
+
+| 接口 | 作用 |
+|:---:|:---:|
+| `engine.inspectLocalPackage(file)` | 解析并校验,返回待安装信息与提交函数;不改动任何状态 |
+| `engine.installFromLocalFile(file)` | 预检通过后直接提交,不包含界面确认 |
+
+同 id 已存在时拒绝安装,原因为 `duplicate`,需要先卸载。
+
 ## 安装持久化
 
-引擎把安装记录写入 localStorage 的 `<APP_NAME>:plugins` 键，每条包含清单、来源与启用状态：
+引擎把安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库(对象仓库 `plugins`,主键 `id`),每条包含:
 
 | 字段 | 说明 |
 |:---:|:---:|
 | `manifest` | 安装时的完整清单 |
-| `source` | `builtin` 表示内置插件；`url` 附带运行时地址 |
+| `source_type` | `inner`、`awesome`、`outer`、`local` 之一 |
+| `source_url` | 在线插件的 `plugin.js` 地址;`local` 来源留空 |
+| `pub` | 校验插件签名用的公钥 PEM |
+| `sign` | 插件代码的签名 base64 |
+| `code` | 本地插件的插件代码文本；在线插件不写该字段 |
 | `enabled` | 用户期望的运行状态 |
 
-页面启动时引擎先装载内置插件，再按记录恢复 `url` 来源的插件：加载成功则重新注册并按 `enabled` 决定是否激活；加载失败只把该插件标记为 `failed` 并在 `list()` 中可见，不阻塞启动与其他插件。宿主通过 `install()` 直接注册的插件没有可恢复来源，不写入该记录。
+页面启动时引擎先装载内置插件,再按记录恢复外部插件:在线插件按 `source_url` 重新加载,本地插件用存储的 `code` 重建模块;带签名材料时先对代码字节验签。加载或验签失败只把该插件标记为 `failed` 并在 `list()` 中可见,不阻塞启动与其他插件。宿主通过 `install()` 直接注册的插件没有可恢复来源,不写入该记录。
 
 卸载插件时，引擎在移除记录后清除该插件的 `plugins:storage` 数据；清理失败只写入 `engineLogs()`，不影响卸载结果。
 
@@ -115,6 +143,12 @@
 | 重名、缺依赖、冲突 | 安装拒绝，原因 `duplicate`、`missing-dependency`、`conflict` |
 | 产物无法加载或导出不符 | 安装拒绝，原因 `load-failed` 或 `invalid-plugin` |
 | 产物未导出清单且未传入清单 | 安装拒绝，原因 `invalid-manifest`，并提示 `pluginManifestMissing` |
+| 离线包扩展名不是 `.zip` 或 `.tgz` | 预检拒绝,原因 `unsupported-package` |
+| 离线包无法解压,或 `plugin.js` 不是合法文本 | 预检拒绝,原因 `corrupt-package` |
+| 离线包缺少 `meta.json` 或 `plugin.js` | 预检拒绝,原因 `missing-meta` 或 `missing-plugin` |
+| 离线包 `meta.json` 不合规 | 预检拒绝,原因 `invalid-meta` |
+| 离线包签名校验未通过 | 预检拒绝,原因 `signature-invalid` |
+| 离线包 `plugin.js` 超过 1 MB | 预检拒绝,原因 `package-too-large` |
 | 激活抛错或超时 | 插件标记 `failed`，引擎与其他插件继续运行 |
 | 未授予的能力被调用 | 抛 `PluginCapabilityError`，并提示 `pluginCapabilityDenied` |
 | 超出限流 | 抛 `PluginRateLimitError`，并提示 `pluginCallRateLimited` |
