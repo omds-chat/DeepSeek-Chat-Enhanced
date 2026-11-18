@@ -11,6 +11,9 @@ v*-*.md
 temp/
 tmp/
 
+# Single-branch worktrees
+single-branch/
+
 # Dev Tech
 node_modules/
 dist/

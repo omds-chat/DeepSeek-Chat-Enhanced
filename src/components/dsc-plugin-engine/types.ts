@@ -177,7 +177,7 @@ export type LocalPackageInfo = {
   /** 缺失时为空串，由界面显示占位文案 */
   license: string
   description: LocalizedText
-  /** 包内签名材料齐全且校验通过为 verified，否则为 unverified */
+  /** 包内签名材料齐全且校验通过为 verified；材料齐全但校验不通过为 failed；无材料为 unverified */
   signatureVerified: SignatureState
   /** 已存在同 id 的安装记录 */
   installed: boolean

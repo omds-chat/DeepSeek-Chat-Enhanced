@@ -32,8 +32,10 @@ dsc-market/
 
 | 来源 | base_url（按优先级） |
 |:---:|:---:|
-| `awesome` | `https://cdn.jsdelivr.net/gh/omdsc-dev/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omdsc-dev/awesome-dsc-plugin/main/`、`https://omdsc-dev.github.io/awesome-dsc-plugin/` |
-| `inner` | `https://omdsc-dev.github.io/dsc-inner-plugin/` |
+| `awesome-dsc-plugin` | `https://cdn.jsdelivr.net/gh/omdsc-dev/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omdsc-dev/awesome-dsc-plugin/main/`、`https://omdsc-dev.github.io/awesome-dsc-plugin/` |
+| `dsc-inner-plugin` | `https://omdsc-dev.github.io/dsc-inner-plugin/` |
+
+来源 id 与合集目录名一致,因此可以直接命中 online-data 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。来源类型仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
 
 两个内置来源不可删除,可以改 `base_url` 列表与顺序;用户还可以新增、删除、排序自定义来源。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。
 
@@ -44,7 +46,7 @@ dsc-market/
 对每个来源依次执行:
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
-2. 取 `<base_url>/plugin_secret.pub` 与 `<base_url>/plugin_set_sign.json`,用内嵌的 dsc 公钥校验信任签名。被签名对象是该来源的 `plugin_secret.pub` 字节,先做 SHA-512 摘要再验 Ed25519,`signer` 必须为 `dsc`。
+2. 若 online-data 信任清单里已有该来源对应的合集条目,直接采用清单里的公钥并视为可信,不采信来源自己分发的 `plugin_secret.pub`;否则取 `<base_url>/plugin_secret.pub` 与 `<base_url>/plugin_set_sign.json`,用内嵌的 dsc 公钥校验信任签名。被签名对象是该来源的 `plugin_secret.pub` 字节,先做 SHA-512 摘要再验 Ed25519,`signer` 必须为 `dsc`。
 3. 取 `<base_url>/datalog.json` 得到插件目录,每条包含 `plugin_name`、`author`、`tag`。
 4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息,同时取该版本目录下的 `plugin_sign.json` 取出 `for` 为 `plugin.js` 的签名。
 5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,用该来源的 `plugin_secret.pub` 作为 `pub`、第 4 步取到的签名作为 `sign`,调用引擎的 `installFromUrl(url, manifest, { sourceType, pub, sign })`。
@@ -56,7 +58,7 @@ dsc-market/
 | 状态 | 判定 | 界面行为 |
 |:---:|:---:|:---:|
 | `trusted` | 某个 `base_url` 的信任签名校验通过 | 允许浏览与安装 |
-| `untrusted` | 可达但签名不通过,或缺少 `plugin_set_sign.json`、`plugin_secret.pub` | 仍列出目录,安装按钮禁用并说明原因 |
+| `untrusted` | 可达但签名不通过,或缺少 `plugin_set_sign.json`、`plugin_secret.pub` | 仍列出目录并保留「不可信」标识与警告;安装仍可进行,第一次点击转为 3 秒确认态 |
 | `unverified` | 构建未注入 `__WEB_PUBLIC_KEY__` | 允许浏览;安装前需要用户二次确认风险 |
 
 `__WEB_PUBLIC_KEY__` 由 `rspack.config.ts` 在构建时由 `WEB_PRIVATE_KEY` 推导注入,为空时无法校验信任链。
@@ -85,7 +87,7 @@ dsc-market/
 | 顶部 | 来源列表:名称、当前生效的 `base_url`、信任状态、下载计数标识、刷新、编辑、排序与删除;新增来源表单 |
 | 主体 | 选中来源的插件目录:插件名、作者、标签、最新版本、简介（来自该版本的 `meta.json`）与安装按钮 |
 
-来源不可信时安装按钮禁用并给出原因;信任未校验时安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎。
+来源不可信与信任未校验时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。公钥取自 online-data 信任清单时,目录上方显示「公钥来自 dsc 信任清单」。
 
 ## 对外接口
 
@@ -94,16 +96,16 @@ import { market } from '../dsc-market/index.js'
 
 const client = market()
 client?.sources()              // 来源列表
-client?.runtime('awesome')     // 来源运行态:state、baseUrl、trust、meta、plugins
+client?.runtime('awesome-dsc-plugin') // 来源运行态:state、baseUrl、trust、keyFromTrustList、meta、plugins
 client?.selected()             // 当前选中的来源 id
-client?.select('awesome')
-await client?.refresh('awesome', true)  // 拉取并校验;force 为 true 时忽略缓存
+client?.select('awesome-dsc-plugin')
+await client?.refresh('awesome-dsc-plugin', true)  // 拉取并校验;force 为 true 时忽略缓存
 client?.addSource('自定义', ['https://example.com/plugins/'])
-client?.setBaseUrls('awesome', ['https://cdn.example.com/'])
-client?.moveSource('inner', -1)
+client?.setBaseUrls('awesome-dsc-plugin', ['https://cdn.example.com/'])
+client?.moveSource('dsc-inner-plugin', -1)
 client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
-client?.plan('awesome', plugin)         // 安装计划:{ url, manifest?, sourceType, pub, sign }
-client?.countInstall('awesome', plugin) // 上报一次下载计数
+client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, pub, sign }
+client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 ```
 
 `refresh`、`plan`、`countInstall` 之外的接口都是同步快照。界面用 `subscribe` 与 `version` 配合 `useSyncExternalStore` 订阅状态变化。

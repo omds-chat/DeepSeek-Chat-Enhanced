@@ -1,3 +1,4 @@
+import { ensureTrustList } from '../../services/trust/index.js'
 import type { DscPlugin, PluginManifest } from '../dsc-plugin-engine/types.js'
 import { createMarketClient, type MarketClient } from './client.js'
 
@@ -18,6 +19,8 @@ export const market = (): MarketClient | null => client
 /** 内置插件对象；激活后异步解析首个来源，失败只写入插件日志 */
 export const dscMarketPlugin: DscPlugin = {
   activate(context) {
+    // 信任清单与来源解析并行准备，来源解析时若清单已就绪则优先使用其中的公钥
+    ensureTrustList()
     const instance = createMarketClient(context.net, context.storage)
     client = instance
     const first = instance.sources()[0]

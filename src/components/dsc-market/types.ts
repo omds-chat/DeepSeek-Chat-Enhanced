@@ -65,8 +65,10 @@ export type SourceRuntime = {
   trust: SourceTrust
   trustFailure: TrustFailure | null
   meta: SourceMeta | null
-  /** 该来源的 plugin_secret.pub 文本 */
+  /** 该来源的 plugin_secret.pub 文本；优先使用 dsc 信任清单里的公钥 */
   pub: string | null
+  /** 公钥来自 online-data 的 dsc 信任清单，而不是来源自己分发的文件 */
+  keyFromTrustList: boolean
   plugins: CatalogPlugin[]
   fetchedAt: number | null
   /** 结构不符被跳过的插件数 */

@@ -119,6 +119,10 @@ export const installPluginEngine = (): PluginEngine => {
   const report = (key: TranslationKey, params?: TranslationParams) => {
     showToast({ type: 'error', key, params })
   }
+  /** 签名类问题只提示，不阻断：不带错误图标，语义是警告 */
+  const warn = (key: TranslationKey, params?: TranslationParams) => {
+    showToast({ key, params })
+  }
   setAlertSink((message) => report(message.key, message.params))
 
   const engineLogs: string[] = []
@@ -372,11 +376,13 @@ export const installPluginEngine = (): PluginEngine => {
         return { ok: false, reason: 'load-failed', detail: 'artifact fetch failed' }
       }
       if (verdict === 'failed') {
-        pushEngineLog(`install ${target} rejected: signature-invalid`)
-        report('pluginSignatureInvalid', { id: target })
-        return { ok: false, reason: 'signature-invalid' }
+        // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
+        pushEngineLog(`install ${target}: signature-invalid, install anyway`)
+        warn('pluginSignatureInvalid', { id: target })
+        signature = 'failed'
+      } else {
+        signature = 'verified'
       }
-      signature = 'verified'
     }
     let loadedModule: unknown
     try {
@@ -461,7 +467,17 @@ export const installPluginEngine = (): PluginEngine => {
     if (inspection.sign) {
       origin.sign = inspection.sign
     }
-    const signature: SignatureState = inspection.pub && inspection.sign ? 'verified' : 'unverified'
+    const signature: SignatureState =
+      inspection.pub && inspection.sign
+        ? inspection.signatureFailed
+          ? 'failed'
+          : 'verified'
+        : 'unverified'
+    if (signature === 'failed') {
+      // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
+      pushEngineLog(`install local ${fallbackId}: signature-invalid, install anyway`)
+      warn('pluginSignatureInvalid', { id: fallbackId })
+    }
     const result = register(resolved, loaded.plugin, { kind: 'local' }, { origin, signature })
     if (!result.ok) {
       return result
@@ -495,6 +511,9 @@ export const installPluginEngine = (): PluginEngine => {
         `local package ${file.name}: signature material is incomplete, install as unverified`
       )
     }
+    if (inspection.signatureFailed) {
+      pushEngineLog(`local package ${file.name}: signature-invalid, install as failed`)
+    }
     const info: LocalPackageInfo = {
       id,
       name: inspection.meta.name,
@@ -502,7 +521,12 @@ export const installPluginEngine = (): PluginEngine => {
       author: inspection.meta.author,
       license: inspection.meta.license,
       description: inspection.meta.description,
-      signatureVerified: inspection.pub && inspection.sign ? 'verified' : 'unverified',
+      signatureVerified:
+        inspection.pub && inspection.sign
+          ? inspection.signatureFailed
+            ? 'failed'
+            : 'verified'
+          : 'unverified',
       installed: store.get(id) !== undefined,
     }
     return { ok: true, info, commit: () => commitLocalPackage(inspection) }
@@ -544,7 +568,7 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 恢复单个外部插件。
-   * 签名不通过的记录保留在列表中，标记为不可信且不激活，供用户看到并手动卸载。
+   * 签名不通过的记录仍然加载并激活，只提示用户并把记录标记为不可信，界面保留标识。
    */
   const restoreExternal = async (
     entry: StoredPluginRecord,
@@ -558,14 +582,9 @@ export const installPluginEngine = (): PluginEngine => {
     const signature: SignatureState =
       verdict === 'verified' ? 'verified' : verdict === 'failed' ? 'failed' : 'unverified'
     if (verdict === 'failed') {
-      const record = store.addFailed(entry.manifest, source, 'signature-invalid', {
-        origin: { ...origin, trusted: false },
-        signature: 'failed',
-      })
-      record.enabled = entry.enabled
-      store.pushLog(record, 'signature-invalid')
-      report('pluginSignatureInvalid', { id })
-      return
+      // 校验不通过只提示，不阻断激活；记录标记为不可信，界面保留标识
+      origin.trusted = false
+      warn('pluginSignatureInvalid', { id })
     }
     if (!entry.source_url) {
       // 没有分发地址的记录无法恢复，只能等用户重新安装
@@ -602,6 +621,9 @@ export const installPluginEngine = (): PluginEngine => {
       return
     }
     record.enabled = entry.enabled
+    if (verdict === 'failed') {
+      store.pushLog(record, 'signature-invalid')
+    }
     if (record.enabled) {
       await activate(id)
     }
@@ -609,7 +631,7 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 恢复本地插件：用存储的代码重建 Blob 模块，有签名材料时先对代码验签。
-   * 验签不通过的记录保留在列表中并标记不可信，供用户看到并手动卸载。
+   * 验签不通过只提示用户并把记录标记为不可信，仍然加载并激活。
    */
   const restoreLocal = async (entry: StoredPluginRecord): Promise<void> => {
     const id = entry.manifest.id
@@ -625,17 +647,14 @@ export const installPluginEngine = (): PluginEngine => {
     }
     let signature: SignatureState = 'unverified'
     if (entry.pub && entry.sign) {
-      if (!(await verifyCodeSignature(code, entry.sign, entry.pub))) {
-        const record = store.addFailed(entry.manifest, source, 'signature-invalid', {
-          origin: { ...origin, trusted: false },
-          signature: 'failed',
-        })
-        record.enabled = entry.enabled
-        store.pushLog(record, 'signature-invalid')
-        report('pluginSignatureInvalid', { id })
-        return
+      if (await verifyCodeSignature(code, entry.sign, entry.pub)) {
+        signature = 'verified'
+      } else {
+        // 校验不通过只提示，不阻断激活；记录标记为不可信，界面保留标识
+        signature = 'failed'
+        origin.trusted = false
+        warn('pluginSignatureInvalid', { id })
       }
-      signature = 'verified'
     }
     let loaded: LoadedPlugin
     try {
@@ -654,6 +673,9 @@ export const installPluginEngine = (): PluginEngine => {
       return
     }
     record.enabled = entry.enabled
+    if (signature === 'failed') {
+      store.pushLog(record, 'signature-invalid')
+    }
     if (record.enabled) {
       await activate(id)
     }

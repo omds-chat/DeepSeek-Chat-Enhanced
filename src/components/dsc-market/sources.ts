@@ -8,13 +8,23 @@ export const KEY_SOURCES = 'market-sources'
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
 /**
- * 内置来源。awesome 依次尝试 CDN 分发、raw 兜底与 Pages 兜底，
- * inner 只走 Pages；顺序即优先级。
+ * 旧版内置来源 id 到合集目录名的映射。
+ * 来源 id 现在与合集目录名一致，读取旧配置时按此表迁移，避免用户配置失效。
+ */
+const LEGACY_IDS: Record<string, string> = {
+  awesome: 'awesome-dsc-plugin',
+  inner: 'dsc-inner-plugin',
+}
+
+/**
+ * 内置来源。id 与合集目录名一致，便于直接命中 online-data 信任清单；
+ * awesome-dsc-plugin 依次尝试 CDN 分发、raw 兜底与 Pages 兜底，dsc-inner-plugin 只走 Pages，
+ * 顺序即优先级。
  */
 export const DEFAULT_SOURCES: readonly MarketSource[] = [
   {
-    id: 'awesome',
-    name: 'awesome',
+    id: 'awesome-dsc-plugin',
+    name: 'awesome-dsc-plugin',
     builtin: true,
     baseUrls: [
       'https://cdn.jsdelivr.net/gh/omdsc-dev/awesome-dsc-plugin@main/',
@@ -23,8 +33,8 @@ export const DEFAULT_SOURCES: readonly MarketSource[] = [
     ],
   },
   {
-    id: 'inner',
-    name: 'inner',
+    id: 'dsc-inner-plugin',
+    name: 'dsc-inner-plugin',
     builtin: true,
     baseUrls: ['https://omdsc-dev.github.io/dsc-inner-plugin/'],
   },
@@ -121,11 +131,16 @@ export const parseSources = (raw: unknown): MarketSource[] | null => {
   const seen = new Set<string>()
   for (const item of raw.sources) {
     const source = parseSource(item)
-    if (!source || seen.has(source.id)) {
+    if (!source) {
       continue
     }
-    seen.add(source.id)
-    sources.push(source)
+    // 旧配置里的 awesome / inner 迁移到合集目录名形式的 id
+    const id = LEGACY_IDS[source.id] ?? source.id
+    if (seen.has(id)) {
+      continue
+    }
+    seen.add(id)
+    sources.push({ ...source, id })
   }
   return sources.length === 0 ? null : sources
 }

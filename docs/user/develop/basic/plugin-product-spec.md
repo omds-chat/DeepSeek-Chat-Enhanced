@@ -102,7 +102,7 @@
 
 `meta.json` 遵循运行时 meta schema,引擎只做最小校验:`name`、`version`、`author` 非空,`version` 为三段数字。`meta.json` 里的 `capabilities` 用于推导安装清单(与插件市场同一 id 规则);缺该字段时使用产物导出的 `manifest`,两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
-签名规则:包内同时提供 `plugin_sign.json` 与 `plugin_secret.pub` 时,`for` 为 `plugin.js` 的签名必须通过校验(先 SHA-512 摘要再 Ed25519),失败即拒绝安装;包内没有签名材料时允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。
+签名规则:包内同时提供 `plugin_sign.json` 与 `plugin_secret.pub` 时按约定校验 `for` 为 `plugin.js` 的签名(先 SHA-512 摘要再 Ed25519),校验不通过只提示,不拒绝安装,记录标记为校验失败;包内没有签名材料时同样允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。
 
 单个插件的 `plugin.js` 上限 1 MB,超出即拒绝安装,原因为 `package-too-large`:本地插件的代码文本要存进 IndexedDB,异常大的包会挤占存储配额,而本地插件没有外部来源可回退。
 

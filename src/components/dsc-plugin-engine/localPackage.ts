@@ -39,8 +39,10 @@ export type PackageInspection = {
   codeText: string
   sign?: string
   pub?: string
-  /** 签名材料只提供了一半，安装后按未校验处理 */
+  /** 签名材料只提供了一半或不可用，安装后按未校验处理 */
   incompleteSignature: boolean
+  /** 签名材料齐全但验签不通过；安装后标记为 failed，仍然允许安装 */
+  signatureFailed: boolean
 }
 
 /** 离线包预检结果 */
@@ -355,7 +357,8 @@ const buildManifest = (meta: PackageMeta): PluginManifest | null => {
 
 /**
  * 校验解包结果：必需文件、meta.json、代码文本与签名。
- * 包内同时提供 plugin_sign.json 与 plugin_secret.pub 时按约定验签，失败即拒绝。
+ * 包内同时提供 plugin_sign.json 与 plugin_secret.pub 时按约定验签；
+ * 验签不通过只记录状态，不拒绝安装，由安装流程提示用户自行判断。
  */
 export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageInspectionResult> => {
   const metaBytes = files.get(META_FILE)
@@ -392,21 +395,20 @@ export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageI
     manifest: buildManifest(meta),
     codeText,
     incompleteSignature: hasSign !== hasPub,
+    signatureFailed: false,
   }
   if (hasSign && hasPub) {
     const entries = parseSignList(signText)
-    if (!entries) {
-      return { ok: false, reason: 'signature-invalid', detail: 'plugin_sign.json is not valid' }
-    }
-    const value = pickSignature(entries, SIGN_TARGET)
+    const value = entries ? pickSignature(entries, SIGN_TARGET) : null
     if (!value) {
-      return { ok: false, reason: 'signature-invalid', detail: 'no signature for ' + SIGN_TARGET }
-    }
-    if (!(await verifyBytesSignature(pluginBytes, value, pubText))) {
-      return { ok: false, reason: 'signature-invalid', detail: 'signature mismatch' }
+      // 签名材料存在但不可用：按未校验处理，安装后界面提示用户自行判断
+      inspection.incompleteSignature = true
+      return { ok: true, inspection }
     }
     inspection.sign = value
     inspection.pub = pubText
+    // 验签不通过不拒绝安装，只记录状态
+    inspection.signatureFailed = !(await verifyBytesSignature(pluginBytes, value, pubText))
   }
   return { ok: true, inspection }
 }

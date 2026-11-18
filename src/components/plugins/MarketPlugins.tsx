@@ -269,8 +269,9 @@ export const MarketPlugins = ({
     }
   }
 
-  const blocked = runtime?.trust === 'untrusted'
-  const needsConfirm = runtime?.trust === 'unverified'
+  // 信任校验未通过不再禁用安装：保留「不可信」标识与提示，由用户自行判断
+  const untrusted = runtime?.trust === 'untrusted'
+  const needsConfirm = runtime?.trust === 'unverified' || untrusted
 
   return (
     <>
@@ -416,6 +417,9 @@ export const MarketPlugins = ({
             {runtime.trust === 'unverified' ? (
               <div className={styles.trustWarn}>{t('pluginMarketTrustUnverifiedHint')}</div>
             ) : null}
+            {runtime.keyFromTrustList ? (
+              <div className={styles.caption}>{t('pluginMarketTrustKeyFromList')}</div>
+            ) : null}
             {runtime.meta?.downloadCountEnabled ? (
               <div className={styles.caption}>{t('pluginMarketCountNotice')}</div>
             ) : null}
@@ -470,7 +474,7 @@ export const MarketPlugins = ({
                         <Button
                           variant={confirming ? 'danger' : 'outlined'}
                           size="s"
-                          disabled={installed || blocked || unusable || busyKey !== null}
+                          disabled={installed || unusable || busyKey !== null}
                           onClick={() => {
                             if (needsConfirm && !confirming) {
                               armConfirm(plugin.key)
@@ -487,8 +491,8 @@ export const MarketPlugins = ({
                                 ? t('pluginMarketInstallConfirm')
                                 : t('pluginActionInstall')}
                         </Button>
-                        {blocked ? (
-                          <span className={styles.errorText}>{t('pluginMarketInstallBlocked')}</span>
+                        {untrusted ? (
+                          <span className={styles.errorText}>{t('pluginMarketInstallUntrusted')}</span>
                         ) : null}
                       </div>
                     </div>

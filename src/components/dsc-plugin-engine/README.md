@@ -36,7 +36,7 @@ dsc-plugin-engine/
 
 清单可以随产物一起导出：`export const manifest = {...}`，也可以挂在 `default` 导出对象上，模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`；两者都没有时安装被拒绝，原因为 `invalid-manifest`。
 
-`installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一，缺省按 `outer` 处理；`pub` 与 `sign` 同时给出时，安装阶段先拉取产物字节做 SHA-512 摘要并验签，不通过则以 `signature-invalid` 拒绝安装。
+`installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一，缺省按 `outer` 处理；`pub` 与 `sign` 同时给出时，安装阶段先拉取产物字节做 SHA-512 摘要并验签，不通过只提示用户，仍照常安装，安装记录标记为 `failed`。
 
 ### 生命周期
 
@@ -91,7 +91,7 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、返回实例
   └── restore()         # 异步：读取安装记录并完成旧版迁移
       ├── 先装载 builtin.ts 的内置插件（首次出现默认启用）
-      ├── 再并发校验在线插件签名(上限 4),不通过的记录标记不可信且不激活
+      ├── 再并发校验在线插件签名(上限 4),不通过的记录标记不可信但仍激活
       ├── 接着按存储顺序恢复在线插件,加载失败则标记 failed 并在 list() 中可见
       └── 最后恢复本地插件：按存储的 code 重建模块，带签名材料时先对代码验签
 ```
@@ -108,10 +108,10 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 插件产物按签名约定做 hash-then-sign：对 `plugin.js` 字节取 SHA-512 摘要，再用公钥验证摘要的 Ed25519 签名，签名编码为 base64。验签直接复用 `src/services/integrity/ed25519.ts` 的 `sha512`、`verifyEd25519`、`readPublicKey`，只新增 `base64ToBytes` 与 `verifyBytesSignature` 两个入口。
 
-- 安装阶段：`installFromUrl` 传入 `pub` 与 `sign` 时先校验，不通过返回 `signature-invalid` 并拒绝安装。
-- 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节验签,不通过返回 `signature-invalid`,包内没有签名材料时按 `unverified` 安装。
+- 安装阶段：`installFromUrl` 传入 `pub` 与 `sign` 时先校验，不通过只提示用户，仍照常安装，记录标记为 `failed`。
+- 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节验签,不通过只标记 `failed` 并提示,仍可确认安装;包内没有签名材料时按 `unverified` 安装。
 - 启动阶段:`restore()` 对每条带 `source_url`、`pub`、`sign` 的记录重新拉取当前字节并验签,并发上限 4;`local` 记录改用存储的 `code` 字节验签,不再发起网络请求。
-- 校验不通过：不激活该插件，记录标记为不可信（`trusted: false`），提示用户「插件签名校验未通过，建议重新下载」，记录保留在 `list()` 中供用户手动卸载。
+- 校验不通过：仍然加载并激活该插件，记录标记为不可信（`trusted: false`）与 `failed`，提示用户「插件签名校验未通过，请自行判断是否继续使用」，记录保留在 `list()` 中供用户查看或卸载。
 - 字节拉取失败：视为网络问题而不是篡改，按 `pluginRestoreFailed` 处理，不标记不可信。
 - 拉取使用 `cache: 'no-store'`，避免命中旧缓存得出错误的通过结论。
 
@@ -136,7 +136,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 存在 `plugin.js` | `missing-plugin` |
 | `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | `invalid-meta` |
 | `plugin.js` 是可还原的 UTF-8 文本 | `corrupt-package` |
-| 同时有 `plugin_sign.json` 与 `plugin_secret.pub` 时,`for` 为 `plugin.js` 的签名通过 | `signature-invalid` |
+| 同时有 `plugin_sign.json` 与 `plugin_secret.pub` 时,`for` 为 `plugin.js` 的签名不可用(结构不符或缺少该条) | 不拒绝,按 `unverified` 安装 |
 | `plugin.js` 不超过 1 MB | `package-too-large` |
 
 包内只有一半签名材料时按 `unverified` 安装,并在引擎日志里记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
@@ -218,7 +218,7 @@ await engine?.installFromUrl('https://example.com/demo-plugin.js', {
   capabilities: ['notify'],
 })
 
-// 带来源与签名材料：安装阶段先验签，不通过返回 signature-invalid
+// 带来源与签名材料：安装阶段先验签，不通过只提示，仍继续安装
 await engine?.installFromUrl('https://example.com/demo-plugin.js', undefined, {
   sourceType: 'awesome',
   pub: publicKeyPem,

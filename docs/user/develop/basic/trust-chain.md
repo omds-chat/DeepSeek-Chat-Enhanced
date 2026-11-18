@@ -75,6 +75,74 @@ WEB_PRIVATE_KEY="$(cat secret)" node scripts/sign-collection.mjs <合集目录> 
 
 脚本只读取 `plugin_secret.pub`,不会修改它;输出路径指向该文件时直接拒绝。写出前脚本会用由私钥推导的公钥做一次自检,自检不通过则不写出文件。
 
+## online-data 分支
+
+`online-data` 是与 `main` 没有公共祖先的孤立分支,只存放网页在运行时需要拉取并核对的信任数据,不含任何产品代码。
+
+| 路径 | 说明 |
+|:---:|:---:|
+| `index.json` | 信任清单:列出各合集的 id、公钥路径与信任签名路径 |
+| `web_public.pem` | dsc 网页签名公钥,由 `WEB_PRIVATE_KEY` 推导 |
+| `collections/<合集>/plugin_secret.pub` | 受信任合集的公钥,与合集自己分发的文件逐字节一致 |
+| `collections/<合集>/plugin_set_sign.json` | dsc 对该合集公钥签发的信任签名 |
+
+生成命令在 `main` 工作树上执行,输出目录属于生成物目录:不存在时创建,已存在的同名文件直接覆盖。
+
+```
+WEB_PRIVATE_KEY="$(cat secret)" pnpm run build:online-data -- --out single-branch/online-data ../awesome-dsc-plugin ../dsc-inner-plugin
+```
+
+等价于 `node scripts/build-online-data.mjs --out <目录> <合集目录>...`,脚本按下列顺序工作:
+
+| 步骤 | 行为 |
+|:---:|:---:|
+| 1 | 读取 `WEB_PRIVATE_KEY`,确认是 PKCS#8 PEM 且算法为 Ed25519,推导 SPKI PEM 公钥 |
+| 2 | 逐个合集读取 `plugin_secret.pub`,确认是 Ed25519 SPKI 公钥,对文件字节做 SHA-512 摘要后签名 |
+| 3 | 用推导出的公钥自检每条签名,任一条不通过即非零退出,且不写出任何文件 |
+| 4 | 写出 `web_public.pem` 与 `collections/<合集>/` 下的公钥、信任签名,最后写出 `index.json` |
+
+失败行为:
+
+| 情形 | 行为 |
+|:---:|:---:|
+| 缺少 `WEB_PRIVATE_KEY` | 非零退出,提示缺少环境变量 |
+| 私钥不是 Ed25519 | 非零退出,提示算法不符 |
+| 没有给出合集目录 | 非零退出,提示至少需要一个 |
+| 合集目录不存在或不是目录 | 非零退出 |
+| 合集目录缺少 `plugin_secret.pub` | 非零退出 |
+| `plugin_secret.pub` 不是 Ed25519 SPKI 公钥 | 非零退出,并给出解析失败原因 |
+| 两个合集目录同名 | 非零退出,提示合集 id 必须唯一 |
+
+`index.json` 的结构:
+
+```json
+{
+  "schemaVersion": 1,
+  "webPublicKey": "web_public.pem",
+  "collections": [
+    {
+      "id": "<合集名>",
+      "publicKey": "collections/<合集名>/plugin_secret.pub",
+      "trustSignature": "collections/<合集名>/plugin_set_sign.json"
+    }
+  ]
+}
+```
+
+合集 id 取自合集目录名,只允许字母、数字、点、下划线与连字符。公钥文件按原字节写出,不做重新编码,否则签名失效。
+
+### 网页如何核对信任清单
+
+页面启动后静默拉取 `index.json`,依次尝试 jsDelivr 的 `@online-data` 镜像与 `raw.githubusercontent.com` 的 `online-data` 分支,单个请求最多等待 1 秒:
+
+1. 取 `web_public.pem`,与构建时注入的 `__WEB_PUBLIC_KEY__` 比对。
+2. 一致才采信清单;不一致只警告,清单不参与后续校验。
+3. 对每个合集取公钥与信任签名,用内嵌的 dsc 公钥验签。
+4. 校验不通过的合集只警告并标记为不可信,仍然列出,不阻断市场使用。
+5. `__WEB_PUBLIC_KEY__` 为空(本地未签名构建)或网络失败时静默返回空清单,不打扰用户。
+
+市场解析来源时优先使用清单里该合集的公钥,而不是来源自己分发的 `plugin_secret.pub`,这样来源无法通过替换自己的公钥来伪造插件签名;清单未就绪或没有对应条目时,退回按来源自己的公钥与 `plugin_set_sign.json` 校验。
+
 ## 什么时候必须重签
 
 | 情形 | 是否重签 | 原因 |
@@ -103,17 +171,18 @@ WEB_PRIVATE_KEY="$(cat secret)" node scripts/sign-collection.mjs <合集目录> 
 
 市场拉取一个来源时,对每个 `base_url` 依次执行:
 
-1. 取 `<base_url>/plugin_secret.pub` 与 `<base_url>/plugin_set_sign.json`,它们必须与 `meta.json` 同址,不允许把 A 地址的公钥和 B 地址的签名拼在一起。
-2. 把 `plugin_secret.pub` 的文本重新编码为字节,做 SHA-512 摘要。
-3. 用内嵌的 dsc 公钥校验 `signer` 为 `dsc` 的每条签名,任意一条通过即视为可信。
-4. 通过后,该来源的 `plugin_secret.pub` 才被信任,用于校验该来源插件的 `plugin_sign.json`。
+1. 先看 online-data 信任清单里是否有该来源对应的合集条目:先按来源 id 与名称匹配(内置来源的 id 就是合集目录名),再按公钥文本兜底。命中则直接采用清单里的公钥并视为可信,不采信来源自己分发的 `plugin_secret.pub`。
+2. 清单里没有时,取 `<base_url>/plugin_secret.pub` 与 `<base_url>/plugin_set_sign.json`,它们必须与 `meta.json` 同址,不允许把 A 地址的公钥和 B 地址的签名拼在一起。
+3. 把 `plugin_secret.pub` 的文本重新编码为字节,做 SHA-512 摘要。
+4. 用内嵌的 dsc 公钥校验 `signer` 为 `dsc` 的每条签名,任意一条通过即视为可信。
+5. 通过后,该来源的 `plugin_secret.pub` 才被信任,用于校验该来源插件的 `plugin_sign.json`。
 
 dsc 公钥由 `rspack.config.ts` 在构建时从 `WEB_PRIVATE_KEY` 推导并注入 `__WEB_PUBLIC_KEY__`,不读取环境变量 `WEB_PUBLIC_KEY`,避免两者不一致。
 
 | 信任状态 | 判定 | 用户可见结果 |
 |:---:|:---:|:---:|
 | 可信 | 某个 `base_url` 的信任签名校验通过 | 允许浏览与安装 |
-| 不可信 | 签名不通过,或缺少 `plugin_set_sign.json`、`plugin_secret.pub` | 仍列出目录,给出警告并禁用该来源的安装 |
+| 不可信 | 签名不通过,或缺少 `plugin_set_sign.json`、`plugin_secret.pub` | 仍列出目录并保留「不可信」标识,给出警告;安装仍可进行,由用户自行判断 |
 | 未校验信任 | 当前构建没有注入 dsc 公钥 | 允许浏览,安装前需要二次确认风险 |
 
 警告文案区分两种原因: 缺少信任签名或公钥文件、信任签名校验未通过。

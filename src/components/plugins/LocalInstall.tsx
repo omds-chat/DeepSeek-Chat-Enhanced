@@ -88,6 +88,7 @@ export const LocalInstall = ({ onInstalled }: { onInstalled: () => void }) => {
 
   const info = state?.kind === 'ready' ? state.inspection.info : null
   const signed = info !== null && info.signatureVerified === 'verified'
+  const signatureFailed = info !== null && info.signatureVerified === 'failed'
   const rows =
     info === null
       ? []
@@ -102,8 +103,14 @@ export const LocalInstall = ({ onInstalled }: { onInstalled: () => void }) => {
           },
           {
             label: t('pluginLocalSignature'),
-            value: t(signed ? 'pluginLocalSignatureVerified' : 'pluginLocalSignatureUnverified'),
-            warn: false,
+            value: t(
+              signed
+                ? 'pluginLocalSignatureVerified'
+                : signatureFailed
+                  ? 'pluginLocalSignatureFailed'
+                  : 'pluginLocalSignatureUnverified'
+            ),
+            warn: signatureFailed,
           },
           {
             label: t('pluginLocalInstalledState'),
@@ -174,7 +181,10 @@ export const LocalInstall = ({ onInstalled }: { onInstalled: () => void }) => {
               {state.reason}
             </div>
           ) : null}
-          {info !== null && !signed ? (
+          {info !== null && signatureFailed ? (
+            <div className={styles.trustWarn}>{t('pluginLocalSignatureFailedNotice')}</div>
+          ) : null}
+          {info !== null && !signed && !signatureFailed ? (
             <div className={styles.trustWarn}>{t('pluginLocalUnsignedNotice')}</div>
           ) : null}
           {info !== null && info.installed ? (

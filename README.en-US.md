@@ -85,7 +85,7 @@ Plugin sources follow a trust-signature chain:
 2. The trusted collection signs each plugin it lists with the collection private key; the artifact is `plugin_sign.json` in the plugin version directory.
 3. A plugin author may also self-sign the same plugin with their own private key, alongside the collection signature.
 
-The market verifies the collection trust signature first, trusts that source's public key only after it passes, and then uses it to verify plugin signatures. When verification fails, the market warns and blocks installs from that source instead of letting them through silently. Trust signatures cannot be delegated: a collection cannot issue trust signatures for another collection.
+The market verifies the collection trust signature first, trusts that source's public key only after it passes, and then uses it to verify plugin signatures; the public key is preferably taken from the dsc online-data trust list. When verification fails, the market warns you but does not block the install, so decide for yourself whether to continue. Trust signatures cannot be delegated: a collection cannot issue trust signatures for another collection.
 
 See [trust chain and collection trust signatures](docs/user/develop/basic/trust-chain.md) for the signing tool, re-signing triggers, and private key boundaries.
 
