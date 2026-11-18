@@ -16,11 +16,11 @@
 
 | 项 | 约定 | 理由 |
 |:---:|:---:|:---:|
-| 根 CA 密钥 | Ed25519(OpenSSL 原生 PEM) | 只签证书,Ed25519 足够且密钥短 |
+| 根 CA 密钥 | ECDSA P-256(OpenSSL 原生 PEM) | 与 EEC 同一算法;浏览器 WebCrypto 对 P-256 支持最广,证书链校验必须能在浏览器里完成 |
 | 根证书 | X.509 自签名,`keyUsage=critical,keyCertSign,cRLSign`,`basicConstraints=critical,CA:TRUE,pathlen:0`,有效期 3650 天 | 只允许签 EEC,不允许再派生下级 CA |
 | EEC 密钥 | ECDSA P-256(OpenSSL 原生 PEM) | OpenSSL 的 CMS 实现对 Ed25519 报 `provider signature failure`,实测不可用 |
 | EEC 证书 | X.509 由根 CA 签发,`keyUsage=critical,digitalSignature`,`basicConstraints=critical,CA:FALSE`,有效期 365 天 | 终端签名证书只需要签名用途 |
-| 合集签名 | CMS 分离签名,`openssl cms -sign -binary -nocerts -noattr` | 逐字节语义,签名与验签都必须带 `-binary` |
+| 合集签名 | CMS 分离签名,`openssl cms -sign -binary -outform DER -nocerts -noattr` | 逐字节语义,签名与验签都必须带 `-binary`;`-outform DER` 输出裸 CMS,浏览器端可直接解析 |
 | 作者签名 | 裸公钥分离签名,`openssl pkeyutl -sign -rawin`(Ed25519) | 作者不需要证书,公钥随合集分发 |
 
 EEC 证书的 CN 取合集名,与 online-data 清单里的合集 id 一致。
@@ -55,10 +55,10 @@ EEC 持有方对每个文件单独签名,产物是 `<文件>.sig`:
 
 ```
 openssl cms -sign -binary -in <文件> -out <文件>.sig \
-  -signer eec.pem -inkey eec_secret.pem -nocerts -noattr
+  -signer eec.pem -inkey eec_secret.pem -nocerts -noattr -outform DER
 ```
 
-`-binary` 表示按原始字节签名,不做换行规范化,与作者签名的逐字节语义一致;`-nocerts` 表示签名里不带证书,验证方从分发结构里取 `eec.pem`。网页产物对 `dist/` 下的 `.html`、`.js`、`.css` 逐个签名,由 `sign-web` 子命令完成,并把 `eec.pem` 复制到产物目录供校验方取用。
+`-binary` 表示按原始字节签名,不做换行规范化,与作者签名的逐字节语义一致;`-nocerts` 表示签名里不带证书,验证方从分发结构里取 `eec.pem`。网页产物对 `dist/` 下的 `.html`、`.js`、`.css` 逐个签名,由 `sign-web` 子命令完成,同时写出按路径排序的 `web_files.json` 清单并对其单独签名,最后把 `eec.pem` 复制到产物目录供校验方取用。签名加 `-outform DER` 输出裸 CMS,浏览器端可直接解析。
 
 ### 作者: 裸公钥分离签名
 
@@ -74,7 +74,7 @@ openssl pkeyutl -sign -rawin -inkey author_secret.pem -in <文件> -out <文件>
 
 ```
 # 合集签名: 根证书作为信任锚,EEC 证书作为候选签名者
-openssl cms -verify -binary -in <文件>.sig -content <文件> \
+openssl cms -verify -binary -inform DER -in <文件>.sig -content <文件> \
   -CAfile root_ca.crt -certfile eec.pem
 
 # 作者签名
@@ -120,7 +120,7 @@ CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字�
 |:---:|:---:|
 | `plugin_sign.json` | 插件文件的 `.sig`(CMS 分离签名)与 `.author.sig`(作者裸公钥签名) |
 | `plugin_set_sign.json` | 合集根目录的 `eec.pem` 证书链,合集可信性由根 CA 签发的 EEC 证明 |
-| `web_sign.json` | 网页文件的 `.sig`(CMS 分离签名),见「当前实现状态」 |
+| `web_sign.json` | 网页文件的 `.sig`(CMS 分离签名)与 `web_files.json` 清单 |
 | Ed25519 + SHA-512 摘要的 JSON 签名结构 | 逐字节 CMS 分离签名与 `pkeyutl -rawin` 裸公钥签名 |
 
 ## 分发结构
@@ -134,6 +134,8 @@ online-data/
 ├── index.json          # 信任清单
 ├── root_ca.crt         # 根证书
 ├── crl.pem             # 吊销列表(可选,生成后才有)
+├── web/
+│   └── eec.pem         # 网页签名的终端签名证书
 └── collections/
     └── <合集名>/
         └── eec.pem     # 该合集的终端签名证书
@@ -157,7 +159,7 @@ online-data/
 生成命令在 `main` 工作树上执行,输出目录属于生成物目录:
 
 ```
-pnpm run build:online-data -- --root-ca root_ca.crt --eec awesome-dsc-plugin=../awesome-dsc-plugin/eec.pem --out <输出目录>
+pnpm run build:online-data -- --root-ca root_ca.crt --web-eec web-eec.pem --eec awesome-dsc-plugin=../awesome-dsc-plugin/eec.pem --out <输出目录>
 ```
 
 脚本写盘前用 `openssl verify` 确认每张 EEC 确实由该根证书签发,并检查 EEC 带 `digitalSignature`、不是 CA、未过期;任一项不通过就不写出任何文件。给出 `--crl` 时还会校验 CRL 确实由该根证书签发。
@@ -202,7 +204,7 @@ dist/
 
 | 子命令 | 作用 | 关键参数 |
 |:---:|:---:|:---:|
-| `init-root` | 生成 Ed25519 根私钥与自签名根证书 | `--dir`、`--days`、`--org`、`--name`、`--force` |
+| `init-root` | 生成 ECDSA P-256 根私钥与自签名根证书 | `--dir`、`--days`、`--org`、`--name`、`--force` |
 | `issue-eec` | 用根私钥签发 EEC | `--csr`、`--out`、`--days`、`--force` |
 | `sign-web` | 对目录下的 `.html`/`.js`/`.css` 生成 CMS 分离签名 | `--dir`、`--eec`、`--key` |
 | `verify-web` | 用根证书与目录内的 `eec.pem` 校验全部签名 | `--dir`、`--root-ca`、`--eec`、`--crl` |
@@ -224,15 +226,15 @@ dist/
 
 ## 当前实现状态
 
-本轮只落地 PKI 工具与分发结构,网页运行时的校验还没有切换到证书链:
+网页产物已按证书链落地,合集信任仍在迁移:
 
-| 项 | 现状 | 下一轮 |
+| 项 | 现状 | 下一步 |
 |:---:|:---:|:---:|
-| 网页产物签名 | `scripts/sign-web.mjs` 产出 `dist/web_sign.json`(Ed25519 + SHA-512 摘要) | 由 `sign-web` 子命令的 CMS 分离签名取代 |
-| 运行时校验 | 页面用构建时注入的 `__WEB_PUBLIC_KEY__` 校验 `web_sign.json` | 由根证书 + `eec.pem` 的证书链校验取代 |
-| 合集信任 | `plugin_set_sign.json` 由 dsc 私钥签发 | 由根 CA 签发的 EEC 证书链取代 |
+| 网页产物签名 | `sign-web` 子命令产出 `<文件>.sig` 与 `web_files.json` 清单 | 已完成 |
+| 运行时校验 | 页面用内嵌根证书与 `web/eec.pem` 的证书链校验全部签名 | 已完成 |
+| 合集信任 | `plugin_set_sign.json` 由 dsc 私钥签发,运行时按 Ed25519 验签 | 由根 CA 签发的 EEC 证书链取代 |
 
-这些旧产物在下一轮移除前保持可用,见 [网页签名与运行时校验](web-signature.md)。
+网页产物的签名范围、清单结构与校验流程见 [网页签名与运行时校验](web-signature.md)。
 
 ## 排错
 
@@ -243,6 +245,7 @@ dist/
 | `verify-web` 报某个文件 CMS 校验失败 | 该文件在签名后被改动过,或签名不是对当前字节生成的 |
 | `verify-web` 报 `certificate revoked` | EEC 已被 `gen-crl` 吊销 |
 | `build:online-data` 报 EEC 不是由该根证书签发 | 传入的 `eec.pem` 与 `--root-ca` 不配对 |
+| 网页运行时提示证书链校验未通过 | online-data 缺少 `web/eec.pem`,或该证书不是当前根证书签发的 |
 | `init-root` 报不得写入仓库被追踪的路径 | 根私钥只能写到仓库外的目录或 git 忽略的临时目录 |
 
 ## 延伸阅读

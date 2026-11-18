@@ -46,22 +46,22 @@ dsc-market/
 对每个来源依次执行:
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
-2. 若 online-data 信任清单里已有该来源对应的合集条目,直接采用清单里的公钥并视为可信,不采信来源自己分发的 `plugin_secret.pub`;否则取 `<base_url>/plugin_secret.pub` 与 `<base_url>/plugin_set_sign.json`,用内嵌的 dsc 公钥校验信任签名。被签名对象是该来源的 `plugin_secret.pub` 字节,先做 SHA-512 摘要再验 Ed25519,`signer` 必须为 `dsc`。
+2. 若 online-data 信任清单里已有该来源对应的合集条目,直接采用清单里的 EEC 证书并视为可信;否则取 `<base_url>/eec.pem`,用内嵌根证书校验证书链。合集可信性由根 CA 签发的 EEC 证明,不再校验合集信任签名。
 3. 取 `<base_url>/datalog.json` 得到插件目录,每条包含 `plugin_name`、`author`、`tag`。
-4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息,同时取该版本目录下的 `plugin_sign.json` 取出 `for` 为 `plugin.js` 的签名。
-5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,用该来源的 `plugin_secret.pub` 作为 `pub`、第 4 步取到的签名作为 `sign`,调用引擎的 `installFromUrl(url, manifest, { sourceType, pub, sign })`。
+4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息,同时取该版本目录下的 `plugin.js.sig` 作为合集签名。
+5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,把该来源的 EEC 证书与第 4 步取到的 `plugin.js.sig` 交给引擎验签安装。
 
-同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的公钥拼在一起。
+同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
 
 ## 信任状态
 
 | 状态 | 判定 | 界面行为 |
 |:---:|:---:|:---:|
-| `trusted` | 某个 `base_url` 的信任签名校验通过 | 允许浏览与安装 |
-| `untrusted` | 可达但签名不通过,或缺少 `plugin_set_sign.json`、`plugin_secret.pub` | 仍列出目录并保留「不可信」标识与警告;安装仍可进行,第一次点击转为 3 秒确认态 |
-| `unverified` | 构建未注入 `__WEB_PUBLIC_KEY__` | 允许浏览;安装前需要用户二次确认风险 |
+| `trusted` | 某个 `base_url` 的证书链校验通过 | 允许浏览与安装 |
+| `untrusted` | 可达但证书链或签名不通过,或缺少 `eec.pem` | 仍列出目录并保留「不可信」标识与警告;安装仍可进行,第一次点击转为 3 秒确认态 |
+| `unverified` | 构建未注入根证书 `__ROOT_CA_PEM__` | 允许浏览;安装前需要用户二次确认风险 |
 
-`__WEB_PUBLIC_KEY__` 由 `rspack.config.ts` 在构建时由 `WEB_PRIVATE_KEY` 推导注入,为空时无法校验信任链。
+`__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时注入,为空时无法校验证书链。合集信任迁移到 EEC 证书链的工作仍在进行,迁移完成前本节描述的是目标行为。
 
 ## 下载计数
 

@@ -29,6 +29,8 @@ const EEC_FILE = 'eec.pem'
 const SCHEMA_VERSION = 2
 /** 合集 id 只允许安全字符,避免拼出越界路径 */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+/** 网页 EEC 证书在输出目录内的相对路径 */
+const WEB_EEC_PATH = 'web/eec.pem'
 /** 旧结构留下的文件,生成新结构时清理 */
 const LEGACY_ROOT_FILES = ['web_public.pem']
 /** 旧结构在合集目录下留下的文件 */
@@ -39,6 +41,7 @@ const USAGE = [
   '',
   '  --root-ca <路径>   根证书,作为信任锚写入输出目录',
   '  --crl <路径>       可选的吊销列表,写入输出目录并在 index.json 中登记',
+  '  --web-eec <路径>   可选的网页签名 EEC 证书,写入输出目录的 web/eec.pem',
   '  --eec <名>=<路径>  合集名与该合集的 EEC 证书,可重复给出',
   '  --out <目录>       输出目录,不存在时创建',
   '  --help             打印用法',
@@ -61,7 +64,7 @@ const display = (target) => {
 
 /** 解析命令行参数 */
 const parseArgs = (argv) => {
-  const options = { out: '', rootCa: '', crl: '', eec: [], help: false }
+  const options = { out: '', rootCa: '', crl: '', webEec: '', eec: [], help: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     // pnpm 传参时会插入一个单独的 -- 分隔符,直接忽略
@@ -74,7 +77,7 @@ const parseArgs = (argv) => {
     }
     const equal = arg.indexOf('=')
     const name = equal === -1 ? arg : arg.slice(0, equal)
-    if (name !== '--out' && name !== '--root-ca' && name !== '--crl' && name !== '--eec') {
+    if (name !== '--out' && name !== '--root-ca' && name !== '--crl' && name !== '--eec' && name !== '--web-eec') {
       fail('未知选项 ' + arg + '\n' + USAGE)
     }
     const inlineValue = equal === -1 ? undefined : arg.slice(equal + 1)
@@ -93,7 +96,8 @@ const parseArgs = (argv) => {
       options.eec.push({ id: value.slice(0, separator), cert: value.slice(separator + 1) })
       continue
     }
-    const key = name === '--out' ? 'out' : name === '--crl' ? 'crl' : 'rootCa'
+    const key =
+      name === '--out' ? 'out' : name === '--crl' ? 'crl' : name === '--web-eec' ? 'webEec' : 'rootCa'
     if (options[key] !== '') {
       fail(name + ' 重复给出')
     }
@@ -183,6 +187,29 @@ const checkEec = (entry, rootCaPath) => {
   return { certPath, info }
 }
 
+/** 校验网页 EEC: 由根证书签发、可签名、不是 CA、未过期 */
+const checkWebEec = (certPath, rootCaPath) => {
+  const absolute = path.resolve(certPath)
+  if (!isFile(absolute)) {
+    fail('网页 EEC 证书不存在: ' + display(absolute))
+  }
+  const chain = verifyChain(absolute, rootCaPath)
+  if (!chain.ok) {
+    fail('网页 EEC 证书不是由 ' + display(rootCaPath) + ' 签发: ' + String(chain.reason))
+  }
+  const info = describeCertificate(absolute)
+  if (!hasDigitalSignature(info.keyUsage)) {
+    fail('网页 EEC 证书缺少 digitalSignature 用途,不能用于 CMS 签名')
+  }
+  if (info.isCa === true) {
+    fail('网页 EEC 证书 basicConstraints 为 CA:TRUE,不能作为终端签名证书')
+  }
+  if (!info.validNow) {
+    fail('网页 EEC 证书已过期: ' + String(info.notAfter))
+  }
+  return absolute
+}
+
 /** 清理旧结构留下的文件;不认识的残留只告警,不删除 */
 const cleanLegacy = (outDir, keepIds) => {
   const removed = []
@@ -256,6 +283,11 @@ const main = () => {
     }
   }
 
+  let webEecPath = ''
+  if (options.webEec !== '') {
+    webEecPath = checkWebEec(options.webEec, rootCaPath)
+  }
+
   const seen = new Map()
   const entries = []
   for (const entry of options.eec) {
@@ -283,6 +315,18 @@ const main = () => {
     copyFileSync(crlPath, path.join(outDir, CRL_FILE))
   }
 
+  // 网页 EEC 供网页运行时校验证书链使用;本次没给时清掉上一轮留下的旧证书
+  const webEecTarget = path.join(outDir, 'web', EEC_FILE)
+  if (webEecPath === '') {
+    if (isFile(webEecTarget)) {
+      rmSync(webEecTarget, { force: true })
+      removed.push(WEB_EEC_PATH)
+    }
+  } else {
+    mkdirSync(path.dirname(webEecTarget), { recursive: true })
+    copyFileSync(webEecPath, webEecTarget)
+  }
+
   const collections = []
   for (const entry of entries) {
     const targetDir = path.join(outDir, 'collections', entry.id)
@@ -303,6 +347,9 @@ const main = () => {
   console.log('[build-online-data] 已写出: ' + ROOT_CA_FILE + '(根证书)')
   console.log(
     '[build-online-data] 已写出: ' + (crlPath === '' ? '(无 CRL)' : CRL_FILE + '(吊销列表)')
+  )
+  console.log(
+    '[build-online-data] 已写出: ' + (webEecPath === '' ? '(无网页 EEC)' : WEB_EEC_PATH + '(网页签名证书)')
   )
   for (const entry of entries) {
     console.log('[build-online-data] 合集 ' + entry.id + ': EEC 由根证书签发,自检通过')

@@ -156,13 +156,13 @@ export const activate = (context) => {
 
 | 格式 | 目录布局 | 生成方式 |
 |:---:|:---:|:---:|
-| zip | 根目录直接放 `meta.json` 与 `plugin.js`,可选 `plugin_sign.json` 与 `plugin_secret.pub` | 进入 `dist/` 后打包:`zip -r ../dsc-demo-log-1.0.0.zip .` |
+| zip | 根目录直接放 `meta.json` 与 `plugin.js`,可选作者签名 `plugin.js.author.sig` 与 `author_pub.pem` | 进入 `dist/` 后打包:`zip -r ../dsc-demo-log-1.0.0.zip .` |
 | npm 包(`.tgz`) | 产物在 `package/dist/` 下 | 在插件项目根目录执行 `pnpm pack` |
 
 zip 的要点:
 
 - 压缩包根目录就是 `dist/` 的内容,不能再套一层目录;根目录下多一层 `dist/` 会导致安装时提示缺少 `meta.json`。
-- 只识别 `meta.json`、`plugin.js` 与两个签名文件,其余文件会被忽略,不影响安装。
+- 只识别 `meta.json`、`plugin.js` 与作者签名材料 `plugin.js.author.sig`、`author_pub.pem`,其余文件会被忽略,不影响安装。
 - 用命令行打包,避免系统压缩工具写入额外的元数据目录。
 - Windows 上不要直接用 `Compress-Archive` 压缩 `dist` 目录,它会把目录名套进包内;进入 `dist` 后执行 `tar -a -c -f ..\plugin.zip *`,或用资源管理器选中目录内的文件再压缩。
 
@@ -174,13 +174,13 @@ npm 包的要点:
 
 `meta.json` 是安装依据:引擎只校验 `name`、`version`、`author` 非空且版本号为三段数字;清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。
 
-带签名的离线包:
+带作者签名的离线包:
 
-1. 生成密钥对,私钥保存为 `secret`(PKCS#8 PEM),公钥导出为 `secret.pub`(SPKI PEM)。
-2. 对 `plugin.js` 的字节做 SHA-512 摘要,再用私钥对摘要签名,签名值按 base64 写入 `plugin_sign.json` 的 `value`,同一条目写 `for: "plugin.js"` 与 `signer`。
-3. 把 `plugin_sign.json` 与 `plugin_secret.pub` 一起放进包内,与 `meta.json`、`plugin.js` 同级。
+1. 生成作者密钥对:`openssl genpkey -algorithm ed25519 -out author_secret.pem`,再用 `openssl pkey -in author_secret.pem -pubout -out author_pub.pem` 导出公钥。
+2. 对 `plugin.js` 的字节做裸公钥分离签名:`openssl pkeyutl -sign -rawin -inkey author_secret.pem -in plugin.js -out plugin.js.author.sig` 。
+3. 把 `plugin.js.author.sig` 与 `author_pub.pem` 一起放进包内,与 `meta.json`、`plugin.js` 同级。
 
-只带其中一个文件时,引擎按未提供签名处理,并在确认对话框里提示未校验。
+只带其中一个文件时,引擎按未提供签名处理,并在确认对话框里提示未校验。合集侧对 `plugin.js` 与 `meta.json` 的 CMS 签名由合集用 EEC 完成,作者不需要参与;两套签名的约定见 [信任链与 PKI 签名](../basic/trust-chain.md) 。
 
 ## 让用户安装
 

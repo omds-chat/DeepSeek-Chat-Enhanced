@@ -121,7 +121,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 | 包格式 | 产物位置 | 说明 |
 |:---:|:---:|:---:|
-| zip | 包根目录 | 根目录直接放 `meta.json`、`plugin.js`,可选 `plugin_sign.json` 与 `plugin_secret.pub`;子目录内容忽略 |
+| zip | 包根目录 | 根目录直接放 `meta.json`、`plugin.js`,可选作者签名 `plugin.js.author.sig` 与 `author_pub.pem`;子目录内容忽略 |
 | tgz(npm 包) | `package/dist/` | 只取该目录下的文件,`package/` 下的其他内容一律忽略 |
 
 zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最小 tar 读取器 `readTarEntries`,它只收普通文件条目,pax 头、GNU 长名头与目录条目跳过。两者都不新增依赖。
@@ -136,7 +136,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 存在 `plugin.js` | `missing-plugin` |
 | `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | `invalid-meta` |
 | `plugin.js` 是可还原的 UTF-8 文本 | `corrupt-package` |
-| 同时有 `plugin_sign.json` 与 `plugin_secret.pub` 时,`for` 为 `plugin.js` 的签名不可用(结构不符或缺少该条) | 不拒绝,按 `unverified` 安装 |
+| 同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时,作者签名不可用(结构不符或验签失败) | 不拒绝,按 `unverified` 安装 |
 | `plugin.js` 不超过 1 MB | `package-too-large` |
 
 包内只有一半签名材料时按 `unverified` 安装,并在引擎日志里记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。

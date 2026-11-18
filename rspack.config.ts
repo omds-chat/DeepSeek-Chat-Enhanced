@@ -1,4 +1,3 @@
-import { createPublicKey } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,18 +15,22 @@ const cssLoader = {
   options: { targets },
 }
 
-/** 由 WEB_PRIVATE_KEY 推导 Ed25519 公钥（SPKI PEM）；未配置私钥时返回空串 */
-const readWebPublicKey = (): string => {
-  const privateKey = process.env.WEB_PRIVATE_KEY
-  if (!privateKey) {
+/**
+ * 读取根证书 PEM：ROOT_CA_CERT 可以是 PEM 文本，也可以是证书文件路径。
+ * 未配置时返回空串，构建照常完成，运行时不执行网页校验。
+ */
+const readRootCaPem = (): string => {
+  const value = process.env.ROOT_CA_CERT
+  if (!value || value.trim() === '') {
     return ''
   }
-  try {
-    return createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString()
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error)
-    throw new Error(`WEB_PRIVATE_KEY 不是有效的 PKCS#8 PEM 私钥: ${reason}`)
+  const text = value.includes('-----BEGIN CERTIFICATE-----')
+    ? value
+    : readFileSync(path.resolve(root, value.trim()), 'utf8')
+  if (!text.includes('-----BEGIN CERTIFICATE-----')) {
+    throw new Error('ROOT_CA_CERT 既不是 PEM 证书文本，也不是可读的证书文件路径')
   }
+  return text.trim() + '\n'
 }
 
 type ConfigOptions = {
@@ -37,6 +40,8 @@ type ConfigOptions = {
   devServer?: Configuration['devServer']
   /** 开发模式标记；缺省按 NODE_ENV 判断 */
   dev?: boolean
+  /** 内嵌到产物的根证书 PEM，注入为 __ROOT_CA_PEM__；缺省读环境变量 ROOT_CA_CERT */
+  rootCaPem?: string
 }
 
 /** 创建构建配置，支持自定义 API 地址和开发服务器选项 */
@@ -44,6 +49,7 @@ export const createConfig = ({
   apiOrigin = 'https://api.deepseek.com',
   devServer,
   dev = process.env.NODE_ENV !== 'production',
+  rootCaPem = readRootCaPem(),
 }: ConfigOptions = {}): Configuration => ({
   mode: dev ? 'development' : 'production',
   entry: './src/main.tsx',
@@ -109,8 +115,8 @@ export const createConfig = ({
     }),
     new rspack.DefinePlugin({
       __API_ORIGIN__: JSON.stringify(apiOrigin),
-      // 网页签名校验用的公钥；环境变量 WEB_PUBLIC_KEY 不参与，一律以私钥推导结果为准
-      __WEB_PUBLIC_KEY__: JSON.stringify(readWebPublicKey()),
+      // 网页签名校验用的根证书；为空时运行时不校验
+      __ROOT_CA_PEM__: JSON.stringify(rootCaPem),
     }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],

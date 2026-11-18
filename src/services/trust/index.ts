@@ -12,9 +12,11 @@ let inflight: Promise<TrustList> | null = null
 let started = false
 let warned = false
 
-/** 构建时注入的 dsc 公钥；未注入时为空串 */
-export const embeddedDscKey = (): string =>
-  typeof __WEB_PUBLIC_KEY__ === 'string' ? __WEB_PUBLIC_KEY__ : ''
+/**
+ * 内嵌的合集信任锚；旧版由构建时注入的 dsc 公钥提供，该注入已随网页签名改造移除。
+ * 合集信任迁移到根证书签发的 EEC 证书链后，改由 __ROOT_CA_PEM__ 提供信任锚。
+ */
+export const embeddedDscKey = (): string => ''
 
 /** 当前清单快照；未拉取过时为空清单 */
 export const getTrustList = (): TrustList => current

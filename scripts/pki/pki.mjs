@@ -6,8 +6,8 @@
  * 作者裸公钥分离签名与验签、证书信息读取与证书链校验,全部交给 openssl 完成。
  *
  * 约定见 .agents/signing-conventions.md:
- * - 根 CA 密钥 Ed25519,自签名,keyUsage=keyCertSign,cRLSign,basicConstraints=CA:TRUE,pathlen:0
- * - EEC 密钥 ECDSA P-256;OpenSSL 的 CMS 实现对 Ed25519 报 provider signature failure,不可用
+ * - 根 CA 密钥 ECDSA P-256,自签名,keyUsage=keyCertSign,cRLSign,basicConstraints=CA:TRUE,pathlen:0
+ * - EEC 密钥 ECDSA P-256;浏览器 WebCrypto 对 P-256 支持最广,证书链校验必须能在浏览器里完成
  * - EEC 证书 keyUsage=critical,digitalSignature,basicConstraints=critical,CA:FALSE
  * - 合集签名 openssl cms -sign -binary -nocerts -noattr,产出逐字节语义的 CMS 分离签名
  * - 作者签名 openssl pkeyutl -sign -rawin(Ed25519),产出裸公钥分离签名
@@ -164,7 +164,8 @@ export function resolveKeyFile(source, label = '私钥') {
 }
 
 /**
- * 生成自签名根 CA。Ed25519 私钥 + X.509 自签名证书。
+ * 生成自签名根 CA。ECDSA P-256 私钥 + X.509 自签名证书。
+ * 根 CA 与 EEC 统一用 P-256:浏览器 WebCrypto 对 P-256 支持最广,证书链校验必须能在浏览器里完成。
  * @param {string} dir 输出目录
  * @param {object} [options] org、name、days、keyFile、certFile
  * @returns {{keyPath: string, certPath: string}}
@@ -178,7 +179,7 @@ export function genRootCa(dir, options = {}) {
   const certPath = resolve(dir, options.certFile || ROOT_CA_FILE)
   ensureDirFor(keyPath)
   ensureDirFor(certPath)
-  run(['genpkey', '-algorithm', 'ed25519', '-out', keyPath])
+  run(['genpkey', '-algorithm', 'EC', '-pkeyopt', 'ec_paramgen_curve:P-256', '-out', keyPath])
   requireOutput(keyPath, '根私钥')
   run([
     'req', '-x509', '-new', '-key', keyPath, '-days', days, '-out', certPath,
@@ -274,7 +275,8 @@ export function signFileCms(filePath, eecCertPath, eecKeyPath, options = {}) {
   requireFile(eecKeyPath, 'EEC 私钥')
   const sigPath = options.out || cmsSignaturePath(filePath)
   ensureDirFor(sigPath)
-  run(['cms', '-sign', '-binary', '-in', filePath, '-out', sigPath, '-signer', eecCertPath, '-inkey', eecKeyPath, '-nocerts', '-noattr'])
+  // -outform DER 输出裸 CMS(默认是 S/MIME 文本或多部分邮件),浏览器端可直接解析
+  run(['cms', '-sign', '-binary', '-in', filePath, '-out', sigPath, '-signer', eecCertPath, '-inkey', eecKeyPath, '-nocerts', '-noattr', '-outform', 'DER'])
   return requireOutput(sigPath, 'CMS 签名')
 }
 
@@ -293,7 +295,7 @@ export function verifyFileCms(filePath, sigPath, rootCertPath, eecCertPath) {
   if (!existsSync(rootCertPath)) return { ok: false, reason: '根证书不存在:' + rootCertPath }
   if (!existsSync(eecCertPath)) return { ok: false, reason: 'EEC 证书不存在:' + eecCertPath }
   const result = run(
-    ['cms', '-verify', '-binary', '-in', sigPath, '-content', filePath, '-CAfile', rootCertPath, '-certfile', eecCertPath],
+    ['cms', '-verify', '-binary', '-inform', 'DER', '-in', sigPath, '-content', filePath, '-CAfile', rootCertPath, '-certfile', eecCertPath],
     { allowFailure: true },
   )
   if (result.ok) return { ok: true, reason: null }

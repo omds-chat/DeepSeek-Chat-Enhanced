@@ -35,6 +35,10 @@ import {
 
 /** 需要 CMS 签名的文件扩展名 */
 const SIGNED_EXTENSIONS = new Set(['.html', '.js', '.css'])
+/** 网页清单文件名,记录本次签名的全部网页产物 */
+const WEB_MANIFEST_FILE = 'web_files.json'
+/** 网页清单结构版本 */
+const WEB_MANIFEST_SCHEMA = 1
 /** 根私钥路径环境变量 */
 const ROOT_SECRET_ENV = 'ROOT_CA_SECRET'
 /** 根证书路径环境变量 */
@@ -52,7 +56,7 @@ const USAGE = [
   '用法: node scripts/pki/ca.mjs <子命令> [选项]',
   '',
   '子命令:',
-  '  init-root   生成 Ed25519 根私钥与自签名根证书',
+  '  init-root   生成 ECDSA P-256 根私钥与自签名根证书',
   '  issue-eec   用根私钥签发终端签名证书(EEC)',
   '  sign-web    对目录下的 .html/.js/.css 生成 CMS 分离签名',
   '  verify-web  用根证书与目录内的 eec.pem 校验全部签名',
@@ -95,7 +99,8 @@ const USAGES = {
     '  --eec <证书>    EEC 证书',
     '  --key <私钥>    EEC 私钥',
     '',
-    '每个文件生成 <文件>.sig(CMS 分离签名, -binary);EEC 证书会复制为 <目录>/eec.pem,',
+    '每个 .html/.js/.css 生成 <文件>.sig(CMS 分离签名, -binary),同时写出 ' + WEB_MANIFEST_FILE,
+    '记录全部已签名文件(按路径排序)并对其单独签名;EEC 证书会复制为 <目录>/eec.pem,',
     '供 verify-web 与网页校验直接取用。',
   ].join('\n'),
   'verify-web': [
@@ -340,7 +345,7 @@ const printCertificate = (certPath) => {
   return info
 }
 
-/** init-root: 生成 Ed25519 根私钥与自签名根证书 */
+/** init-root: 生成 ECDSA P-256 根私钥与自签名根证书 */
 const initRoot = (argv) => {
   const { options } = parseOptions(argv, { dir: 'value', days: 'value', org: 'value', name: 'value', force: 'flag' })
   if (options.help) {
@@ -415,12 +420,21 @@ const signWeb = (argv) => {
   for (const file of files) {
     signFileCms(toAbsolute(dir, file), eecPath, keyPath)
   }
+  // 清单只列被逐文件签名的产物,清单自身不在其中,它的签名单独生成
+  const manifestPath = join(dir, WEB_MANIFEST_FILE)
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({ schemaVersion: WEB_MANIFEST_SCHEMA, files }, null, 2) + '\n',
+    'utf8'
+  )
+  signFileCms(manifestPath, eecPath, keyPath)
   const targetEec = join(dir, EEC_CERT_FILE)
   if (resolve(targetEec) !== eecPath) {
     copyFileSync(eecPath, targetEec)
   }
   console.log('[pki] 目录: ' + display(dir))
   console.log('[pki] 已签名 ' + files.length + ' 个文件,输出 <文件>.sig(CMS 分离签名, -binary)')
+  console.log('[pki] 已写出清单 ' + display(manifestPath) + ' 及其签名 ' + display(manifestPath) + '.sig')
   console.log('[pki] 已写出 EEC 证书: ' + display(targetEec))
 }
 
@@ -450,7 +464,7 @@ const verifyFileCmsWithCrl = (filePath, sigPath, bundlePath, eecPath) => {
     return { ok: false, reason: '签名文件不存在: ' + display(sigPath) }
   }
   const result = opensslQuiet([
-    'cms', '-verify', '-binary', '-in', sigPath, '-content', filePath,
+    'cms', '-verify', '-binary', '-inform', 'DER', '-in', sigPath, '-content', filePath,
     '-CAfile', bundlePath, '-certfile', eecPath, '-crl_check',
   ])
   if (result.ok) {
@@ -461,6 +475,20 @@ const verifyFileCmsWithCrl = (filePath, sigPath, bundlePath, eecPath) => {
     .map((line) => line.trim())
     .filter(Boolean)
   return { ok: false, reason: lines.slice(0, 2).join(' ') || 'openssl cms -verify 失败' }
+}
+
+/** 读取网页清单里列出的文件;文件缺失或结构不符返回空数组 */
+const readWebManifest = (manifestPath) => {
+  let parsed = null
+  try {
+    parsed = JSON.parse(readFileSync(manifestPath, 'utf8'))
+  } catch {
+    return []
+  }
+  if (parsed === null || typeof parsed !== 'object' || !Array.isArray(parsed.files)) {
+    return []
+  }
+  return parsed.files.filter((item) => typeof item === 'string')
 }
 
 /** verify-web: 校验目录内全部签名 */
@@ -504,6 +532,25 @@ const verifyWeb = (argv) => {
         : verifyFileCms(absolute, cmsSignaturePath(absolute), rootCa, eecPath)
       if (!result.ok) {
         failures.push({ file, reason: String(result.reason) })
+      }
+    }
+
+    // 清单签名通过后,清单里列出的文件必须都在,且各自都有签名
+    const manifestPath = join(dir, WEB_MANIFEST_FILE)
+    if (existsSync(manifestPath)) {
+      const manifestResult = checkCrl
+        ? verifyFileCmsWithCrl(manifestPath, cmsSignaturePath(manifestPath), caFile, eecPath)
+        : verifyFileCms(manifestPath, cmsSignaturePath(manifestPath), rootCa, eecPath)
+      if (!manifestResult.ok) {
+        failures.push({ file: WEB_MANIFEST_FILE, reason: '清单签名校验失败: ' + String(manifestResult.reason) })
+      } else {
+        for (const file of readWebManifest(manifestPath)) {
+          if (!existsSync(toAbsolute(dir, file))) {
+            failures.push({ file, reason: '清单列出的文件不存在' })
+          } else if (!existsSync(cmsSignaturePath(toAbsolute(dir, file)))) {
+            failures.push({ file, reason: '清单列出的文件缺少签名' })
+          }
+        }
       }
     }
 

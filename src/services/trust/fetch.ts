@@ -42,19 +42,30 @@ const isRelativePath = (value: string): boolean =>
 /** 公钥文本归一化；只用于比较，不参与验签 */
 export const normalizePem = (value: string): string => value.replace(/\r\n?/g, '\n').trim()
 
-/** 读取文本资源；超时或失败返回 null，由调用方换下一个地址 */
-const requestText = async (url: string): Promise<string | null> => {
+/** 带超时的请求；超时或失败返回 null，由调用方换下一个地址 */
+const requestWith = async <T>(
+  url: string,
+  read: (response: Response) => Promise<T>
+): Promise<T | null> => {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
   try {
     const response = await fetch(url, { signal: controller.signal, cache: 'no-store' })
-    return response.ok ? await response.text() : null
+    return response.ok ? await read(response) : null
   } catch {
     return null
   } finally {
     clearTimeout(timer)
   }
 }
+
+/** 读取文本资源 */
+const requestText = (url: string): Promise<string | null> =>
+  requestWith(url, (response) => response.text())
+
+/** 读取二进制资源，供网页签名校验复用同一套镜像与超时语义 */
+export const requestBytes = (url: string): Promise<Uint8Array<ArrayBuffer> | null> =>
+  requestWith(url, async (response) => new Uint8Array(await response.arrayBuffer()))
 
 const parseJson = (text: string): unknown => {
   try {

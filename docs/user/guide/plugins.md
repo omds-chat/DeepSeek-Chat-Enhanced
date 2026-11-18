@@ -52,7 +52,7 @@ dsc 插件在浏览器里扩展应用已有的能力,当前可用的能力包括
 
 | 格式 | 产物位置 | 说明 |
 |:---:|:---:|:---:|
-| zip | 包根目录 | 根目录直接放 `meta.json` 与 `plugin.js`,可选 `plugin_sign.json` 与 `plugin_secret.pub` |
+| zip | 包根目录 | 根目录直接放 `meta.json` 与 `plugin.js`,可选作者签名 `plugin.js.author.sig` 与 `author_pub.pem` |
 | npm 包(`.tgz`) | `package/dist/` | 只安装该目录下的产物,`package/` 下的其他内容被忽略 |
 
 安装前会做以下检查,任何一项不通过都在确认对话框内说明原因,不会弹出系统对话框:
@@ -61,7 +61,7 @@ dsc 插件在浏览器里扩展应用已有的能力,当前可用的能力包括
 |:---:|:---:|
 | 包内必须有 `meta.json` 与 `plugin.js` | 提示缺少哪个文件 |
 | `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | 提示清单内容不合规 |
-| 包内同时有 `plugin_sign.json` 与 `plugin_secret.pub` 时按约定验签 | 提示签名校验未通过,仍可确认安装 |
+| 包内同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时按约定验签 | 提示签名校验未通过,仍可确认安装 |
 | 插件代码不超过 1 MB | 提示超过上限,请精简产物后重新打包 |
 
 Windows 上打包时注意:PowerShell 的 `Compress-Archive` 会把目录再套一层,压缩包根目录里没有 `meta.json`,安装时会提示缺少该文件。请进入 `dist` 目录后选中文件再压缩,或在 `dist` 目录执行 `tar -a -c -f plugin.zip *`。

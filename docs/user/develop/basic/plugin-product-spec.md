@@ -97,12 +97,12 @@
 
 | 包格式 | 产物位置 | 说明 |
 |:---:|:---:|:---:|
-| zip | 包根目录 | 根目录直接放 `meta.json` 与 `plugin.js`,可选 `plugin_sign.json` 与 `plugin_secret.pub`;子目录内容忽略 |
+| zip | 包根目录 | 根目录直接放 `meta.json` 与 `plugin.js`,可选作者签名 `plugin.js.author.sig` 与 `author_pub.pem`;子目录内容忽略 |
 | tgz(npm 包) | `package/dist/` | 只取该目录下的文件,`package/` 下的其他内容一律忽略 |
 
 `meta.json` 遵循运行时 meta schema,引擎只做最小校验:`name`、`version`、`author` 非空,`version` 为三段数字。`meta.json` 里的 `capabilities` 用于推导安装清单(与插件市场同一 id 规则);缺该字段时使用产物导出的 `manifest`,两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
-签名规则:包内同时提供 `plugin_sign.json` 与 `plugin_secret.pub` 时按约定校验 `for` 为 `plugin.js` 的签名(先 SHA-512 摘要再 Ed25519),校验不通过只提示,不拒绝安装,记录标记为校验失败;包内没有签名材料时同样允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。
+签名规则:包内同时提供 `plugin.js.author.sig` 与 `author_pub.pem` 时按约定校验作者对 `plugin.js` 的裸公钥分离签名,校验不通过只提示,不拒绝安装,记录标记为校验失败;包内没有签名材料时同样允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。合集签名 `plugin.js.sig` 与 `meta.json.sig` 属于合集分发产物,不在离线包内校验。签名约定见 [信任链与 PKI 签名](trust-chain.md) 。
 
 单个插件的 `plugin.js` 上限 1 MB,超出即拒绝安装,原因为 `package-too-large`:本地插件的代码文本要存进 IndexedDB,异常大的包会挤占存储配额,而本地插件没有外部来源可回退。
 

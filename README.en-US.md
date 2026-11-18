@@ -79,17 +79,15 @@ For plugin submission, see [omdsc-dev/awesome-dsc-plugin](https://github.com/omd
 
 Plugins listed in the market **must comply with** the [dsc plugin development specification](docs/user/develop/basic/plugin-develop-spec.md).
 
-Plugin sources follow a trust-signature chain:
+Plugin sources follow a PKI signature scheme:
 
-1. dsc signs a trusted plugin collection with the organization private key; the artifact is `plugin_set_sign.json` at the collection root.
-2. The trusted collection signs each plugin it lists with the collection private key; the artifact is `plugin_sign.json` in the plugin version directory.
-3. A plugin author may also self-sign the same plugin with their own private key, alongside the collection signature.
+1. omdsc-dev acts as the root certificate authority and issues end-entity signing certificates (EEC); a collection signs each plugin it lists with its EEC using CMS detached signatures, producing `plugin.js.sig` and `meta.json.sig` in the plugin version directory.
+2. A plugin author may also self-sign the same plugin with their own private key, producing `plugin.js.author.sig` alongside the collection signature.
+3. Each collection's EEC is issued by the root certificate, and the root certificate plus each collection's EEC are distributed through the online-data branch; a collection's trustworthiness is proven by the certificate chain, so no separate collection trust signature is issued.
 
-The market verifies the collection trust signature first, trusts that source's public key only after it passes, and then uses it to verify plugin signatures; the public key is preferably taken from the dsc online-data trust list. When verification fails, the market warns you but does not block the install, so decide for yourself whether to continue. Trust signatures cannot be delegated: a collection cannot issue trust signatures for another collection.
+The market verifies the certificate chain first, trusts that source's EEC only after it passes, and then uses it to verify plugin signatures; the web build verifies itself with the EEC's CMS signatures. When verification fails, the market warns you but does not block the install, so decide for yourself whether to continue. The chain cannot be delegated: a collection EEC cannot issue subordinate certificates.
 
-The signature system is migrating to OpenSSL PKI: omdsc-dev acts as the root certificate authority and issues end-entity signing certificates (EEC), collections sign with CMS detached signatures using their EEC, and the root certificate plus each collection's EEC are distributed through the online-data branch; runtime verification in the web build and the market has not switched to the certificate chain yet.
-
-See [trust chain and PKI signatures](docs/user/develop/basic/trust-chain.md) for the signing tools, revocation, and private key boundaries.
+Runtime chain verification in the web build follows the scheme above; collection trust in the market is still migrating. See [trust chain and PKI signatures](docs/user/develop/basic/trust-chain.md) for the signing tools, revocation, and private key boundaries.
 
 
 ## Building plugins

@@ -79,17 +79,15 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 插件市场收录的插件 **必须符合** [dsc插件开发规范](docs/user/develop/basic/plugin-develop-spec.md) 。
 
-插件来源遵循信任签名体系:
+插件来源遵循 PKI 签名体系:
 
-1. dsc 用组织私钥为受信任的插件合集签发合集信任签名,产物是合集根目录的 `plugin_set_sign.json` 。
-2. 受信任的合集用合集私钥为自己收录的每个插件签名,产物是插件版本目录的 `plugin_sign.json` 。
-3. 插件作者还可以用自己的私钥对同一插件自签名,与合集签名并存。
+1. omdsc-dev 作为根证书机构签发终端签名证书(EEC),合集用 EEC 对收录的插件做 CMS 分离签名,产物是插件版本目录的 `plugin.js.sig` 与 `meta.json.sig` 。
+2. 插件作者还可以用自己的私钥对同一插件自签名,产物是 `plugin.js.author.sig`,与合集签名并存。
+3. 合集的 EEC 由根证书签发,根证书与各合集 EEC 通过 online-data 分支分发;合集可信性由证书链证明,不再单独签发合集信任签名。
 
-市场先校验合集信任签名,通过后才信任该来源的公钥,再用它校验插件签名;公钥优先取自 dsc 的 online-data 信任清单。校验不通过时市场会给出警告,但不会阻止安装,由你自行判断是否继续使用。信任签名不支持下级派生: 合集不能为其他合集签发信任签名。
+市场先校验证书链,通过后才信任该来源的 EEC,再用它校验插件签名;网页产物同样用 EEC 的 CMS 签名自校验。校验不通过时市场会给出警告,但不会阻止安装,由你自行判断是否继续使用。证书链不支持下级派生: 合集 EEC 不能签发下级证书。
 
-签名体系正在迁移到 OpenSSL PKI: omdsc-dev 作为根证书机构签发终端签名证书(EEC),合集用 EEC 做 CMS 分离签名,根证书与各合集的 EEC 通过 online-data 分支分发;网页与市场的运行时校验尚未切换到证书链。
-
-签发工具、重签时机、吊销与私钥边界见 [信任链与 PKI 签名](docs/user/develop/basic/trust-chain.md) 。
+网页运行时的证书链校验已按上述约定实现,插件市场的合集信任仍在迁移。签发工具、重签时机、吊销与私钥边界见 [信任链与 PKI 签名](docs/user/develop/basic/trust-chain.md) 。
 
 
 ## 制作插件

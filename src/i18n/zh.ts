@@ -323,4 +323,6 @@ export const zh = {
     '合集 {ids}（共 {count} 个）的信任签名校验未通过，已标记为不可信，请自行判断是否继续使用',
   webIntegrityFailed:
     '网页文件签名校验未通过：{count} 个文件 ({files})，文件可能已被改动，请刷新或重新下载页面',
+  webIntegrityChainFailed:
+    '网页签名证书链或签名清单校验未通过，页面文件可能已被替换，请刷新或重新下载页面',
 } as const
