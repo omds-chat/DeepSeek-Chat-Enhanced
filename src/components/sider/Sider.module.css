@@ -44,12 +44,13 @@
   color: var(--dsw-alias-brand-primary);
 }
 
-/* 第二行是标签，字号与字重都低于第一行：小号字、圆角、浅色底 */
+/* 第二行是标签，字号与字重都低于第一行：小号字、圆角、品牌色底 */
+/* 底色取主题品牌色，字色取主题「品牌色上的文字」，深浅两套主题各自可读 */
 .appNameBadge {
   padding: 1px 8px;
   border-radius: 999px;
-  background-color: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-brand-primary);
+  background-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-label-primary-foreground);
   font-size: 11px;
   line-height: 16px;
   font-weight: 500;

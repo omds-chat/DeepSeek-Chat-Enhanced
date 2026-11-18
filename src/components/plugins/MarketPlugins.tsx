@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { useSettings } from '../../services/settings.js'
@@ -15,12 +15,32 @@ import {
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
 import { IconRefreshOutline16 } from '../base/icons.js'
+import { Tooltip } from '../base/Tooltip.js'
 import { showToast } from '../base/toastState.js'
 import { formatDateTime } from '../../utils/format.js'
 import styles from './PluginPanel.module.css'
 
 /** 二次确认的保持时间（毫秒） */
 const CONFIRM_MS = 3000
+
+/** 来源面板的展开状态：只在本会话内记住，默认收起 */
+const SOURCES_OPEN_KEY = 'dsc-plugins:sources-open'
+
+const readSourcesOpen = (): boolean => {
+  try {
+    return window.sessionStorage.getItem(SOURCES_OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+const writeSourcesOpen = (open: boolean): void => {
+  try {
+    window.sessionStorage.setItem(SOURCES_OPEN_KEY, open ? '1' : '0')
+  } catch {
+    /* 会话存储不可用时只在组件内记住 */
+  }
+}
 
 /** 客户端缺失时的占位订阅源，保证 Hook 顺序稳定 */
 const EMPTY_STORE = {
@@ -137,6 +157,24 @@ export const MarketPlugins = ({
   const sources = client ? client.sources() : []
   const selectedId = client ? client.selected() : null
   const runtime = client && selectedId !== null ? client.runtime(selectedId) : null
+  /** 来源面板默认收起，只留一行摘要 */
+  const [sourcesOpen, setSourcesOpen] = useState(readSourcesOpen)
+  const sourcesListId = `${useId()}-sources`
+
+  const selectedSource = sources.find((source) => source.id === selectedId) ?? null
+  const summaryText =
+    selectedSource === null
+      ? t('pluginMarketNoSource')
+      : t('pluginMarketSourcesSummary', {
+          name: selectedSource.name,
+          trust: t(trustKey(runtime)),
+        })
+
+  const toggleSources = () => {
+    const next = !sourcesOpen
+    setSourcesOpen(next)
+    writeSourcesOpen(next)
+  }
 
   useEffect(() => () => window.clearTimeout(confirmTimer.current), [])
 
@@ -285,14 +323,30 @@ export const MarketPlugins = ({
 
   return (
     <>
-      <div className={styles.marketSources}>
-        <div className={styles.marketBar}>
-          <span className={styles.statusText}>{t('pluginMarketSources')}</span>
-          <Button variant="outlined" size="s" disabled={editing !== null} onClick={startAdd}>
-            {t('pluginMarketSourceAdd')}
+      <div className={clsx(styles.marketSources, !sourcesOpen && styles.marketSourcesCollapsed)}>
+        <div className={styles.sourcesSummary}>
+          <span className={styles.summaryText}>{summaryText}</span>
+          {sources.length > 1 ? (
+            <Tooltip content={t('pluginMarketSourcesCount', { count: sources.length })}>
+              <span
+                className={styles.badgeCount}
+                aria-label={t('pluginMarketSourcesCount', { count: sources.length })}
+              >
+                {sources.length}
+              </span>
+            </Tooltip>
+          ) : null}
+          <Button
+            variant="outlined"
+            size="s"
+            aria-expanded={sourcesOpen}
+            aria-controls={sourcesListId}
+            onClick={toggleSources}
+          >
+            {sourcesOpen ? t('pluginMarketSourcesCollapse') : t('pluginMarketSourcesExpand')}
           </Button>
         </div>
-        <div className={styles.sourceList}>
+        <div className={styles.sourceList} id={sourcesListId}>
           {sources.length === 0 ? (
             <div className={styles.empty}>{t('pluginMarketNoSource')}</div>
           ) : null}
@@ -392,6 +446,11 @@ export const MarketPlugins = ({
             onCancel={cancelEdit}
           />
         ) : null}
+        <div className={styles.sourceFooter}>
+          <Button variant="outlined" size="s" disabled={editing !== null} onClick={startAdd}>
+            {t('pluginMarketSourceAdd')}
+          </Button>
+        </div>
       </div>
       <div className={styles.marketCatalog}>
         {!client ? (
@@ -467,13 +526,25 @@ export const MarketPlugins = ({
                         <span className={styles.name}>{plugin.name}</span>
                         <span className={styles.caption}>{plugin.author}</span>
                       </div>
-                      <div className={styles.tagsCell} role="cell">
+                      <div
+                        className={styles.tagsCell}
+                        role="cell"
+                        data-label={t('pluginMarketColumnTags')}
+                      >
                         {plugin.tags.length > 0 ? plugin.tags.join(' / ') : '-'}
                       </div>
-                      <div className={styles.versionCell} role="cell">
+                      <div
+                        className={styles.versionCell}
+                        role="cell"
+                        data-label={t('pluginColumnVersion')}
+                      >
                         {plugin.latest ?? '-'}
                       </div>
-                      <div className={styles.description} role="cell">
+                      <div
+                        className={styles.description}
+                        role="cell"
+                        data-label={t('pluginMarketColumnIntro')}
+                      >
                         {plugin.error !== null
                           ? t(plugin.error)
                           : plugin.meta

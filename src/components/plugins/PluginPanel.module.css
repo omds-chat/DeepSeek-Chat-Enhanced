@@ -103,6 +103,12 @@
   box-shadow: inset 0 1px 0 var(--dsw-alias-border-l2-darkmode-thin);
 }
 
+/* 表格单元格一律水平居中：表头与每一个单元格都落在列元素上，多行文本与徽章随之居中 */
+.row > [role='cell'],
+.row > [role='columnheader'] {
+  text-align: center;
+}
+
 /* 目录行：名称与作者、标签、版本、简介、操作 */
 .catalogRow {
   grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) 76px minmax(0, 1.6fr) minmax(104px, auto);
@@ -338,6 +344,37 @@
   box-shadow: inset 0 -1px 0 var(--dsw-alias-border-l2-darkmode-thin);
 }
 
+/* 来源面板摘要行：收起时只留这一行，仍能看到当前选中来源与信任状态 */
+.sourcesSummary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+}
+
+.summaryText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 收起时只保留摘要行：列表、表单与新增入口都不占纵向空间 */
+.marketSourcesCollapsed .sourceList,
+.marketSourcesCollapsed .sourceForm,
+.marketSourcesCollapsed .sourceFooter {
+  display: none;
+}
+
+.sourceFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .sourceList {
   display: flex;
   flex-direction: column;
@@ -511,36 +548,83 @@
   text-overflow: ellipsis;
 }
 
-/* 窄屏下自然堆叠：表格收窄列、来源行改为两行、安装栏换行 */
-@media (max-width: 620px) {
-  /* 移动端顶栏自带高度与内边距，页面不再重复留白 */
+/*
+ * 平板与手机：表格由多列网格改为卡片式堆叠。
+ * 理由：五列最小宽度之和（已安装表约 484px）超过 768px 视口扣掉 261px 侧边栏后的可用宽度，
+ * 若改为容器内横向滚动，列头会与内容错位且容易误触；堆叠后每张卡片保留全部字段，
+ * 页面与列表都不产生横向滚动。断点取 900px 而非 760px，是因为应用在 768px 仍显示侧边栏。
+ */
+@media (max-width: 900px) {
   .page {
-    padding: 0 16px;
+    padding: 16px 16px 0;
   }
 
-  .header {
-    padding-top: 4px;
+  /* 标签页均分整行宽度，窄屏下不折行 */
+  .tabs {
+    display: flex;
+    width: 100%;
   }
 
-  .installBar {
-    margin: 0 -16px;
-    padding: 12px 16px 12px;
+  .tab {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: 0 12px;
   }
 
-  .row {
-    grid-template-columns: minmax(0, 1.3fr) 56px 68px minmax(112px, auto);
+  /* 触控目标不小于 40px：按钮、输入框与图标按钮统一抬升 */
+  .page button {
+    min-width: 40px;
+    min-height: 40px;
   }
 
-  .catalogRow {
-    grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1.2fr) minmax(96px, auto);
+  .page input,
+  .page textarea {
+    min-height: 40px;
   }
 
-  .tagsCell {
+  .table {
+    gap: 8px;
+  }
+
+  /* 卡片堆叠后没有列，表头不再对应任何列 */
+  .head {
     display: none;
   }
 
+  .row,
+  .catalogRow {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 12px;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2-darkmode-thin);
+  }
+
+  /* 卡片里每个字段自带名称，取代被隐藏的表头 */
+  .row > [role='cell'][data-label]::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--dsw-alias-label-tertiary);
+    font-size: 12px;
+    line-height: 16px;
+  }
+
+  .name {
+    white-space: normal;
+  }
+
+  .actions {
+    justify-content: center;
+    padding-top: 2px;
+  }
+
+  /* 来源行：名称与徽章占一行，操作按钮独占下一行 */
   .sourceRow {
     grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 8px;
   }
 
   .sourceActions {
@@ -548,16 +632,70 @@
     justify-content: flex-start;
   }
 
-  .sourceCell,
-  .authorCell {
-    display: none;
+  /* 安装栏：标题行可折行，地址与安装按钮保持单行 */
+  .installBar {
+    margin: 0 -16px;
+    padding: 10px 16px 12px;
   }
 
-  .installRow {
+  .installHeader {
     flex-wrap: wrap;
+    row-gap: 6px;
   }
 
   .inputId {
     width: 100%;
+  }
+
+  .marketBar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+}
+
+/* 手机：左右留白再收一档，顶栏自带的高度取代页面顶部留白 */
+@media (max-width: 760px) {
+  /* 移动端顶栏自带高度与内边距，页面不再重复留白 */
+  .page {
+    padding: 0 12px;
+  }
+
+  .tabsBar {
+    padding: 8px 0;
+  }
+
+  .installBar {
+    margin: 0 -12px;
+    padding: 10px 12px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 0 10px;
+  }
+
+  .installBar {
+    margin: 0 -10px;
+    padding: 10px 10px 12px;
+  }
+
+  .title {
+    font-size: 17px;
+    line-height: 24px;
+  }
+
+  .row,
+  .catalogRow {
+    padding: 10px;
+  }
+
+  .actions,
+  .sourceActions {
+    gap: 6px;
+  }
+
+  .installHeader {
+    justify-content: flex-start;
   }
 }

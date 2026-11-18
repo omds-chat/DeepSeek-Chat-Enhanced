@@ -187,11 +187,21 @@ export const InstalledPlugins = ({
                   <span className={styles.caption}>{t('pluginBuiltinUninstallHint')}</span>
                 ) : null}
               </div>
-              <div className={styles.versionCell} role="cell">
+              <div
+                className={styles.versionCell}
+                role="cell"
+                data-label={t('pluginColumnVersion')}
+              >
                 {plugin.version}
               </div>
-              <div role="cell">{t(stateLabels[plugin.state])}</div>
-              <div className={styles.sourceCell} role="cell">
+              <div role="cell" data-label={t('pluginColumnState')}>
+                {t(stateLabels[plugin.state])}
+              </div>
+              <div
+                className={styles.sourceCell}
+                role="cell"
+                data-label={t('pluginColumnSource')}
+              >
                 {t(sourceLabel(plugin))}
               </div>
               <div className={styles.actions} role="cell">
