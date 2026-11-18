@@ -126,6 +126,8 @@ Content from the source repository remains under the [MIT](LICENSE.deepseek) lic
 
 See the [security policy document](SECURITY.md).
 
+Every code file of the web build is signed individually and verified silently at runtime; a failed check only shows a warning. See [web signature and runtime verification](docs/user/develop/basic/web-signature.md).
+
 
 ## Contributing
 

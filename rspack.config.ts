@@ -1,3 +1,4 @@
+import { createPublicKey } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,6 +14,20 @@ const { version } = JSON.parse(
 const cssLoader = {
   loader: 'builtin:lightningcss-loader',
   options: { targets },
+}
+
+/** 由 WEB_PRIVATE_KEY 推导 Ed25519 公钥（SPKI PEM）；未配置私钥时返回空串 */
+const readWebPublicKey = (): string => {
+  const privateKey = process.env.WEB_PRIVATE_KEY
+  if (!privateKey) {
+    return ''
+  }
+  try {
+    return createPublicKey(privateKey).export({ type: 'spki', format: 'pem' }).toString()
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(`WEB_PRIVATE_KEY 不是有效的 PKCS#8 PEM 私钥: ${reason}`)
+  }
 }
 
 type ConfigOptions = {
@@ -72,6 +87,16 @@ export const createConfig = ({
         },
         type: 'javascript/auto',
       },
+      {
+        // @noble/ed25519 同时提供 index.js 与 index.ts，extensionAlias 会优先命中 .ts
+        test: /@noble[\\/]ed25519[\\/]index\.ts$/,
+        loader: 'builtin:swc-loader',
+        options: {
+          jsc: { parser: { syntax: 'typescript' } },
+          env: { targets },
+        },
+        type: 'javascript/auto',
+      },
       { test: /\.(woff2?|ttf)$/, type: 'asset/resource' },
     ],
   },
@@ -82,7 +107,11 @@ export const createConfig = ({
       scriptLoading: 'defer',
       meta: { 'application-version': version },
     }),
-    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
+    new rspack.DefinePlugin({
+      __API_ORIGIN__: JSON.stringify(apiOrigin),
+      // 网页签名校验用的公钥；环境变量 WEB_PUBLIC_KEY 不参与，一律以私钥推导结果为准
+      __WEB_PUBLIC_KEY__: JSON.stringify(readWebPublicKey()),
+    }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
     }),

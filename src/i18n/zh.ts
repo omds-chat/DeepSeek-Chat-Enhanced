@@ -246,4 +246,6 @@ export const zh = {
   pluginOperationBusy: '处理中',
   pluginInstalled: '插件 {id} 安装完成',
   pluginInstallDone: '插件已安装',
+  webIntegrityFailed:
+    '网页文件签名校验未通过：{count} 个文件 ({files})，文件可能已被改动，请刷新或重新下载页面',
 } as const

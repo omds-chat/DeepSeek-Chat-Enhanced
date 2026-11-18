@@ -126,6 +126,8 @@ Copyright &copy; 2026 omdsc-dev
 
 详见 [安全政策文档](SECURITY.md) 。
 
+网页产物对每个代码文件单独签名,页面运行时静默校验,校验不通过只提示一条警告,详见 [网页签名与运行时校验](docs/user/develop/basic/web-signature.md) 。
+
 
 ## 贡献指南
 

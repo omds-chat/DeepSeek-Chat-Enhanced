@@ -258,4 +258,6 @@ export const en = {
   pluginOperationBusy: 'Working',
   pluginInstalled: 'Plugin {id} installed',
   pluginInstallDone: 'Plugin installed',
+  webIntegrityFailed:
+    'Web file signature check failed for {count} file(s): {files}. Files may have been modified; reload the page or download it again.',
 } satisfies Record<keyof typeof zh, string>
