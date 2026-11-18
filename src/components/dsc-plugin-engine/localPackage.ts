@@ -1,7 +1,12 @@
 import { gunzipSync, unzipSync } from 'fflate'
 import { verifyDetachedSignature } from '../../services/integrity/ed25519.js'
 import type { CoreCapabilityId } from '../dsc-core/index.js'
-import type { InstallRejection, LocalizedText, PluginManifest } from './types.js'
+import {
+  MAX_PLUGIN_CODE_BYTES,
+  type InstallRejection,
+  type LocalizedText,
+  type PluginManifest,
+} from './types.js'
 
 /** tar 头与数据块大小（字节） */
 const TAR_BLOCK = 512
@@ -15,11 +20,6 @@ const AUTHOR_PUB_FILE = 'author_pub.pem'
 const NPM_DIST = 'package/dist/'
 /** 版本号规则，与运行时 meta schema 一致 */
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
-/**
- * 单个插件代码上限（字节）。
- * 本地插件没有外部来源可回退，代码文本又要存进 IndexedDB，异常大的包会挤占存储配额。
- */
-const MAX_CODE_BYTES = 1024 * 1024
 
 /** 解压后的包内文件；键为相对包根的路径 */
 export type PackageFiles = Map<string, Uint8Array>
@@ -88,6 +88,18 @@ const decodeText = (bytes: Uint8Array): string | null => {
   } catch {
     return null
   }
+}
+
+/**
+ * 把插件字节解成可以原样还原的 UTF-8 文本。
+ * 非法字节序列或解码后再编码与原字节不一致时返回 null,避免存入无法还原的代码文本。
+ */
+export const decodePluginCode = (bytes: Uint8Array): string | null => {
+  const text = decodeText(bytes)
+  if (text === null || !sameBytes(encoder.encode(text), bytes)) {
+    return null
+  }
+  return text
 }
 
 /** 逐字节比较；用于确认代码文本可以还原成原始字节 */
@@ -342,7 +354,7 @@ export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageI
   if (!pluginBytes) {
     return { ok: false, reason: 'missing-plugin' }
   }
-  if (pluginBytes.length > MAX_CODE_BYTES) {
+  if (pluginBytes.length > MAX_PLUGIN_CODE_BYTES) {
     return { ok: false, reason: 'package-too-large', detail: String(pluginBytes.length) }
   }
   const metaText = decodeText(metaBytes)
@@ -353,8 +365,8 @@ export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageI
   if (!meta) {
     return { ok: false, reason: 'invalid-meta' }
   }
-  const codeText = decodeText(pluginBytes)
-  if (codeText === null || !sameBytes(encoder.encode(codeText), pluginBytes)) {
+  const codeText = decodePluginCode(pluginBytes)
+  if (codeText === null) {
     return { ok: false, reason: 'corrupt-package', detail: 'plugin.js is not valid UTF-8' }
   }
   const signBytes = files.get(AUTHOR_SIGN_FILE)

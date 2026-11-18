@@ -52,6 +52,9 @@ const trustKey = (runtime: SourceRuntime | null): TranslationKey => {
   if (runtime?.trust === 'trusted') {
     return 'pluginMarketTrustTrusted'
   }
+  if (runtime?.trust === 'endorsed') {
+    return 'pluginMarketTrustEndorsed'
+  }
   if (runtime?.trust === 'untrusted') {
     return 'pluginMarketTrustUntrusted'
   }
@@ -287,6 +290,8 @@ export const MarketPlugins = ({
       const trustFailure = runtime?.trustFailure
       const result = await engine.installFromUrl(plan.url, plan.manifest, {
         sourceType: plan.sourceType,
+        dataBase: plan.dataBase,
+        pluginBase: plan.pluginBase,
         ...(plan.eec === undefined ? {} : { eec: plan.eec }),
         ...(plan.eecUrl === undefined ? {} : { eecUrl: plan.eecUrl }),
         sigUrl: plan.sigUrl,
@@ -375,9 +380,11 @@ export const MarketPlugins = ({
                       styles.badge,
                       state?.trust === 'trusted'
                         ? styles.badgeTrusted
-                        : state?.trust === 'untrusted'
-                          ? styles.badgeUntrusted
-                          : styles.badgeUnverified
+                        : state?.trust === 'endorsed'
+                          ? styles.badgeEndorsed
+                          : state?.trust === 'untrusted'
+                            ? styles.badgeUntrusted
+                            : styles.badgeUnverified
                     )}
                   >
                     {t(trustKey(state))}
@@ -486,6 +493,15 @@ export const MarketPlugins = ({
             {runtime.trust === 'unverified' ? (
               <div className={styles.trustWarn}>{t('pluginMarketTrustUnverifiedHint')}</div>
             ) : null}
+            {runtime.trust === 'endorsed' ? (
+              <div className={styles.trustWarn}>
+                {t(
+                  runtime.chainVerified
+                    ? 'pluginMarketTrustEndorsedChainHint'
+                    : 'pluginMarketTrustEndorsedHint'
+                )}
+              </div>
+            ) : null}
             {runtime.eecFromTrustList ? (
               <div className={styles.caption}>{t('pluginMarketTrustEecFromList')}</div>
             ) : null}
@@ -525,6 +541,9 @@ export const MarketPlugins = ({
                       <div className={styles.nameCell} role="cell">
                         <span className={styles.name}>{plugin.name}</span>
                         <span className={styles.caption}>{plugin.author}</span>
+                        {runtime.trust === 'endorsed' ? (
+                          <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
+                        ) : null}
                       </div>
                       <div
                         className={styles.tagsCell}

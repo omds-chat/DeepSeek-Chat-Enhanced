@@ -6,6 +6,12 @@ import type {
   CoreSessionView,
 } from '../dsc-core/index.js'
 
+/**
+ * 单个插件的代码上限(字节)。
+ * 代码文本要存进 IndexedDB,异常大的产物会挤占存储配额,在线安装与离线包共用这一上限。
+ */
+export const MAX_PLUGIN_CODE_BYTES = 1024 * 1024
+
 /** 贡献点；插件可订阅的核心事件 */
 export type ContributionPoint = 'session:changed'
 
@@ -201,6 +207,8 @@ export type PluginStateView = {
   source: PluginSource | null
   /** 来源类型；宿主直接注册的插件按 inner 处理 */
   sourceType: PluginSourceType
+  /** 在线插件的版本目录地址，来自安装记录；旧记录没有该字段 */
+  dataBase?: string
   /** 签名校验状态 */
   signatureVerified: SignatureState
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */

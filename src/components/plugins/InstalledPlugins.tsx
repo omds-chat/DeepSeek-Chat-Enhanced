@@ -1,8 +1,13 @@
 import clsx from 'clsx'
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
-import { getPluginEngine, type PluginEngine } from '../dsc-plugin-engine/index.js'
+import { market, readRecordDataBase, type ReinstallPlan, type UpdateCheck } from '../dsc-market/index.js'
+import {
+  getPluginEngine,
+  type InstallSource,
+  type PluginEngine,
+} from '../dsc-plugin-engine/index.js'
 import type {
   PluginSourceType,
   PluginState,
@@ -50,8 +55,11 @@ const sourceLabel = (plugin: PluginStateView): TranslationKey => {
   return sourceTypeLabels[plugin.sourceType]
 }
 
+/** 更新二次确认的保持时间（毫秒），与市场的安装确认同一节奏 */
+const CONFIRM_MS = 3000
+
 /** 正在进行的操作；用于按钮的忙碌文案与禁用 */
-type Busy = { id: string; action: 'toggle' | 'uninstall' }
+type Busy = { id: string; action: 'toggle' | 'uninstall' | 'update' }
 
 /** 日志快照：读取时间用于提示日志时效 */
 type LogSnapshot = { name: string; lines: readonly string[]; capturedAt: number }
@@ -70,7 +78,53 @@ export const InstalledPlugins = ({
   const [busy, setBusy] = useState<Busy | null>(null)
   const [confirming, setConfirming] = useState<PluginStateView | null>(null)
   const [logs, setLogs] = useState<LogSnapshot | null>(null)
+  /** 版本更新检查结论；没有条目的插件不显示任何标注 */
+  const [updates, setUpdates] = useState<ReadonlyMap<string, UpdateCheck>>(new Map())
+  const [confirmUpdate, setConfirmUpdate] = useState<string | null>(null)
+  const confirmTimer = useRef(0)
   const running = busy !== null
+
+  /** 更新检查的目标：优先取记录里的数据基址，缺失时由来源地址推导 */
+  const targets = useMemo(
+    () =>
+      plugins.map((plugin) => {
+        const dataBase = readRecordDataBase(plugin)
+        return {
+          id: plugin.id,
+          version: plugin.version,
+          ...(dataBase === null ? {} : { dataBase }),
+          ...(plugin.source?.kind === 'url' ? { sourceUrl: plugin.source.url } : {}),
+        }
+      }),
+    [plugins]
+  )
+
+  useEffect(() => {
+    const client = market()
+    if (!client || targets.length === 0) {
+      setUpdates(new Map())
+      return
+    }
+    let cancelled = false
+    // 请求超时与失败都在市场内静默处理，无法判断的插件不出现在结果里
+    void client
+      .checkUpdates(targets)
+      .then((report) => {
+        if (!cancelled) {
+          setUpdates(report)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setUpdates(new Map())
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [targets])
+
+  useEffect(() => () => window.clearTimeout(confirmTimer.current), [])
 
   /**
    * 置忙执行一次操作，完成后刷新列表。
@@ -131,6 +185,86 @@ export const InstalledPlugins = ({
     showToast({ type: 'error', key: 'pluginUninstallFailed', params: { id: plugin.id } })
   }
 
+  /** 更新按钮的二次确认：3 秒内再次点击才真正执行 */
+  const armUpdate = (id: string) => {
+    setConfirmUpdate(id)
+    window.clearTimeout(confirmTimer.current)
+    confirmTimer.current = window.setTimeout(() => setConfirmUpdate(null), CONFIRM_MS)
+  }
+
+  /** 安装计划转成引擎需要的来源信息；eec 与 eecUrl 二选一，与其他安装入口同一口径 */
+  const installSourceOf = (reinstall: ReinstallPlan): InstallSource => ({
+    sourceType: reinstall.plan.sourceType,
+    sigUrl: reinstall.plan.sigUrl,
+    authorPubUrl: reinstall.plan.authorPubUrl,
+    authorSigUrl: reinstall.plan.authorSigUrl,
+    ...(reinstall.plan.eec === undefined ? {} : { eec: reinstall.plan.eec }),
+    ...(reinstall.plan.eecUrl === undefined ? {} : { eecUrl: reinstall.plan.eecUrl }),
+    ...(reinstall.trustFailure === 'revoked' ? { trustFailure: reinstall.trustFailure } : {}),
+  })
+
+  /**
+   * 更新到最新版：引擎没有覆盖安装的入口，先卸载旧记录再按最新版走完整安装流程，
+   * 验签、清单校验与落库都与市场安装一致。新版本安装失败时按记录里的版本回滚，避免插件就此消失。
+   */
+  const updatePlugin = async (plugin: PluginStateView, check: UpdateCheck) => {
+    const client = market()
+    const engine = getPluginEngine()
+    if (!client) {
+      showToast({ type: 'error', key: 'pluginMarketUnavailable' })
+      return
+    }
+    if (!engine) {
+      showToast({ type: 'error', key: 'pluginEngineUnavailable' })
+      return
+    }
+    const target = targets.find((item) => item.id === plugin.id)
+    const next = target ? client.reinstallPlan(target, check.latest) : null
+    if (!target || !next) {
+      showToast({ type: 'error', key: 'pluginUpdateUnavailable', params: { name: plugin.name } })
+      return
+    }
+    setConfirmUpdate(null)
+    setBusy({ id: plugin.id, action: 'update' })
+    try {
+      if (!(await engine.unload(plugin.id))) {
+        showToast({ type: 'error', key: 'pluginUpdateUnloadFailed', params: { name: plugin.name } })
+        return
+      }
+      const result = await engine.installFromUrl(
+        next.plan.url,
+        next.plan.manifest,
+        installSourceOf(next)
+      )
+      if (result.ok) {
+        showToast({ key: 'pluginUpdated', params: { name: plugin.name, version: check.latest } })
+        return
+      }
+      const previous = client.reinstallPlan(target, plugin.version)
+      if (previous) {
+        await engine.installFromUrl(
+          previous.plan.url,
+          previous.plan.manifest,
+          installSourceOf(previous)
+        )
+      }
+      showToast({
+        type: 'error',
+        key: 'pluginUpdateFailed',
+        params: { name: plugin.name, reason: pluginReasonText(result.reason, result.detail) },
+      })
+    } catch {
+      showToast({
+        type: 'error',
+        key: 'pluginUpdateFailed',
+        params: { name: plugin.name, reason: pluginReasonText('load-failed') },
+      })
+    } finally {
+      setBusy(null)
+      refresh()
+    }
+  }
+
   const openLogs = (plugin: PluginStateView) => {
     const engine = getPluginEngine()
     let lines: readonly string[] = []
@@ -165,11 +299,17 @@ export const InstalledPlugins = ({
           const builtin = plugin.source?.kind === 'builtin'
           const active = plugin.state === 'active'
           const toggling = busy?.id === plugin.id && busy.action === 'toggle'
+          const check = updates.get(plugin.id) ?? null
+          const confirmingUpdate = confirmUpdate === plugin.id
+          const updating = busy?.id === plugin.id && busy.action === 'update'
           return (
             <div key={plugin.id} className={styles.row} role="row" aria-busy={busy?.id === plugin.id}>
               <div className={styles.nameCell} role="cell">
                 <span className={styles.name}>{plugin.name}</span>
                 <span className={styles.caption}>{plugin.id}</span>
+                {plugin.sourceType === 'inner' && plugin.source?.kind === 'url' ? (
+                  <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
+                ) : null}
                 {plugin.source !== null && plugin.source.kind !== 'builtin' ? (
                   <span
                     className={clsx(
@@ -188,11 +328,14 @@ export const InstalledPlugins = ({
                 ) : null}
               </div>
               <div
-                className={styles.versionCell}
+                className={clsx(styles.versionCell, styles.versionStack)}
                 role="cell"
                 data-label={t('pluginColumnVersion')}
               >
-                {plugin.version}
+                <span>{plugin.version}</span>
+                {check?.status === 'latest' ? (
+                  <span className={styles.updateLatest}>{t('pluginUpdateLatest')}</span>
+                ) : null}
               </div>
               <div role="cell" data-label={t('pluginColumnState')}>
                 {t(stateLabels[plugin.state])}
@@ -205,6 +348,27 @@ export const InstalledPlugins = ({
                 {t(sourceLabel(plugin))}
               </div>
               <div className={styles.actions} role="cell">
+                {check?.status === 'outdated' ? (
+                  <Button
+                    variant={confirmingUpdate ? 'danger' : 'primary'}
+                    size="s"
+                    disabled={running}
+                    title={confirmingUpdate ? t('pluginUpdateHint') : undefined}
+                    onClick={() => {
+                      if (!confirmingUpdate) {
+                        armUpdate(plugin.id)
+                        return
+                      }
+                      void updatePlugin(plugin, check)
+                    }}
+                  >
+                    {updating
+                      ? t('pluginOperationBusy')
+                      : confirmingUpdate
+                        ? t('pluginUpdateConfirm')
+                        : t('pluginUpdateAvailable')}
+                  </Button>
+                ) : null}
                 <Button
                   variant="outlined"
                   size="s"

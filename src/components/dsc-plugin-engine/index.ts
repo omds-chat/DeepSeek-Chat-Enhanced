@@ -17,12 +17,13 @@ import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
 import { loadPluginRecords, writePluginRecords, type StoredPluginRecord } from './db.js'
 import {
+  decodePluginCode,
   inspectPackageFiles,
   readLocalPackage,
   toPluginId,
   type PackageInspection,
 } from './localPackage.js'
-import { loadPluginModule, loadPluginModuleFromCode, resolvePluginModule } from './loader.js'
+import { isPluginSourceAllowed, loadPluginModuleFromCode, resolvePluginModule } from './loader.js'
 import * as store from './registry.js'
 import {
   decodeSignature,
@@ -33,6 +34,7 @@ import {
   verifyArtifact,
   type SignatureMaterial,
 } from './signature.js'
+import { MAX_PLUGIN_CODE_BYTES } from './types.js'
 import type {
   DscPlugin,
   InstallResult,
@@ -51,11 +53,6 @@ const ACTIVATE_TIMEOUT = 5000
 const DEACTIVATE_TIMEOUT = 3000
 /** 引擎自身日志上限 */
 const MAX_ENGINE_LOG = 100
-/** 启动签名校验的并发上限 */
-const VERIFY_CONCURRENCY = 4
-
-/** 启动校验结论；unreachable 表示字节没拿到，不能据此判定篡改 */
-type RestoreVerdict = SignatureState | 'unreachable'
 
 /**
  * 安装时携带的来源信息。
@@ -74,8 +71,57 @@ export type InstallSource = {
   authorPubUrl?: string
   /** 作者签名地址；缺省为 <url>.author.sig */
   authorSigUrl?: string
+  /** 该版本目录的地址,形如 <base>/plugins/<作者>/<插件>/<版本>/；缺省由 url 推导 */
+  dataBase?: string
+  /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/；缺省由 dataBase 推导 */
+  pluginBase?: string
   /** 信任清单给出的吊销结论；revoked 表示合集 EEC 证书已被吊销 */
   trustFailure?: 'revoked'
+}
+
+/**
+ * 把目录地址收敛成以斜杠结尾的形式；能按 URL 解析时用 URL 规范化,否则只补斜杠。
+ * 空串与缺省返回 null,由调用方回退推导。
+ */
+const normalizeDirectoryUrl = (value: string | undefined): string | null => {
+  if (value === undefined) {
+    return null
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return null
+  }
+  try {
+    const target = new URL(trimmed)
+    return target.href.endsWith('/') ? target.href : target.href + '/'
+  } catch {
+    return trimmed.endsWith('/') ? trimmed : trimmed + '/'
+  }
+}
+
+/**
+ * 由产物地址推导版本目录地址：去掉最后一段文件名。
+ * 插件市场的产物地址形如 <base>/plugins/<作者>/<插件>/<版本>/plugin.js。
+ */
+export const deriveDataBase = (url: string): string => {
+  try {
+    const target = new URL(url)
+    target.search = ''
+    target.hash = ''
+    const segments = target.pathname.split('/')
+    segments.pop()
+    target.pathname = segments.join('/') + '/'
+    return target.href
+  } catch {
+    const cut = url.lastIndexOf('/')
+    return cut >= 0 ? url.slice(0, cut + 1) : url + '/'
+  }
+}
+
+/** 由版本目录地址推导插件目录地址：去掉最后一段版本号 */
+export const derivePluginBase = (dataBase: string): string => {
+  const trimmed = dataBase.endsWith('/') ? dataBase.slice(0, -1) : dataBase
+  return deriveDataBase(trimmed)
 }
 
 /** 插件引擎对外接口 */
@@ -110,27 +156,6 @@ export type PluginEngine = {
 
 const describeError = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
-
-/** 以固定并发上限处理列表；单个任务抛错不影响其余任务 */
-const runLimited = async <T>(
-  items: readonly T[],
-  limit: number,
-  task: (item: T) => Promise<void>
-): Promise<void> => {
-  let cursor = 0
-  const worker = async (): Promise<void> => {
-    while (cursor < items.length) {
-      const item = items[cursor]
-      cursor += 1
-      try {
-        await task(item)
-      } catch {
-        // 单项失败由任务自身收敛，这里只保证其余项继续
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-}
 
 let engine: PluginEngine | null = null
 
@@ -176,6 +201,12 @@ export const installPluginEngine = (): PluginEngine => {
     }
     if (origin.sourceUrl) {
       stored.source_url = origin.sourceUrl
+    }
+    if (origin.dataBase) {
+      stored.data_base = origin.dataBase
+    }
+    if (origin.pluginBase) {
+      stored.plugin_base = origin.pluginBase
     }
     if (origin.eec) {
       stored.eec = origin.eec
@@ -411,7 +442,8 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，
-   * 两者都没有则按清单非法拒绝。带签名材料时先校验产物签名，通过后才加载。
+   * 两者都没有则按清单非法拒绝。安装阶段下载产物字节并保存代码文本，
+   * 带签名材料时先对原始字节验签，通过后才加载模块。
    */
   const installFromUrl = async (
     url: string,
@@ -420,16 +452,35 @@ export const installPluginEngine = (): PluginEngine => {
   ): Promise<InstallResult> => {
     const target = manifest?.id ?? url
     const sourceType: PluginSourceType = source?.sourceType ?? 'outer'
+    if (!isPluginSourceAllowed(url)) {
+      // 地址判定与加载器一致：只接受 https 与本机回环的 http
+      pushEngineLog(`install ${target} failed: source url is not allowed`)
+      report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
+      return { ok: false, reason: 'load-failed', detail: 'source url is not allowed' }
+    }
     const material = await loadSignatureMaterial(url, source)
+    // 安装阶段必须拿到字节：既要保存代码文本供启动恢复，也要对原始字节验签
+    const bytes = await fetchArtifactBytes(url)
+    if (!bytes) {
+      // 字节没拿到时分不清网络问题与篡改，按加载失败处理，不误报签名无效
+      pushEngineLog(`install ${target} failed: artifact fetch failed`)
+      report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
+      return { ok: false, reason: 'load-failed', detail: 'artifact fetch failed' }
+    }
+    if (bytes.length > MAX_PLUGIN_CODE_BYTES) {
+      pushEngineLog(`install ${target} rejected: code is ${String(bytes.length)} bytes`)
+      report('pluginInstallRejected', { id: target, reason: pluginReasonText('package-too-large') })
+      return { ok: false, reason: 'package-too-large', detail: String(bytes.length) }
+    }
+    const codeText = decodePluginCode(bytes)
+    if (codeText === null) {
+      // 代码文本存不住就无法离线恢复，按加载失败处理
+      pushEngineLog(`install ${target} failed: artifact is not valid UTF-8`)
+      report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
+      return { ok: false, reason: 'load-failed', detail: 'artifact is not valid UTF-8' }
+    }
     let signature: SignatureState = 'unverified'
     if (hasSignatureMaterial(material)) {
-      const bytes = await fetchArtifactBytes(url)
-      if (!bytes) {
-        // 字节没拿到时分不清网络问题与篡改，按加载失败处理，不误报签名无效
-        pushEngineLog(`install ${target} failed: artifact fetch failed`)
-        report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
-        return { ok: false, reason: 'load-failed', detail: 'artifact fetch failed' }
-      }
       signature = await verifyArtifact(bytes, material)
       if (signature === 'failed') {
         // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
@@ -444,7 +495,7 @@ export const installPluginEngine = (): PluginEngine => {
     }
     let loadedModule: unknown
     try {
-      loadedModule = await loadPluginModule(url)
+      loadedModule = await loadPluginModuleFromCode(codeText)
     } catch (error) {
       const detail = describeError(error)
       // 原始错误只进引擎日志，界面用可读文案
@@ -466,12 +517,17 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginManifestMissing', { id: url })
       return { ok: false, reason: 'invalid-manifest' }
     }
+    // 数据基址随安装入库：source_url 只用于检查更新，运行阶段直接按 dataBase 取资源
+    const dataBase = normalizeDirectoryUrl(source?.dataBase) ?? deriveDataBase(url)
     const origin: store.PluginOrigin = {
       ...encodeSignature(material),
       sourceType,
       sourceUrl: url,
+      dataBase,
+      pluginBase: normalizeDirectoryUrl(source?.pluginBase) ?? derivePluginBase(dataBase),
       installedAt: Date.now(),
       trusted: source?.trustFailure !== 'revoked',
+      code: codeText,
     }
     const result = register(resolved, loaded.plugin, { kind: 'url', url }, { origin, signature })
     if (!result.ok) {
@@ -596,7 +652,10 @@ export const installPluginEngine = (): PluginEngine => {
     return await inspected.commit()
   }
 
-  /** 存储记录转成注册表用的来源元数据 */
+  /**
+   * 存储记录转成注册表用的来源元数据。
+   * 旧记录可能没有数据基址,此时按 source_url 推导,恢复后再落盘补齐,更新检查不必回查 datalog.json。
+   */
   const toOrigin = (entry: StoredPluginRecord): store.PluginOrigin => {
     const origin: store.PluginOrigin = {
       sourceType: entry.source_type,
@@ -605,6 +664,15 @@ export const installPluginEngine = (): PluginEngine => {
     }
     if (entry.source_url) {
       origin.sourceUrl = entry.source_url
+    }
+    const dataBase =
+      entry.data_base ?? (entry.source_url ? deriveDataBase(entry.source_url) : undefined)
+    if (dataBase) {
+      origin.dataBase = dataBase
+    }
+    const pluginBase = entry.plugin_base ?? (dataBase ? derivePluginBase(dataBase) : undefined)
+    if (pluginBase) {
+      origin.pluginBase = pluginBase
     }
     if (entry.eec) {
       origin.eec = entry.eec
@@ -624,80 +692,26 @@ export const installPluginEngine = (): PluginEngine => {
     return origin
   }
 
-  /**
-   * 恢复单个外部插件。
-   * 签名不通过的记录仍然加载并激活，只提示用户并把记录标记为不可信，界面保留标识。
-   */
-  const restoreExternal = async (
-    entry: StoredPluginRecord,
-    verdict: RestoreVerdict | undefined
-  ): Promise<void> => {
-    const id = entry.manifest.id
-    const origin = toOrigin(entry)
-    const source: PluginSource | null = entry.source_url
-      ? { kind: 'url', url: entry.source_url }
-      : null
-    const signature: SignatureState =
-      verdict === 'verified' ? 'verified' : verdict === 'failed' ? 'failed' : 'unverified'
-    if (verdict === 'failed') {
-      // 校验不通过只提示，不阻断激活；记录标记为不可信，界面保留标识
-      origin.trusted = false
-      warn('pluginSignatureInvalid', { id })
+  /** 存储记录对应的恢复来源；在线插件没有分发地址时返回 null */
+  const sourceOf = (entry: StoredPluginRecord): PluginSource | null => {
+    if (entry.source_type === 'local') {
+      return { kind: 'local' }
     }
-    if (!entry.source_url) {
-      // 没有分发地址的记录无法恢复，只能等用户重新安装
-      const record = store.addFailed(entry.manifest, source, 'no-plugin-instance', {
-        origin,
-        signature,
-      })
-      record.enabled = entry.enabled
-      report('pluginRestoreFailed', { id, reason: pluginReasonText('no-plugin-instance') })
-      return
-    }
-    if (verdict === 'unreachable') {
-      // 网络不可达不算篡改，按恢复失败处理
-      const record = store.addFailed(entry.manifest, source, 'load-failed', { origin, signature })
-      record.enabled = entry.enabled
-      store.pushLog(record, 'artifact fetch failed')
-      report('pluginRestoreFailed', { id, reason: pluginReasonText('load-failed') })
-      return
-    }
-    let loaded: LoadedPlugin
-    try {
-      loaded = await resolvePluginModule(await loadPluginModule(entry.source_url))
-    } catch (error) {
-      const reason = describeError(error)
-      // 原始错误随占位记录写入插件日志，界面用可读文案
-      const record = store.addFailed(entry.manifest, source, reason, { origin, signature })
-      record.enabled = entry.enabled
-      report('pluginRestoreFailed', { id, reason: pluginReasonText(reason) })
-      return
-    }
-    const result = register(entry.manifest, loaded.plugin, source, { origin, signature })
-    const record = store.get(id)
-    if (!result.ok || !record) {
-      return
-    }
-    record.enabled = entry.enabled
-    if (verdict === 'failed') {
-      store.pushLog(record, 'signature-invalid')
-    }
-    if (record.enabled) {
-      await activate(id)
-    }
+    return entry.source_url ? { kind: 'url', url: entry.source_url } : null
   }
 
   /**
-   * 恢复本地插件：用存储的代码重建 Blob 模块，有签名材料时先对代码验签。
-   * 验签不通过只提示用户并把记录标记为不可信，仍然加载并激活。
+   * 恢复单个外部插件。
+   * 只用存储的代码重建 Blob 模块,启动阶段不访问网络,离线也能激活;source_url 只用于检查更新。
+   * 有签名材料时先对存储的代码字节验签,不通过只提示用户并把记录标记为不可信,仍然加载并激活。
    */
-  const restoreLocal = async (entry: StoredPluginRecord): Promise<void> => {
+  const restoreExternal = async (entry: StoredPluginRecord): Promise<void> => {
     const id = entry.manifest.id
     const origin = toOrigin(entry)
-    const source: PluginSource = { kind: 'local' }
+    const source = sourceOf(entry)
     const code = entry.code ?? ''
     if (code === '') {
-      // 没有代码就无法重建模块，只能等用户重新安装
+      // 没有代码就无法重建模块,只能等用户重新安装
       const record = store.addFailed(entry.manifest, source, 'no-plugin-instance', { origin })
       record.enabled = entry.enabled
       report('pluginRestoreFailed', { id, reason: pluginReasonText('no-plugin-instance') })
@@ -711,10 +725,10 @@ export const installPluginEngine = (): PluginEngine => {
       authorSig: entry.author_sig,
     })
     if (hasSignatureMaterial(material)) {
-      // 本地插件没有可拉取的地址，验签对象是存储的代码文本重建出的字节
+      // 验签对象是存储的代码文本重建出的字节,与安装时验签的原始字节一致
       signature = await verifyArtifact(new TextEncoder().encode(code), material)
       if (signature === 'failed') {
-        // 校验不通过只提示，不阻断激活；记录标记为不可信，界面保留标识
+        // 校验不通过只提示,不阻断激活;记录标记为不可信,界面保留标识
         origin.trusted = false
         warn('pluginSignatureInvalid', { id })
       }
@@ -724,7 +738,7 @@ export const installPluginEngine = (): PluginEngine => {
       loaded = await resolvePluginModule(await loadPluginModuleFromCode(code))
     } catch (error) {
       const reason = describeError(error)
-      // 原始错误随占位记录写入插件日志，界面用可读文案
+      // 原始错误随占位记录写入插件日志,界面用可读文案
       const record = store.addFailed(entry.manifest, source, reason, { origin, signature })
       record.enabled = entry.enabled
       report('pluginRestoreFailed', { id, reason: pluginReasonText(reason) })
@@ -745,8 +759,8 @@ export const installPluginEngine = (): PluginEngine => {
   }
 
   /**
-   * 启动恢复：先装载内置插件，再恢复外部插件。
-   * 外部插件先并发校验签名（上限 4），再按存储顺序逐个加载，保证依赖先于下游注册。
+   * 启动恢复：先装载内置插件，再按存储顺序恢复外部插件，保证依赖先于下游注册。
+   * 外部插件全部用存储的代码重建模块，启动阶段不发起网络请求，网络不可达时照常启动。
    * 单个插件失败只记录为 failed，不阻塞其余插件与宿主渲染。
    */
   const restore = async (): Promise<void> => {
@@ -776,32 +790,8 @@ export const installPluginEngine = (): PluginEngine => {
       }
     }
     const externals = loaded.records.filter((entry) => !BUILTIN_PLUGIN_IDS.includes(entry.id))
-    // 校验只给出结论，不改动注册表；激活顺序仍按存储顺序
-    const verdicts = new Map<string, RestoreVerdict>()
-    await runLimited(externals, VERIFY_CONCURRENCY, async (entry) => {
-      // 本地插件没有可拉取的地址，验签在 restoreLocal 里对存储的代码完成
-      if (entry.source_type === 'local' || !entry.source_url) {
-        return
-      }
-      const material = decodeSignature({
-        eec: entry.eec,
-        sig: entry.sig,
-        authorPub: entry.author_pub,
-        authorSig: entry.author_sig,
-      })
-      if (!hasSignatureMaterial(material)) {
-        return
-      }
-      const bytes = await fetchArtifactBytes(entry.source_url)
-      // 字节拉不到时按不可达处理，不误报篡改
-      verdicts.set(entry.id, bytes ? await verifyArtifact(bytes, material) : 'unreachable')
-    })
     for (const entry of externals) {
-      if (entry.source_type === 'local') {
-        await restoreLocal(entry)
-      } else {
-        await restoreExternal(entry, verdicts.get(entry.id))
-      }
+      await restoreExternal(entry)
     }
     restoring = false
     persist()
@@ -815,6 +805,7 @@ export const installPluginEngine = (): PluginEngine => {
       state: record.state,
       source: record.source,
       sourceType: record.origin?.sourceType ?? 'inner',
+      ...(record.origin?.dataBase === undefined ? {} : { dataBase: record.origin.dataBase }),
       signatureVerified: record.signature,
       enabled: record.enabled,
       dependencies: [...(record.manifest.dependencies ?? [])],

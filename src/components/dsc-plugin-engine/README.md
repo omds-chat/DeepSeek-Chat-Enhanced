@@ -38,6 +38,8 @@ dsc-plugin-engine/
 
 `installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一，缺省按 `outer` 处理。签名材料共四项：`eec` 是合集 EEC 证书 PEM，`sigUrl` 是 `plugin.js.sig` 地址（缺省为 `<url>.sig`），两者齐全时做合集 CMS 分离验签；`authorPubUrl` 与 `authorSigUrl` 是作者公钥与作者签名地址（后者缺省为 `<url>.author.sig`），两者齐全时做作者裸签名验签。`eec` 缺省而给出 `eecUrl` 时，引擎先拉取来源根目录的 `eec.pem` 再验签。安装阶段先校验产物签名，不通过只提示用户，仍照常安装，安装记录标记为 `failed`。
 
+`source` 还可携带两个目录地址：`dataBase` 是该版本目录(`<base>/plugins/<作者>/<插件>/<版本>/`),`pluginBase` 是插件目录(`<base>/plugins/<作者>/<插件>/`)。两者缺省时由 `url` 推导:`deriveDataBase` 去掉最后一段文件名,`derivePluginBase` 再去掉版本号。安装时两个地址一并写入安装记录,后续检查更新直接按 `dataBase` 请求 `versions.json` 与 `meta.json`,不再从来源根目录的 `datalog.json` 反查。
+
 ### 生命周期
 
 ```
@@ -75,9 +77,19 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 ### 持久化与启动恢复
 
-安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库（版本 1，对象仓库 `plugins`，主键 `id`），与聊天历史库分开建库，互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`eec`、`sig`、`author_pub`、`author_sig`、`code`、`enabled`、`installed_at`，校验失败的记录另带 `trusted: false`。
+安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库（版本 1，对象仓库 `plugins`，主键 `id`），与聊天历史库分开建库，互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`data_base`、`plugin_base`、`eec`、`sig`、`author_pub`、`author_sig`、`code`、`enabled`、`installed_at`，校验失败的记录另带 `trusted: false`。
 
-`source_type` 取 `inner`（随本体分发）、`awesome`（精选合集）、`outer`（其他在线来源）、`local`（用户上传）之一；`source_url` 只对在线插件存在，存其 `plugin.js` 地址，`local` 来源留空。
+`source_type` 取 `inner`（随本体分发）、`awesome`（精选合集）、`outer`（其他在线来源）、`local`（用户上传）之一。
+
+目录地址三个字段的语义:
+
+| 字段 | 内容 | 用途 |
+|:---:|:---:|:---:|
+| `source_url` | 在线插件的 `plugin.js` 地址 | 只用于检查更新，启动流程不依赖它；`local` 来源留空 |
+| `data_base` | 该版本目录，形如 `<base>/plugins/<作者>/<插件>/<版本>/` | 检查更新时直接请求该目录下的 `versions.json`、`meta.json` |
+| `plugin_base` | 插件目录，形如 `<base>/plugins/<作者>/<插件>/` | 取 `versions.json` 与 `author_pub.pem` |
+
+两个目录地址由插件市场在安装时随 `InstallSource` 传入;未传时由 `source_url` 推导(去掉文件名即版本目录,再去掉版本号即插件目录)。旧记录缺少这两个字段时,恢复阶段按同一规则推导并随落盘补齐。
 
 签名相关字段的语义:
 
@@ -90,7 +102,7 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 缺失某个字段表示这条记录没有对应的签名材料，启动校验按未校验处理。旧版的 `pub` 与 `sign` 字段（JSON 信任签名方案）不再读取，升级后已安装插件显示为未校验，重新安装即可拿到新字段。
 
-`code` 只对 `local` 来源存在,保存插件代码文本:本地插件没有可重新拉取的地址,启动恢复时用它重建 Blob URL 再 `import()`;在线插件不写该字段,恢复时按 `source_url` 重新加载。写入前已确认代码文本可以还原成原始字节,签名针对原始字节计算,因此重建后的字节与验签时一致。
+`code` 保存插件代码文本,在线与本地插件都写:在线插件在安装阶段下载 `plugin.js` 后按 UTF-8 文本存入,本地插件取离线包内的 `plugin.js`。启动恢复只用它重建 Blob URL 再 `import()`,不再为启动拉取网络;网络不可达时插件照常启动。写入前已确认代码文本可以还原成原始字节,签名针对原始字节计算,因此重建后的字节与验签时一致。单个插件代码上限 1 MB,超限时拒绝安装并给出原因。
 
 安装、卸载、启用与停用都立即落盘；落盘失败只写入 `engineLogs()`，不影响内存状态。IndexedDB 不可用时降级为内存存储，同样只记引擎日志，不抛错。
 
@@ -102,9 +114,9 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、返回实例
   └── restore()         # 异步：读取安装记录并完成旧版迁移
       ├── 先装载 builtin.ts 的内置插件（首次出现默认启用）
-      ├── 再并发校验在线插件签名(上限 4),不通过的记录标记不可信但仍激活
-      ├── 接着按存储顺序恢复在线插件,加载失败则标记 failed 并在 list() 中可见
-      └── 最后恢复本地插件：按存储的 code 重建模块，带签名材料时先对代码验签
+      ├── 再按存储顺序恢复外部插件:按存储的 code 重建模块,启动阶段不访问网络
+      ├── 带签名材料时对存储的代码字节验签,不通过的记录标记不可信但仍激活
+      └── 加载失败则标记 failed 并在 list() 中可见
 ```
 
 宿主通过 `install()` 直接注册的插件没有可恢复来源，不写入安装记录。恢复失败的占位记录没有插件实例，`activate()` 会拒绝并提示 `pluginRestoreFailed`，但允许重新安装覆盖。
@@ -113,7 +125,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 ### 运行时加载与跨源
 
-`installFromUrl()` 用 `import()` 在页面内加载产物：与页面同源时直接可用；跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`，缺失时 `import()` 被拒绝，引擎按 `load-failed` 拒绝安装，原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机，不介入 CORS。
+`installFromUrl()` 先 `fetch` 产物字节，再按 UTF-8 文本存进安装记录，然后用 `loadPluginModuleFromCode()` 建 Blob URL 加载模块；安装阶段与启动阶段走同一条加载路径，启动阶段不再请求网络。`fetch` 跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`，缺失时字节拉不到，引擎按 `load-failed` 拒绝安装，原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机，不介入 CORS；`installFromUrl` 在拉取前用同一判定拒绝非 https 且非本机回环的地址。
 
 ### 签名校验
 
@@ -126,12 +138,12 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名者为该来源的 EEC 证书;作者签名是 Ed25519 裸签名,同样直接对原始字节验签,不做摘要预处理。`signature.ts` 负责把两种签名收拢成一个 `verified`、`failed`、`unverified` 结论:两种材料都有时须同时通过,只有一种材料时只校验该种,都没有时为 `unverified`。证书链与 CMS 校验模块按需动态加载,未启用签名校验的构建不会把 `pkijs` 带进首屏代码。
 
-- 安装阶段:`installFromUrl` 按 `InstallSource` 收集材料后先校验,不通过只提示用户,仍照常安装,记录标记为 `failed`。
+- 安装阶段:`installFromUrl` 按 `InstallSource` 收集材料后对刚下载的产物字节验签,不通过只提示用户,仍照常安装,记录标记为 `failed`。
 - 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节校验作者签名,不通过只标记 `failed` 并提示,仍可确认安装;包内没有签名材料时按 `unverified` 安装。合集签名不随离线包分发,离线包只认作者签名。
-- 启动阶段:`restore()` 对每条带 `source_url` 与签名材料的记录重新拉取当前字节并验签,并发上限 4;`local` 记录改用存储的 `code` 字节验签,不再发起网络请求。
-- 校验不通过：仍然加载并激活该插件，记录标记为不可信（`trusted: false`）与 `failed`，提示用户「插件签名校验未通过，请自行判断是否继续使用」，记录保留在 `list()` 中供用户查看或卸载。
-- 字节拉取失败：视为网络问题而不是篡改，按 `pluginRestoreFailed` 处理，不标记不可信。
-- 拉取使用 `cache: 'no-store'`，避免命中旧缓存得出错误的通过结论。
+- 启动阶段:`restore()` 对每条带签名材料的记录用存储的 `code` 重建字节并验签,不发起网络请求;代码缺失时按 `no-plugin-instance` 标记失败。
+- 校验不通过:仍然加载并激活该插件,记录标记为不可信(`trusted: false`)与 `failed`,提示用户「插件签名校验未通过,请自行判断是否继续使用」,记录保留在 `list()` 中供用户查看或卸载。
+- 安装阶段字节拉取失败:分不清网络问题与篡改,按 `load-failed` 拒绝安装,不标记不可信。
+- 安装阶段的拉取使用 `cache: 'no-store'`,避免命中旧缓存得出错误的通过结论。
 
 ### 本地安装与离线包
 
@@ -160,7 +172,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 
 包内只有一半签名材料时按 `unverified` 安装,并在引擎日志里记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
 
-提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝。安装记录写入 `source_type: "local"`、留空 `source_url`、按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
+提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝。安装记录写入 `source_type: "local"`、留空 `source_url`、`data_base` 与 `plugin_base`,按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
 
 ### 内置插件
 

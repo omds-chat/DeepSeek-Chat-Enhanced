@@ -1,8 +1,13 @@
 import type { TranslationKey } from '../../i18n/index.js'
 import type { PluginManifest, PluginSourceType } from '../dsc-plugin-engine/types.js'
 
-/** 来源信任状态；unverified 表示 online-data 信任清单里没有该来源,或构建未注入根证书 */
-export type SourceTrust = 'trusted' | 'untrusted' | 'unverified'
+/**
+ * 来源信任状态。
+ * trusted 由合集 EEC 证书链校验通过；endorsed 表示来源由 dsc 直接背书，即 dsc 内部插件索引，
+ * 不依赖合集 EEC 链但仍走与外部来源完全一致的安装校验；untrusted 为证书链校验未通过；
+ * unverified 表示 online-data 信任清单里没有该来源，或构建未注入根证书。
+ */
+export type SourceTrust = 'trusted' | 'endorsed' | 'untrusted' | 'unverified'
 
 /**
  * 信任失败原因。
@@ -70,6 +75,8 @@ export type SourceRuntime = {
   eec: string | null
   /** 证书来自 online-data 信任清单，而不是来源自己分发的 eec.pem */
   eecFromTrustList: boolean
+  /** 合集 EEC 证书链是否校验通过；endorsed 来源为 false 时表示只有 dsc 背书这一层判定 */
+  chainVerified: boolean
   plugins: CatalogPlugin[]
   fetchedAt: number | null
   /** 结构不符被跳过的插件数 */
@@ -84,6 +91,10 @@ export type SourceRuntime = {
 export type InstallPlan = {
   /** plugin.js 地址 */
   url: string
+  /** 该版本目录的地址,安装时入库,后续直接按它请求 versions.json、meta.json */
+  dataBase: string
+  /** 插件目录的地址,安装时入库,用于取 versions.json */
+  pluginBase: string
   manifest?: PluginManifest
   sourceType: PluginSourceType
   /** 合集 EEC 证书 PEM */
@@ -96,4 +107,31 @@ export type InstallPlan = {
   authorPubUrl: string
   /** 作者签名地址 */
   authorSigUrl: string
+}
+
+/** 更新检查的目标；dataBase 优先，缺失时由 sourceUrl 推导 */
+export type UpdateTarget = {
+  /** 已安装插件的 id */
+  id: string
+  /** 本地清单里的版本号 */
+  version: string
+  /** 安装记录里登记的数据基址（版本目录）；旧记录没有该字段 */
+  dataBase?: string
+  /** 安装记录里的 plugin.js 地址 */
+  sourceUrl?: string
+}
+
+/** 更新检查结论；latest 是来源 versions.json 给出的最新版本号 */
+export type UpdateCheck = {
+  status: 'outdated' | 'latest'
+  latest: string
+}
+
+/** 更新检查报告；无法判断（无来源、请求失败、版本号不合法）的插件不出现在报告里 */
+export type UpdateReport = Map<string, UpdateCheck>
+
+/** 重新安装计划；trustFailure 随来源信任判定一并给出 */
+export type ReinstallPlan = {
+  plan: InstallPlan
+  trustFailure: TrustFailure | null
 }

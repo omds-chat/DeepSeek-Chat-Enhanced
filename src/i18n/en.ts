@@ -304,6 +304,21 @@ export const en = {
   pluginMarketTrustReasonRevoked: 'the EEC certificate has been revoked',
   pluginMarketTrustEecFromList: 'Certificate comes from the online-data trust list',
   pluginMarketCountBadge: 'Download count',
+  pluginEndorsedBadge: 'dsc endorsed',
+  pluginUpdateAvailable: 'Update available',
+  pluginUpdateConfirm: 'Confirm update',
+  pluginUpdateLatest: 'Up to date',
+  pluginUpdateHint:
+    'Updating uninstalls the old version and installs the latest one; the plugin local data is cleared',
+  pluginUpdated: 'Plugin {name} updated to {version}',
+  pluginUpdateFailed: 'Plugin {name} failed to update: {reason}',
+  pluginUpdateUnavailable: 'Plugin {name} has no usable version information, so it cannot be updated',
+  pluginUpdateUnloadFailed: 'Plugin {name} could not be uninstalled before updating',
+  pluginMarketTrustEndorsed: 'dsc endorsed',
+  pluginMarketTrustEndorsedHint:
+    'This source is the internal plugin index directly endorsed by dsc; the trust list has no EEC for it, so installation verifies against the eec.pem shipped by the source',
+  pluginMarketTrustEndorsedChainHint:
+    'This source is directly endorsed by dsc and its EEC certificate chain also verified; installation still runs the full signature verification',
   pluginMarketCountNotice:
     'This source enables download counting: installing sends the plugin name and the request time to the source',
   pluginMarketCountIpNotice:

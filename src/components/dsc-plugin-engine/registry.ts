@@ -25,8 +25,12 @@ const RANGE_PATTERN = /^(\^|~|>=|<=|=)?(\d+\.\d+\.\d+)$/
 /** 落盘用的来源元数据；宿主直接注册的插件没有这一层 */
 export type PluginOrigin = {
   sourceType: PluginSourceType
-  /** 在线插件的 plugin.js 地址；local 来源没有 */
+  /** 在线插件的 plugin.js 地址,只在检查更新时使用；local 来源没有 */
   sourceUrl?: string
+  /** 该版本目录的地址,形如 <base>/plugins/<作者>/<插件>/<版本>/ */
+  dataBase?: string
+  /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/ */
+  pluginBase?: string
   /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签 */
   eec?: string
   /** plugin.js.sig 的 base64，启动校验时用于 CMS 验签 */
@@ -35,7 +39,7 @@ export type PluginOrigin = {
   authorPub?: string
   /** 作者签名的 base64 */
   authorSig?: string
-  /** 本地插件的代码文本；本地插件没有可重新拉取的地址，恢复时靠它重建模块 */
+  /** 插件代码文本；在线与本地插件都保存,恢复时靠它重建模块 */
   code?: string
   installedAt: number
   /** 启动校验失败后置为 false；缺省视为可信 */

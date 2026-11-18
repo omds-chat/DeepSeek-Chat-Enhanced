@@ -14,7 +14,7 @@ const SOURCE_TYPES: readonly string[] = ['inner', 'awesome', 'outer', 'local']
 
 /**
  * 一条安装记录。
- * source_url 只对在线分发的插件存在；eec 与 sig 是合集对 plugin.js 的证书与 CMS 签名，
+ * source_url 只对在线分发的插件存在，只在检查更新时使用；eec 与 sig 是合集对 plugin.js 的证书与 CMS 签名，
  * author_pub 与 author_sig 是作者公钥与作者裸签名，缺省表示这条记录没有对应的签名材料。
  */
 export type StoredPluginRecord = {
@@ -22,6 +22,10 @@ export type StoredPluginRecord = {
   manifest: PluginManifest
   source_type: PluginSourceType
   source_url?: string
+  /** 该版本目录的地址,形如 <base>/plugins/<作者>/<插件>/<版本>/ */
+  data_base?: string
+  /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/ */
+  plugin_base?: string
   /** 合集 EEC 证书 PEM */
   eec?: string
   /** plugin.js.sig 的 base64 */
@@ -31,9 +35,8 @@ export type StoredPluginRecord = {
   /** 作者签名的 base64 */
   author_sig?: string
   /**
-   * 本地插件的插件代码文本。
-   * 本地插件没有可重新拉取的地址，启动恢复时用它重建 Blob 模块；
-   * 在线插件不写该字段，恢复时按 source_url 重新加载。
+   * 插件代码文本。在线插件在安装时下载并保存,本地插件取离线包内的 plugin.js；
+   * 启动恢复只用它重建 Blob 模块,不再为启动发起网络请求。
    */
   code?: string
   enabled: boolean
@@ -87,6 +90,14 @@ const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   const sourceUrl = readOptionalText(value.source_url)
   if (sourceUrl) {
     record.source_url = sourceUrl
+  }
+  const dataBase = readOptionalText(value.data_base)
+  if (dataBase) {
+    record.data_base = dataBase
+  }
+  const pluginBase = readOptionalText(value.plugin_base)
+  if (pluginBase) {
+    record.plugin_base = pluginBase
   }
   const eec = readOptionalText(value.eec)
   if (eec) {

@@ -9,16 +9,28 @@ import type {
 import { createDownloadReporter } from './count.js'
 import { normalizeBaseUrls, readSources, writeSources } from './sources.js'
 import { resolveSourceTrust } from './trust.js'
+import {
+  dataBaseOf,
+  locateInstalled,
+  reinstallPathsOf,
+  updateStatusOf,
+  versionDirOf,
+  versionsUrlOf,
+  type InstalledLocation,
+} from './updates.js'
 import type {
   CatalogPlugin,
   InstallPlan,
   LocalizedText,
   MarketSource,
+  ReinstallPlan,
   RuntimeMeta,
   SourceMeta,
   SourceRuntime,
   SourceTrust,
   TrustFailure,
+  UpdateReport,
+  UpdateTarget,
 } from './types.js'
 
 /** 单个请求的最长等待时间（毫秒）；超时立刻切下一个 base_url */
@@ -48,6 +60,10 @@ export type MarketClient = {
   setBaseUrls(id: string, baseUrls: readonly string[]): boolean
   plan(id: string, plugin: CatalogPlugin): InstallPlan | null
   countInstall(id: string, plugin: CatalogPlugin): void
+  /** 检查已安装插件的版本更新；无法判断的插件不出现在结果里 */
+  checkUpdates(targets: readonly UpdateTarget[]): Promise<UpdateReport>
+  /** 生成重新安装到指定版本的计划；地址结构不符时返回 null */
+  reinstallPlan(target: UpdateTarget, version: string): ReinstallPlan | null
 }
 
 /** 目录条目 */
@@ -66,6 +82,8 @@ type ResolveOutcome = {
   /** 来自 online-data 信任清单的合集 EEC 证书 PEM；未列入清单时为 null */
   eec: string | null
   eecFromTrustList: boolean
+  /** 合集 EEC 证书链是否校验通过 */
+  chainVerified: boolean
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -301,6 +319,7 @@ const emptyRuntime = (id: string): SourceRuntime => ({
   meta: null,
   eec: null,
   eecFromTrustList: false,
+  chainVerified: false,
   plugins: [],
   fetchedAt: null,
   skipped: 0,
@@ -456,6 +475,7 @@ export const createMarketClient = (
         meta: null,
         eec: outcome.eec,
         eecFromTrustList: outcome.eecFromTrustList,
+        chainVerified: outcome.chainVerified,
         plugins: [],
         fetchedAt: null,
         skipped: 0,
@@ -487,6 +507,7 @@ export const createMarketClient = (
       meta: outcome.meta,
       eec: outcome.eec,
       eecFromTrustList: outcome.eecFromTrustList,
+      chainVerified: outcome.chainVerified,
       plugins,
       fetchedAt: Date.now(),
       skipped,
@@ -531,6 +552,95 @@ export const createMarketClient = (
       id = 'custom-' + String(index)
     }
     return id
+  }
+
+  /** 更新检查的 versions.json 缓存；按插件目录缓存，避免同一插件的多次检查重复请求 */
+  const updateCache = new Map<string, { latest: string; at: number }>()
+
+  /** 取插件目录下的最新版本号；失败或结构不符返回 null，由调用方按无法判断处理 */
+  const latestOf = async (location: InstalledLocation): Promise<string | null> => {
+    const key = location.pluginDir
+    const cached = updateCache.get(key)
+    if (cached && Date.now() - cached.at < CACHE_TTL) {
+      return cached.latest
+    }
+    const text = await requestText(net, versionsUrlOf(location))
+    const list = text === null ? null : parseVersions(text)
+    if (!list) {
+      return null
+    }
+    updateCache.set(key, { latest: list.latest, at: Date.now() })
+    return list.latest
+  }
+
+  /**
+   * 检查已安装插件的版本更新。
+   * 数据基址优先取记录里的 dataBase，缺失时由 source_url 推导出版本目录；
+   * 请求沿用 1 秒超时，并发上限 4，失败静默，无法判断的插件不出现在结果里。
+   */
+  const checkUpdates = async (targets: readonly UpdateTarget[]): Promise<UpdateReport> => {
+    const report: UpdateReport = new Map()
+    const jobs = targets.filter((target) => target.id !== '' && VERSION_PATTERN.test(target.version))
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < jobs.length) {
+        const target = jobs[cursor]
+        cursor += 1
+        const dataBase = dataBaseOf(target)
+        const location = dataBase === null ? null : locateInstalled(dataBase)
+        if (!location) {
+          continue
+        }
+        const latest = await latestOf(location)
+        if (latest === null) {
+          continue
+        }
+        const status = updateStatusOf(target.version, latest)
+        if (status === null) {
+          continue
+        }
+        report.set(target.id, { status, latest })
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, () => worker()))
+    return report
+  }
+
+  /**
+   * 生成重新安装计划：材料地址全部按已安装记录的地址推导，来源与信任结论沿用同址来源。
+   * 地址结构不符时返回 null，界面据此提示无法更新。
+   */
+  const reinstallPlan = (target: UpdateTarget, version: string): ReinstallPlan | null => {
+    const dataBase = dataBaseOf(target)
+    const location = dataBase === null ? null : locateInstalled(dataBase)
+    if (!location) {
+      return null
+    }
+    const versionDir = versionDirOf(location, version)
+    const paths = reinstallPathsOf(location, version)
+    if (!versionDir || !paths) {
+      return null
+    }
+    // 同址来源沿用它的信任结论：清单证书与吊销状态都按该来源取
+    const owner = sourceList.find((source) =>
+      source.baseUrls.some((baseUrl) => location.pluginDir.startsWith(baseUrl))
+    )
+    const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
+    const plan: InstallPlan = {
+      url: paths.url,
+      dataBase: versionDir,
+      pluginBase: location.pluginDir,
+      sourceType: owner ? sourceTypeOf(owner.id) : 'outer',
+      sigUrl: paths.sigUrl,
+      authorPubUrl: paths.authorPubUrl,
+      authorSigUrl: paths.authorSigUrl,
+    }
+    if (runtime?.eec) {
+      plan.eec = runtime.eec
+    } else {
+      plan.eecUrl = paths.eecUrl
+    }
+    return { plan, trustFailure: runtime?.trustFailure ?? null }
   }
 
   return {
@@ -624,11 +734,16 @@ export const createMarketClient = (
       if (!isSegment(plugin.name) || !isSegment(plugin.author) || !isSegment(plugin.latest)) {
         return null
       }
-      const versionPath = 'plugins/' + plugin.author + '/' + plugin.name + '/' + plugin.latest + '/'
+      const pluginPath = 'plugins/' + plugin.author + '/' + plugin.name + '/'
+      const versionPath = pluginPath + plugin.latest + '/'
       const plan: InstallPlan = {
         url: joinUrl(runtime.baseUrl, versionPath + 'plugin.js'),
+        // 数据基址随安装交给引擎入库,后续检查更新直接请求,不必再从 datalog.json 反查
+        dataBase: joinUrl(runtime.baseUrl, versionPath),
+        pluginBase: joinUrl(runtime.baseUrl, pluginPath),
         sourceType: sourceTypeOf(id),
         sigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.sig'),
+        // 作者公钥放在作者目录，与合集分发结构 plugins/<作者>/author_pub.pem 一致
         authorPubUrl: joinUrl(runtime.baseUrl, 'plugins/' + plugin.author + '/author_pub.pem'),
         authorSigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.author.sig'),
       }
@@ -650,5 +765,7 @@ export const createMarketClient = (
       }
       reporter.report(runtime.meta, plugin.name)
     },
+    checkUpdates,
+    reinstallPlan,
   }
 }

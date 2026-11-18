@@ -52,15 +52,20 @@ export const dscMarketPlugin: DscPlugin = {
 }
 
 export { parseDatalog, parseRuntimeMeta, parseSourceMeta, parseVersions, toPluginId } from './client.js'
+export { compareVersions, deriveDataBase, readRecordDataBase, updateStatusOf } from './updates.js'
 export type { MarketClient } from './client.js'
 export type {
   CatalogPlugin,
   InstallPlan,
   LocalizedText,
   MarketSource,
+  ReinstallPlan,
   RuntimeMeta,
   SourceMeta,
   SourceRuntime,
   SourceTrust,
   TrustFailure,
+  UpdateCheck,
+  UpdateReport,
+  UpdateTarget,
 } from './types.js'
