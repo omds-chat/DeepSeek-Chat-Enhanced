@@ -6,11 +6,9 @@ import type {
   PluginSourceType,
   StorageCapability,
 } from '../dsc-plugin-engine/types.js'
-import { getTrustedCollections } from '../../services/trust/index.js'
-import { normalizePem } from '../../services/trust/fetch.js'
 import { createDownloadReporter } from './count.js'
 import { normalizeBaseUrls, readSources, writeSources } from './sources.js'
-import { dscKeyPem, hasDscKey, verifySetSignature } from './trust.js'
+import { resolveSourceTrust } from './trust.js'
 import type {
   CatalogPlugin,
   InstallPlan,
@@ -58,18 +56,16 @@ type CatalogEntry = { name: string; author: string; tags: string[] }
 /** 版本清单 */
 type VersionList = { latest: string; versions: string[] }
 
-/** 签名条目 */
-type SignEntry = { value: string; for: string; signer: string }
-
 /** 来源解析结果；不可达时 baseUrl 与 meta 为 null */
 type ResolveOutcome = {
   reachable: boolean
   baseUrl: string | null
   meta: SourceMeta | null
-  pub: string | null
   trust: SourceTrust
   trustFailure: TrustFailure | null
-  keyFromTrustList: boolean
+  /** 来自 online-data 信任清单的合集 EEC 证书 PEM；未列入清单时为 null */
+  eec: string | null
+  eecFromTrustList: boolean
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -215,43 +211,6 @@ export const parseVersions = (text: string): VersionList | null => {
   return { latest, versions }
 }
 
-/** 解析签名清单；结构不符返回 null */
-export const parseSignList = (text: string): SignEntry[] | null => {
-  const parsed = parseJson(text)
-  if (!isRecord(parsed) || !Array.isArray(parsed.sign)) {
-    return null
-  }
-  const entries: SignEntry[] = []
-  for (const item of parsed.sign) {
-    if (!isRecord(item)) {
-      return null
-    }
-    const { value, signer } = item
-    const target = item.for
-    if (typeof value !== 'string' || typeof target !== 'string' || typeof signer !== 'string') {
-      return null
-    }
-    entries.push({ value, for: target, signer })
-  }
-  return entries
-}
-
-/** 取 plugin.js 的签名；优先签名者与来源名一致的条目 */
-export const pickArtifactSignature = (text: string, sourceName: string): string | null => {
-  const entries = parseSignList(text)
-  if (!entries) {
-    return null
-  }
-  const candidates = entries.filter((entry) => entry.for === 'plugin.js' && entry.value !== '')
-  if (candidates.length === 0) {
-    return null
-  }
-  const preferred =
-    candidates.find((entry) => entry.signer === sourceName) ??
-    candidates.find((entry) => entry.signer.toLowerCase() === sourceName.toLowerCase())
-  return (preferred ?? candidates[0]).value
-}
-
 /** 把插件名转成引擎接受的插件 id；@scope/name 取 name 部分 */
 export const toPluginId = (name: string): string | null => {
   const slash = name.startsWith('@') ? name.indexOf('/') : -1
@@ -340,8 +299,8 @@ const emptyRuntime = (id: string): SourceRuntime => ({
   trust: 'unverified',
   trustFailure: null,
   meta: null,
-  pub: null,
-  keyFromTrustList: false,
+  eec: null,
+  eecFromTrustList: false,
   plugins: [],
   fetchedAt: null,
   skipped: 0,
@@ -349,36 +308,11 @@ const emptyRuntime = (id: string): SourceRuntime => ({
 })
 
 /**
- * 在信任清单里找该来源对应的合集公钥。
- * 先按来源 id 与名称对合集 id，再按公钥文本比对，避免同一合集换名后失效。
+ * 按顺序解析来源：先按 base_url 找到可达的 meta.json，再套用 online-data 信任清单的结论。
+ * 信任结论与来源是否可达相互独立：清单里没有该来源时按未校验处理。
  */
-const matchTrustedCollection = (source: MarketSource, pubText: string | null): string | null => {
-  const listed = getTrustedCollections()
-  if (listed.length === 0) {
-    return null
-  }
-  const byName = listed.find((item) => item.id === source.id || item.id === source.name)
-  if (byName?.publicKey) {
-    return byName.publicKey
-  }
-  if (pubText === null || pubText.trim() === '') {
-    return null
-  }
-  const target = normalizePem(pubText)
-  for (const item of listed) {
-    if (item.publicKey !== null && normalizePem(item.publicKey) === target) {
-      return item.publicKey
-    }
-  }
-  return null
-}
-
-/** 按顺序解析来源：meta.json、plugin_secret.pub、plugin_set_sign.json 三者同址 */
 const resolveSource = async (net: NetCapability, source: MarketSource): Promise<ResolveOutcome> => {
-  const canVerify = hasDscKey()
-  const keyPem = dscKeyPem()
-  let trustFailure: TrustFailure | null = null
-  let fallback: { baseUrl: string; meta: SourceMeta; pub: string } | null = null
+  const outcome = resolveSourceTrust(source)
   for (const baseUrl of source.baseUrls) {
     const metaText = await requestText(net, joinUrl(baseUrl, 'meta.json'))
     if (metaText === null) {
@@ -388,85 +322,15 @@ const resolveSource = async (net: NetCapability, source: MarketSource): Promise<
     if (!meta) {
       continue
     }
-    const pubText = await requestText(net, joinUrl(baseUrl, 'plugin_secret.pub'))
-    // online-data 信任清单里的公钥由 dsc 签发，优先于来源自己分发的 plugin_secret.pub
-    const listedPub = matchTrustedCollection(source, pubText)
-    if (listedPub !== null) {
-      return {
-        reachable: true,
-        baseUrl,
-        meta,
-        pub: listedPub,
-        trust: 'trusted',
-        trustFailure: null,
-        keyFromTrustList: true,
-      }
-    }
-    if (pubText === null || pubText.trim() === '') {
-      trustFailure = trustFailure ?? 'missing'
-      continue
-    }
-    if (!canVerify) {
-      // 没有 dsc 公钥时无法校验信任链，按未校验处理，保留公钥供安装使用
-      return {
-        reachable: true,
-        baseUrl,
-        meta,
-        pub: pubText,
-        trust: 'unverified',
-        trustFailure: null,
-        keyFromTrustList: false,
-      }
-    }
-    const signText = await requestText(net, joinUrl(baseUrl, 'plugin_set_sign.json'))
-    if (signText === null) {
-      trustFailure = 'missing'
-      fallback = fallback ?? { baseUrl, meta, pub: pubText }
-      continue
-    }
-    const verdict = await verifySetSignature(pubText, signText, keyPem)
-    if (verdict === 'verified') {
-      return {
-        reachable: true,
-        baseUrl,
-        meta,
-        pub: pubText,
-        trust: 'trusted',
-        trustFailure: null,
-        keyFromTrustList: false,
-      }
-    }
-    trustFailure = verdict === 'missing' ? 'missing' : 'signature'
-    fallback = fallback ?? { baseUrl, meta, pub: pubText }
+    return { reachable: true, baseUrl, meta, ...outcome }
   }
-  if (fallback) {
-    // 可达但信任校验未通过：目录仍可浏览，安装仍可进行，只提示用户自行判断
-    return {
-      reachable: true,
-      baseUrl: fallback.baseUrl,
-      meta: fallback.meta,
-      pub: fallback.pub,
-      trust: 'untrusted',
-      trustFailure,
-      keyFromTrustList: false,
-    }
-  }
-  return {
-    reachable: false,
-    baseUrl: null,
-    meta: null,
-    pub: null,
-    trust: canVerify ? 'untrusted' : 'unverified',
-    trustFailure,
-    keyFromTrustList: false,
-  }
+  return { reachable: false, baseUrl: null, meta: null, ...outcome }
 }
 
-/** 拉取单个插件的版本、展示信息与签名 */
+/** 拉取单个插件的版本与展示信息 */
 const loadPlugin = async (
   net: NetCapability,
   baseUrl: string,
-  sourceName: string,
   entry: CatalogEntry
 ): Promise<CatalogPlugin | null> => {
   if (!isSegment(entry.name) || !isSegment(entry.author)) {
@@ -474,21 +338,7 @@ const loadPlugin = async (
   }
   const basePath = 'plugins/' + entry.author + '/' + entry.name + '/'
   const versionsText = await requestText(net, joinUrl(baseUrl, basePath + 'versions.json'))
-  if (versionsText === null) {
-    return {
-      key: entry.author + '/' + entry.name,
-      name: entry.name,
-      author: entry.author,
-      tags: entry.tags,
-      latest: null,
-      versions: [],
-      meta: null,
-      manifest: null,
-      sign: null,
-      error: 'pluginMarketVersionFailed',
-    }
-  }
-  const versionList = parseVersions(versionsText)
+  const versionList = versionsText === null ? null : parseVersions(versionsText)
   if (!versionList) {
     return {
       key: entry.author + '/' + entry.name,
@@ -499,15 +349,12 @@ const loadPlugin = async (
       versions: [],
       meta: null,
       manifest: null,
-      sign: null,
       error: 'pluginMarketVersionFailed',
     }
   }
   const detailPath = basePath + versionList.latest + '/'
   const metaText = await requestText(net, joinUrl(baseUrl, detailPath + 'meta.json'))
   const parsedMeta = metaText === null ? null : parseRuntimeMeta(metaText)
-  const signText = await requestText(net, joinUrl(baseUrl, detailPath + 'plugin_sign.json'))
-  const sign = signText === null ? null : pickArtifactSignature(signText, sourceName)
   return {
     key: entry.author + '/' + entry.name,
     name: entry.name,
@@ -517,7 +364,6 @@ const loadPlugin = async (
     versions: versionList.versions,
     meta: parsedMeta?.meta ?? null,
     manifest: parsedMeta?.manifest ?? null,
-    sign,
     error: parsedMeta === null ? 'pluginMarketMetaFailed' : null,
   }
 }
@@ -526,7 +372,6 @@ const loadPlugin = async (
 const loadCatalog = async (
   net: NetCapability,
   baseUrl: string,
-  sourceName: string,
   entries: CatalogEntry[]
 ): Promise<{ plugins: CatalogPlugin[]; skipped: number }> => {
   const plugins: CatalogPlugin[] = []
@@ -536,7 +381,7 @@ const loadCatalog = async (
     while (cursor < entries.length) {
       const entry = entries[cursor]
       cursor += 1
-      const plugin = await loadPlugin(net, baseUrl, sourceName, entry)
+      const plugin = await loadPlugin(net, baseUrl, entry)
       if (plugin) {
         plugins.push(plugin)
       } else {
@@ -609,8 +454,8 @@ export const createMarketClient = (
         trust: outcome.trust,
         trustFailure: outcome.trustFailure,
         meta: null,
-        pub: null,
-        keyFromTrustList: false,
+        eec: outcome.eec,
+        eecFromTrustList: outcome.eecFromTrustList,
         plugins: [],
         fetchedAt: null,
         skipped: 0,
@@ -628,7 +473,7 @@ export const createMarketClient = (
       if (!datalog) {
         error = 'pluginMarketCatalogFailed'
       } else {
-        const loaded = await loadCatalog(net, outcome.baseUrl, source.name, datalog.entries)
+        const loaded = await loadCatalog(net, outcome.baseUrl, datalog.entries)
         plugins = loaded.plugins
         skipped = datalog.skipped + loaded.skipped
       }
@@ -640,8 +485,8 @@ export const createMarketClient = (
       trust: outcome.trust,
       trustFailure: outcome.trustFailure,
       meta: outcome.meta,
-      pub: outcome.pub,
-      keyFromTrustList: outcome.keyFromTrustList,
+      eec: outcome.eec,
+      eecFromTrustList: outcome.eecFromTrustList,
       plugins,
       fetchedAt: Date.now(),
       skipped,
@@ -770,24 +615,28 @@ export const createMarketClient = (
     plan: (id, plugin) => {
       const runtime = runtimes.get(id)
       // 信任校验未通过也允许生成安装计划：界面会提示，由用户自行判断
-      if (!runtime) {
+      if (!runtime || runtime.baseUrl === null) {
         return null
       }
-      if (runtime.baseUrl === null || runtime.pub === null) {
-        return null
-      }
-      if (plugin.latest === null || plugin.sign === null) {
+      if (plugin.latest === null) {
         return null
       }
       if (!isSegment(plugin.name) || !isSegment(plugin.author) || !isSegment(plugin.latest)) {
         return null
       }
-      const path = 'plugins/' + plugin.author + '/' + plugin.name + '/' + plugin.latest + '/'
+      const versionPath = 'plugins/' + plugin.author + '/' + plugin.name + '/' + plugin.latest + '/'
       const plan: InstallPlan = {
-        url: joinUrl(runtime.baseUrl, path + 'plugin.js'),
+        url: joinUrl(runtime.baseUrl, versionPath + 'plugin.js'),
         sourceType: sourceTypeOf(id),
-        pub: runtime.pub,
-        sign: plugin.sign,
+        sigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.sig'),
+        authorPubUrl: joinUrl(runtime.baseUrl, 'plugins/' + plugin.author + '/author_pub.pem'),
+        authorSigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.author.sig'),
+      }
+      // 来源列入信任清单时用清单里的证书验签，否则由引擎拉取来源自带的 eec.pem
+      if (runtime.eec !== null) {
+        plan.eec = runtime.eec
+      } else {
+        plan.eecUrl = joinUrl(runtime.baseUrl, 'eec.pem')
       }
       if (plugin.manifest) {
         plan.manifest = plugin.manifest

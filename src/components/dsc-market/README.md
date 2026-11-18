@@ -9,7 +9,7 @@ dsc-market/
 ├── index.ts    # 插件对象与清单导出（activate / deactivate）
 ├── client.ts   # 来源解析、目录拉取、缓存、安装计划
 ├── sources.ts  # 来源配置：默认值、地址校验、持久化
-├── trust.ts    # 信任链校验：dsc 公钥验合集信任签名
+├── trust.ts    # 信任判定：按 online-data 信任清单校验合集 EEC 证书链
 ├── count.ts    # 下载计数上报
 ├── types.ts    # 来源、目录条目与运行态类型
 └── README.md   # 机制说明
@@ -46,22 +46,22 @@ dsc-market/
 对每个来源依次执行:
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
-2. 若 online-data 信任清单里已有该来源对应的合集条目,直接采用清单里的 EEC 证书并视为可信;否则取 `<base_url>/eec.pem`,用内嵌根证书校验证书链。合集可信性由根 CA 签发的 EEC 证明,不再校验合集信任签名。
+2. 在 online-data 的 `index.json` 里按来源 id 与名称查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用 `root_ca.crt` 校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未校验。
 3. 取 `<base_url>/datalog.json` 得到插件目录,每条包含 `plugin_name`、`author`、`tag`。
-4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息,同时取该版本目录下的 `plugin.js.sig` 作为合集签名。
-5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,把该来源的 EEC 证书与第 4 步取到的 `plugin.js.sig` 交给引擎验签安装。
+4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息。
+5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,把签名材料的地址交给引擎:合集证书在来源可信时取信任清单里的 `eec` 证书,否则交给引擎拉取 `<base_url>/eec.pem`;CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
 
-同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
+合集的可信性由「根 CA 签发的 EEC」证明,来源不再提供 `plugin_set_sign.json` 一类的信任签名。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
 
 ## 信任状态
 
 | 状态 | 判定 | 界面行为 |
 |:---:|:---:|:---:|
-| `trusted` | 某个 `base_url` 的证书链校验通过 | 允许浏览与安装 |
-| `untrusted` | 可达但证书链或签名不通过,或缺少 `eec.pem` | 仍列出目录并保留「不可信」标识与警告;安装仍可进行,第一次点击转为 3 秒确认态 |
-| `unverified` | 构建未注入根证书 `__ROOT_CA_PEM__` | 允许浏览;安装前需要用户二次确认风险 |
+| `trusted` | 信任清单里该来源的 EEC 证书链校验通过 | 允许浏览与安装 |
+| `untrusted` | 清单里有该来源,但证书链校验不通过或证书文件缺失 | 仍列出目录并保留「不可信」标识与警告;安装仍可进行,第一次点击转为 3 秒确认态 |
+| `unverified` | online-data 信任清单里没有该来源,或构建未注入根证书 `__ROOT_CA_PEM__` | 允许浏览;安装前需要用户二次确认风险 |
 
-`__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时注入,为空时无法校验证书链。合集信任迁移到 EEC 证书链的工作仍在进行,迁移完成前本节描述的是目标行为。
+信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时注入。信任清单里的 `root_ca.crt` 必须与内嵌根证书逐字一致,否则整份清单不被采信,所有来源按未校验处理;这可以避免镜像方自带根证书自签 EEC。
 
 ## 下载计数
 
@@ -87,7 +87,7 @@ dsc-market/
 | 顶部 | 来源列表:名称、当前生效的 `base_url`、信任状态、下载计数标识、刷新、编辑、排序与删除;新增来源表单 |
 | 主体 | 选中来源的插件目录:插件名、作者、标签、最新版本、简介（来自该版本的 `meta.json`）与安装按钮 |
 
-来源不可信与信任未校验时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。公钥取自 online-data 信任清单时,目录上方显示「公钥来自 dsc 信任清单」。
+来源不可信与信任未校验时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。证书取自 online-data 信任清单时,目录上方显示「证书来自 online-data 信任清单」。
 
 ## 对外接口
 
@@ -96,7 +96,7 @@ import { market } from '../dsc-market/index.js'
 
 const client = market()
 client?.sources()              // 来源列表
-client?.runtime('awesome-dsc-plugin') // 来源运行态:state、baseUrl、trust、keyFromTrustList、meta、plugins
+client?.runtime('awesome-dsc-plugin') // 来源运行态:state、baseUrl、trust、eecFromTrustList、meta、plugins
 client?.selected()             // 当前选中的来源 id
 client?.select('awesome-dsc-plugin')
 await client?.refresh('awesome-dsc-plugin', true)  // 拉取并校验;force 为 true 时忽略缓存
@@ -104,7 +104,7 @@ client?.addSource('自定义', ['https://example.com/plugins/'])
 client?.setBaseUrls('awesome-dsc-plugin', ['https://cdn.example.com/'])
 client?.moveSource('dsc-inner-plugin', -1)
 client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
-client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, pub, sign }
+client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrl?, sigUrl, authorPubUrl, authorSigUrl }
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 ```
 

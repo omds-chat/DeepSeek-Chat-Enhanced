@@ -14,7 +14,7 @@ dsc-plugin-engine/
 ├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
 ├── localPackage.ts # 本地离线包解析与校验：zip、tgz、meta.json、签名
-├── signature.ts    # 插件产物签名校验：拉取字节并验签
+├── signature.ts    # 产物签名校验：合集 CMS 分离验签与作者裸签名
 ├── builtin.ts      # 内置插件清单与工厂
 └── README.md       # 机制说明与 dsh 映射表
 ```
@@ -36,7 +36,7 @@ dsc-plugin-engine/
 
 清单可以随产物一起导出：`export const manifest = {...}`，也可以挂在 `default` 导出对象上，模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`；两者都没有时安装被拒绝，原因为 `invalid-manifest`。
 
-`installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一，缺省按 `outer` 处理；`pub` 与 `sign` 同时给出时，安装阶段先拉取产物字节做 SHA-512 摘要并验签，不通过只提示用户，仍照常安装，安装记录标记为 `failed`。
+`installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一，缺省按 `outer` 处理。签名材料共四项：`eec` 是合集 EEC 证书 PEM，`sigUrl` 是 `plugin.js.sig` 地址（缺省为 `<url>.sig`），两者齐全时做合集 CMS 分离验签；`authorPubUrl` 与 `authorSigUrl` 是作者公钥与作者签名地址（后者缺省为 `<url>.author.sig`），两者齐全时做作者裸签名验签。`eec` 缺省而给出 `eecUrl` 时，引擎先拉取来源根目录的 `eec.pem` 再验签。安装阶段先校验产物签名，不通过只提示用户，仍照常安装，安装记录标记为 `failed`。
 
 ### 生命周期
 
@@ -75,15 +75,26 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 ### 持久化与启动恢复
 
-安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库（版本 1，对象仓库 `plugins`，主键 `id`），与聊天历史库分开建库，互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`pub`、`sign`、`code`、`enabled`、`installed_at`，校验失败的记录另带 `trusted: false`。
+安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库（版本 1，对象仓库 `plugins`，主键 `id`），与聊天历史库分开建库，互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`eec`、`sig`、`author_pub`、`author_sig`、`code`、`enabled`、`installed_at`，校验失败的记录另带 `trusted: false`。
 
-`source_type` 取 `inner`（随本体分发）、`awesome`（精选合集）、`outer`（其他在线来源）、`local`（用户上传）之一；`source_url` 只对在线插件存在，存其 `plugin.js` 地址，`local` 来源留空；`pub` 与 `sign` 是获取插件时拿到的公钥 PEM 与 `plugin.js` 签名 base64，缺失表示该记录没有可校验的签名材料。
+`source_type` 取 `inner`（随本体分发）、`awesome`（精选合集）、`outer`（其他在线来源）、`local`（用户上传）之一；`source_url` 只对在线插件存在，存其 `plugin.js` 地址，`local` 来源留空。
+
+签名相关字段的语义:
+
+| 字段 | 内容 | 来源 |
+|:---:|:---:|:---:|
+| `eec` | 合集 EEC 证书 PEM，CMS 验签用 | 在线插件取 online-data 信任清单的证书，未列入清单时取来源根目录的 `eec.pem` |
+| `sig` | `plugin.js.sig` 的 base64（DER 字节） | 版本目录下的 `plugin.js.sig` |
+| `author_pub` | 作者公钥 PEM，作者裸签名验签用 | 在线插件取 `plugins/<作者>/author_pub.pem`，离线包取包内 `author_pub.pem` |
+| `author_sig` | 作者签名的 base64（原始 64 字节） | `plugin.js.author.sig` |
+
+缺失某个字段表示这条记录没有对应的签名材料，启动校验按未校验处理。旧版的 `pub` 与 `sign` 字段（JSON 信任签名方案）不再读取，升级后已安装插件显示为未校验，重新安装即可拿到新字段。
 
 `code` 只对 `local` 来源存在,保存插件代码文本:本地插件没有可重新拉取的地址,启动恢复时用它重建 Blob URL 再 `import()`;在线插件不写该字段,恢复时按 `source_url` 重新加载。写入前已确认代码文本可以还原成原始字节,签名针对原始字节计算,因此重建后的字节与验签时一致。
 
 安装、卸载、启用与停用都立即落盘；落盘失败只写入 `engineLogs()`，不影响内存状态。IndexedDB 不可用时降级为内存存储，同样只记引擎日志，不抛错。
 
-旧版 localStorage 键 `<APP_NAME>:plugins` 在首次启动时迁移一次：`source.kind === 'url'` 的记录转为 `outer` 并保留地址，`builtin` 转为 `inner`，`pub` 与 `sign` 留空；迁移成功后删除旧键，失败只记日志、不阻断启动。
+旧版 localStorage 键 `<APP_NAME>:plugins` 在首次启动时迁移一次：`source.kind === 'url'` 的记录转为 `outer` 并保留地址，`builtin` 转为 `inner`，`eec`、`sig` 与作者材料全部留空；迁移成功后删除旧键，失败只记日志、不阻断启动。
 
 `installPluginEngine()` 保持同步返回，恢复在内部异步进行，不阻塞首屏渲染：
 
@@ -106,11 +117,18 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 ### 签名校验
 
-插件产物按签名约定做 hash-then-sign：对 `plugin.js` 字节取 SHA-512 摘要，再用公钥验证摘要的 Ed25519 签名，签名编码为 base64。验签直接复用 `src/services/integrity/ed25519.ts` 的 `sha512`、`verifyEd25519`、`readPublicKey`，只新增 `base64ToBytes` 与 `verifyBytesSignature` 两个入口。
+签名体系由两部分组成,约定见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md):
 
-- 安装阶段：`installFromUrl` 传入 `pub` 与 `sign` 时先校验，不通过只提示用户，仍照常安装，记录标记为 `failed`。
-- 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节验签,不通过只标记 `failed` 并提示,仍可确认安装;包内没有签名材料时按 `unverified` 安装。
-- 启动阶段:`restore()` 对每条带 `source_url`、`pub`、`sign` 的记录重新拉取当前字节并验签,并发上限 4;`local` 记录改用存储的 `code` 字节验签,不再发起网络请求。
+| 签名 | 签发方 | 材料 | 验签入口 |
+|:---:|:---:|:---:|:---:|
+| 合集 CMS 分离签名 | 合集 EEC 证书 | `plugin.js.sig`、`meta.json.sig` | `src/services/integrity/cms.ts` 的 `verifyDetachedCms` |
+| 作者裸签名 | 插件作者 | `plugin.js.author.sig`、`author_pub.pem` | `src/services/integrity/ed25519.ts` 的 `verifyDetachedSignature` |
+
+CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名者为该来源的 EEC 证书;作者签名是 Ed25519 裸签名,同样直接对原始字节验签,不做摘要预处理。`signature.ts` 负责把两种签名收拢成一个 `verified`、`failed`、`unverified` 结论:两种材料都有时须同时通过,只有一种材料时只校验该种,都没有时为 `unverified`。证书链与 CMS 校验模块按需动态加载,未启用签名校验的构建不会把 `pkijs` 带进首屏代码。
+
+- 安装阶段:`installFromUrl` 按 `InstallSource` 收集材料后先校验,不通过只提示用户,仍照常安装,记录标记为 `failed`。
+- 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节校验作者签名,不通过只标记 `failed` 并提示,仍可确认安装;包内没有签名材料时按 `unverified` 安装。合集签名不随离线包分发,离线包只认作者签名。
+- 启动阶段:`restore()` 对每条带 `source_url` 与签名材料的记录重新拉取当前字节并验签,并发上限 4;`local` 记录改用存储的 `code` 字节验签,不再发起网络请求。
 - 校验不通过：仍然加载并激活该插件，记录标记为不可信（`trusted: false`）与 `failed`，提示用户「插件签名校验未通过，请自行判断是否继续使用」，记录保留在 `list()` 中供用户查看或卸载。
 - 字节拉取失败：视为网络问题而不是篡改，按 `pluginRestoreFailed` 处理，不标记不可信。
 - 拉取使用 `cache: 'no-store'`，避免命中旧缓存得出错误的通过结论。
@@ -136,12 +154,13 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 存在 `plugin.js` | `missing-plugin` |
 | `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | `invalid-meta` |
 | `plugin.js` 是可还原的 UTF-8 文本 | `corrupt-package` |
-| 同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时,作者签名不可用(结构不符或验签失败) | 不拒绝,按 `unverified` 安装 |
+| 同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时,作者签名不通过 | 不拒绝,记录标记为 `failed` |
+| 只有作者签名或只有作者公钥 | 不拒绝,按 `unverified` 安装 |
 | `plugin.js` 不超过 1 MB | `package-too-large` |
 
 包内只有一半签名材料时按 `unverified` 安装,并在引擎日志里记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
 
-提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝。安装记录写入 `source_type: "local"`、留空 `source_url`、按包内材料填 `pub` 与 `sign`,并保存 `code`。
+提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝。安装记录写入 `source_type: "local"`、留空 `source_url`、按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
 
 ### 内置插件
 
@@ -221,8 +240,10 @@ await engine?.installFromUrl('https://example.com/demo-plugin.js', {
 // 带来源与签名材料：安装阶段先验签，不通过只提示，仍继续安装
 await engine?.installFromUrl('https://example.com/demo-plugin.js', undefined, {
   sourceType: 'awesome',
-  pub: publicKeyPem,
-  sign: signatureBase64,
+  eec: collectionEecPem,
+  sigUrl: 'https://example.com/demo-plugin.js.sig',
+  authorPubUrl: 'https://example.com/author_pub.pem',
+  authorSigUrl: 'https://example.com/demo-plugin.js.author.sig',
 })
 
 // 本地离线包:先预检,界面确认后再提交

@@ -274,16 +274,16 @@ export const zh = {
   pluginMarketTrustUnverified: '未校验信任',
   pluginMarketTrustUntrustedHint: '来源信任校验未通过（{reason}），仍可安装，请自行判断是否继续使用',
   pluginMarketTrustUnverifiedHint:
-    '当前构建没有注入 dsc 公钥，无法校验来源信任链；安装前请自行确认来源可靠',
-  pluginMarketTrustReasonMissing: '缺少信任签名或公钥文件',
-  pluginMarketTrustReasonSignature: '信任签名校验未通过',
-  pluginMarketTrustKeyFromList: '公钥来自 dsc 信任清单',
+    'online-data 信任清单里没有该来源，无法校验证书链；安装前请自行确认来源可靠',
+  pluginMarketTrustReasonMissing: '信任清单缺少该来源的 EEC 证书',
+  pluginMarketTrustReasonChain: 'EEC 证书链校验未通过',
+  pluginMarketTrustEecFromList: '证书来自 online-data 信任清单',
   pluginMarketCountBadge: '下载计数',
   pluginMarketCountNotice: '该来源启用了下载计数：安装时会向来源上报插件名与请求时间',
   pluginMarketCountIpNotice: '该来源会记录请求来源 IP，由接收方从请求来源获取，客户端不上报',
   pluginMarketInstallUntrusted: '来源不可信，请自行判断是否继续使用',
   pluginMarketInstallConfirm: '确认安装',
-  pluginMarketInstallUnavailable: '插件 {id} 缺少版本或签名，无法安装',
+  pluginMarketInstallUnavailable: '插件 {id} 缺少版本信息，无法安装',
   pluginMarketColumnTags: '标签',
   pluginMarketColumnIntro: '简介',
   pluginInstallFromUrl: '从地址安装',
@@ -318,9 +318,9 @@ export const zh = {
   pluginLocalDuplicateNotice: '已安装同 id 的插件，请先卸载后再安装',
   pluginLocalUnknown: '未填写',
   pluginLocalConfirm: '确认安装',
-  trustListKeyMismatch: '信任清单的公钥与当前构建不一致，已忽略该清单，请自行判断是否继续使用',
+  trustListRootMismatch: '信任清单的根证书与当前构建不一致，已忽略该清单，请自行判断是否继续使用',
   trustListCollectionsUntrusted:
-    '合集 {ids}（共 {count} 个）的信任签名校验未通过，已标记为不可信，请自行判断是否继续使用',
+    '合集 {ids}（共 {count} 个）的 EEC 证书链校验未通过，已标记为不可信，请自行判断是否继续使用',
   webIntegrityFailed:
     '网页文件签名校验未通过：{count} 个文件 ({files})，文件可能已被改动，请刷新或重新下载页面',
   webIntegrityChainFailed:

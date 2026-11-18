@@ -289,10 +289,10 @@ export const en = {
   pluginMarketTrustUntrustedHint:
     'Source trust verification failed ({reason}); you can still install, but decide for yourself whether to continue',
   pluginMarketTrustUnverifiedHint:
-    'This build has no dsc public key, so the source trust chain cannot be verified; confirm the source yourself before installing',
-  pluginMarketTrustReasonMissing: 'the trust signature or the public key file is missing',
-  pluginMarketTrustReasonSignature: 'the trust signature did not verify',
-  pluginMarketTrustKeyFromList: 'Public key comes from the dsc trust list',
+    'The online-data trust list has no entry for this source, so its certificate chain cannot be verified; confirm the source yourself before installing',
+  pluginMarketTrustReasonMissing: 'the trust list has no EEC certificate for this collection',
+  pluginMarketTrustReasonChain: 'the EEC certificate chain did not verify',
+  pluginMarketTrustEecFromList: 'Certificate comes from the online-data trust list',
   pluginMarketCountBadge: 'Download count',
   pluginMarketCountNotice:
     'This source enables download counting: installing sends the plugin name and the request time to the source',
@@ -301,7 +301,7 @@ export const en = {
   pluginMarketInstallUntrusted:
     'Untrusted source; decide for yourself whether to continue',
   pluginMarketInstallConfirm: 'Confirm install',
-  pluginMarketInstallUnavailable: 'Plugin {id} has no version or signature, so it cannot be installed',
+  pluginMarketInstallUnavailable: 'Plugin {id} has no version information, so it cannot be installed',
   pluginMarketColumnTags: 'Tags',
   pluginMarketColumnIntro: 'Summary',
   pluginInstallFromUrl: 'Install from URL',
@@ -339,10 +339,10 @@ export const en = {
     'A plugin with the same id is installed; uninstall it before installing again',
   pluginLocalUnknown: 'Not provided',
   pluginLocalConfirm: 'Confirm install',
-  trustListKeyMismatch:
-    'The trust list public key does not match this build, so the list was ignored; decide for yourself whether to continue',
+  trustListRootMismatch:
+    'The trust list root certificate does not match this build, so the list was ignored; decide for yourself whether to continue',
   trustListCollectionsUntrusted:
-    'Trust signature verification failed for {count} collection(s): {ids}. They are marked untrusted; decide for yourself whether to continue',
+    'The EEC certificate chain failed to verify for {count} collection(s): {ids}. They are marked untrusted; decide for yourself whether to continue',
   webIntegrityFailed:
     'Web file signature check failed for {count} file(s): {files}. Files may have been modified; reload the page or download it again.',
   webIntegrityChainFailed:

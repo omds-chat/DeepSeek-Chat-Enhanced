@@ -1,79 +1,33 @@
-import {
-  base64ToBytes,
-  readPublicKey,
-  sha512,
-  verifyEd25519,
-} from '../../services/integrity/ed25519.js'
+import { getCollectionTrust } from '../../services/trust/index.js'
+import type { MarketSource, SourceTrust, TrustFailure } from './types.js'
 
-/** 合集信任签名校验结论 */
-export type SetSignatureVerdict = 'verified' | 'missing' | 'signature'
-
-/**
- * 内嵌的合集信任锚；旧版由构建时注入的 dsc 公钥提供，该注入已随网页签名改造移除。
- * 合集信任迁移到根证书签发的 EEC 证书链后，改由 __ROOT_CA_PEM__ 提供信任锚。
- */
-export const dscKeyPem = (): string => ''
-
-/** 是否有可用于校验信任链的 dsc 公钥 */
-export const hasDscKey = (): boolean => readPublicKey(dscKeyPem()) !== null
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-
-/** 取出 signer 为 dsc 的签名值；结构不符返回 null */
-const readDscSignatures = (text: string): string[] | null => {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(text)
-  } catch {
-    return null
-  }
-  if (!isRecord(parsed) || !Array.isArray(parsed.sign)) {
-    return null
-  }
-  const values: string[] = []
-  for (const item of parsed.sign) {
-    if (!isRecord(item)) {
-      return null
-    }
-    const { value, signer } = item
-    if (typeof value !== 'string' || typeof signer !== 'string') {
-      return null
-    }
-    if (signer === 'dsc' && value !== '') {
-      values.push(value)
-    }
-  }
-  return values
+/** 来源信任判定结果；eec 是可用于 CMS 验签的合集证书 */
+export type SourceTrustOutcome = {
+  trust: SourceTrust
+  trustFailure: TrustFailure | null
+  /** 来自 online-data 信任清单的 EEC 证书 PEM；未列入清单时为 null */
+  eec: string | null
+  /** 证书来自 online-data 信任清单，而不是来源自己分发的文件 */
+  eecFromTrustList: boolean
 }
 
 /**
- * 校验合集信任签名：被签名对象是 plugin_secret.pub 的字节，
- * 先做 SHA-512 摘要，再用 dsc 公钥验证 signer 为 dsc 的 Ed25519 签名。
- * 没有 dsc 签名返回 missing，签名不通过返回 signature。
+ * 判定来源信任。
+ * 从 online-data 的 index.json 里按来源 id 与名称查找合集：找到且证书链校验通过即可信，
+ * 找到但链校验不通过或证书缺失记为不可信；清单里没有该来源时记为未校验，只警告不阻断。
  */
-export const verifySetSignature = async (
-  pubText: string,
-  signText: string,
-  keyPem: string
-): Promise<SetSignatureVerdict> => {
-  const values = readDscSignatures(signText)
-  if (!values || values.length === 0) {
-    return 'missing'
+export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => {
+  const listed = getCollectionTrust(source.id) ?? getCollectionTrust(source.name)
+  if (!listed) {
+    return { trust: 'unverified', trustFailure: null, eec: null, eecFromTrustList: false }
   }
-  const publicKey = readPublicKey(keyPem)
-  if (!publicKey) {
-    return 'missing'
+  if (listed.trust === 'trusted' && listed.eec !== null) {
+    return { trust: 'trusted', trustFailure: null, eec: listed.eec, eecFromTrustList: true }
   }
-  const digest = await sha512(new TextEncoder().encode(pubText))
-  for (const value of values) {
-    const signature = base64ToBytes(value)
-    if (!signature) {
-      continue
-    }
-    if (await verifyEd25519(signature, digest, publicKey)) {
-      return 'verified'
-    }
+  return {
+    trust: 'untrusted',
+    trustFailure: listed.reason ?? 'chain',
+    eec: null,
+    eecFromTrustList: false,
   }
-  return 'signature'
 }

@@ -1,11 +1,11 @@
 import type { TranslationKey } from '../../i18n/index.js'
 import type { PluginManifest, PluginSourceType } from '../dsc-plugin-engine/types.js'
 
-/** 来源信任状态；unverified 表示当前构建没有可用的 dsc 公钥 */
+/** 来源信任状态；unverified 表示 online-data 信任清单里没有该来源,或构建未注入根证书 */
 export type SourceTrust = 'trusted' | 'untrusted' | 'unverified'
 
-/** 信任失败原因；界面据此给出文案 */
-export type TrustFailure = 'missing' | 'signature'
+/** 信任失败原因；missing 表示清单登记或证书文件缺失，chain 表示证书链校验未通过 */
+export type TrustFailure = 'missing' | 'chain'
 
 /** 用户可配置的来源；base_url 按顺序尝试 */
 export type MarketSource = {
@@ -50,8 +50,6 @@ export type CatalogPlugin = {
   meta: RuntimeMeta | null
   /** 由 meta.json 推导的清单；缺 capabilities 时为 null，安装时交给产物自带的 manifest */
   manifest: PluginManifest | null
-  /** 最新版本 plugin.js 的签名 */
-  sign: string | null
   /** 拉取失败或结构不符时的文案键 */
   error: TranslationKey | null
 }
@@ -65,10 +63,10 @@ export type SourceRuntime = {
   trust: SourceTrust
   trustFailure: TrustFailure | null
   meta: SourceMeta | null
-  /** 该来源的 plugin_secret.pub 文本；优先使用 dsc 信任清单里的公钥 */
-  pub: string | null
-  /** 公钥来自 online-data 的 dsc 信任清单，而不是来源自己分发的文件 */
-  keyFromTrustList: boolean
+  /** 该来源的合集 EEC 证书 PEM；来自 online-data 信任清单，未列入清单时为 null */
+  eec: string | null
+  /** 证书来自 online-data 信任清单，而不是来源自己分发的 eec.pem */
+  eecFromTrustList: boolean
   plugins: CatalogPlugin[]
   fetchedAt: number | null
   /** 结构不符被跳过的插件数 */
@@ -76,11 +74,23 @@ export type SourceRuntime = {
   error: TranslationKey | null
 }
 
-/** 安装计划；交给引擎的 installFromUrl */
+/**
+ * 安装计划；交给引擎的 installFromUrl。
+ * eec 与 eecUrl 二选一：来源列入信任清单时直接用清单里的证书，否则由引擎拉取来源自带的 eec.pem。
+ */
 export type InstallPlan = {
+  /** plugin.js 地址 */
   url: string
   manifest?: PluginManifest
   sourceType: PluginSourceType
-  pub: string
-  sign: string
+  /** 合集 EEC 证书 PEM */
+  eec?: string
+  /** 来源自带的 eec.pem 地址 */
+  eecUrl?: string
+  /** plugin.js.sig 地址，CMS 分离签名 */
+  sigUrl: string
+  /** 作者公钥地址，作者裸签名为可选材料 */
+  authorPubUrl: string
+  /** 作者签名地址 */
+  authorSigUrl: string
 }

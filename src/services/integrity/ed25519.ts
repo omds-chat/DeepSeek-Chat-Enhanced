@@ -80,22 +80,27 @@ export const base64ToBytes = (value: string): Uint8Array | null => {
   }
 }
 
+/** 字节转 base64；用于把 DER 签名存进只接受文本的存储位置 */
+export const bytesToBase64 = (bytes: Uint8Array): string => {
+  let binary = ''
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+  return btoa(binary)
+}
+
 /**
- * 校验 hash-then-sign 产物签名：对 bytes 做 SHA-512 摘要，再用 PEM 公钥验证 base64 签名。
+ * 校验裸 Ed25519 分离签名：signature 为 64 字节签名，message 为被签名的原始字节。
  * 公钥或签名非法、验签失败都返回 false，不抛出异常。
  */
-export const verifyBytesSignature = async (
-  bytes: Uint8Array,
-  signatureBase64: string,
+export const verifyDetachedSignature = async (
+  message: Uint8Array,
+  signature: Uint8Array,
   publicKeyPem: string
 ): Promise<boolean> => {
   const publicKey = readPublicKey(publicKeyPem)
   if (!publicKey) {
     return false
   }
-  const signature = base64ToBytes(signatureBase64)
-  if (!signature) {
-    return false
-  }
-  return await verifyEd25519(signature, await sha512(bytes), publicKey)
+  return await verifyEd25519(signature, message, publicKey)
 }

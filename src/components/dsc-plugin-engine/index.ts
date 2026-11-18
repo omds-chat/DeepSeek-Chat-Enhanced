@@ -24,7 +24,15 @@ import {
 } from './localPackage.js'
 import { loadPluginModule, loadPluginModuleFromCode, resolvePluginModule } from './loader.js'
 import * as store from './registry.js'
-import { verifyArtifactSignature, verifyCodeSignature, type ArtifactVerdict } from './signature.js'
+import {
+  decodeSignature,
+  encodeSignature,
+  fetchArtifactBytes,
+  fetchArtifactText,
+  hasSignatureMaterial,
+  verifyArtifact,
+  type SignatureMaterial,
+} from './signature.js'
 import type {
   DscPlugin,
   InstallResult,
@@ -46,11 +54,26 @@ const MAX_ENGINE_LOG = 100
 /** 启动签名校验的并发上限 */
 const VERIFY_CONCURRENCY = 4
 
-/** 安装时携带的来源信息；pub 与 sign 同时给出才校验签名 */
+/** 启动校验结论；unreachable 表示字节没拿到，不能据此判定篡改 */
+type RestoreVerdict = SignatureState | 'unreachable'
+
+/**
+ * 安装时携带的来源信息。
+ * eec 与 sigUrl 齐全时做合集 CMS 验签，authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签；
+ * eec 缺省时按 eecUrl 拉取来源自带的证书。
+ */
 export type InstallSource = {
   sourceType: PluginSourceType
-  pub?: string
-  sign?: string
+  /** 合集 EEC 证书 PEM */
+  eec?: string
+  /** 来源自带的 eec.pem 地址；eec 缺省时使用 */
+  eecUrl?: string
+  /** plugin.js.sig 地址；缺省为 <url>.sig */
+  sigUrl?: string
+  /** 作者公钥地址；缺省时不校验作者签名 */
+  authorPubUrl?: string
+  /** 作者签名地址；缺省为 <url>.author.sig */
+  authorSigUrl?: string
 }
 
 /** 插件引擎对外接口 */
@@ -59,7 +82,7 @@ export type PluginEngine = {
   install(manifest: PluginManifest, plugin: DscPlugin): InstallResult
   /**
    * 运行时安装；manifest 缺省时使用产物自带的 manifest 导出。
-   * source 缺省按 outer 处理且不校验签名；带 pub 与 sign 时先校验产物签名。
+   * source 缺省按 outer 处理且不校验签名；带签名材料时先校验产物签名。
    */
   installFromUrl(
     url: string,
@@ -152,11 +175,17 @@ export const installPluginEngine = (): PluginEngine => {
     if (origin.sourceUrl) {
       stored.source_url = origin.sourceUrl
     }
-    if (origin.pub) {
-      stored.pub = origin.pub
+    if (origin.eec) {
+      stored.eec = origin.eec
     }
-    if (origin.sign) {
-      stored.sign = origin.sign
+    if (origin.sig) {
+      stored.sig = origin.sig
+    }
+    if (origin.authorPub) {
+      stored.author_pub = origin.authorPub
+    }
+    if (origin.authorSig) {
+      stored.author_sig = origin.authorSig
     }
     if (origin.code) {
       stored.code = origin.code
@@ -354,8 +383,33 @@ export const installPluginEngine = (): PluginEngine => {
   const unload = (id: string): Promise<boolean> => serialize(id, () => unloadNow(id))
 
   /**
+   * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。
+   * 证书优先用调用方传入的 PEM（来自 online-data 信任清单），否则按 eecUrl 拉取来源自带的 eec.pem；
+   * 缺少哪一项就跳过对应的校验，由界面按未校验展示。
+   */
+  const loadSignatureMaterial = async (
+    url: string,
+    source?: InstallSource
+  ): Promise<SignatureMaterial> => {
+    const declaredEec = source?.eec ?? ''
+    const [eecText, authorPubText] = await Promise.all([
+      declaredEec !== '' ? Promise.resolve(declaredEec) : fetchArtifactText(source?.eecUrl ?? ''),
+      fetchArtifactText(source?.authorPubUrl ?? ''),
+    ])
+    const eec = eecText ?? ''
+    const authorPub = authorPubText ?? ''
+    const [sig, authorSig] = await Promise.all([
+      eec === '' ? Promise.resolve(null) : fetchArtifactBytes(source?.sigUrl ?? url + '.sig'),
+      authorPub === ''
+        ? Promise.resolve(null)
+        : fetchArtifactBytes(source?.authorSigUrl ?? url + '.author.sig'),
+    ])
+    return { eec, sig, authorPub, authorSig }
+  }
+
+  /**
    * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，
-   * 两者都没有则按清单非法拒绝。带 pub 与 sign 时先校验产物签名，通过后才加载。
+   * 两者都没有则按清单非法拒绝。带签名材料时先校验产物签名，通过后才加载。
    */
   const installFromUrl = async (
     url: string,
@@ -364,24 +418,21 @@ export const installPluginEngine = (): PluginEngine => {
   ): Promise<InstallResult> => {
     const target = manifest?.id ?? url
     const sourceType: PluginSourceType = source?.sourceType ?? 'outer'
-    const pub = source?.pub ?? ''
-    const sign = source?.sign ?? ''
+    const material = await loadSignatureMaterial(url, source)
     let signature: SignatureState = 'unverified'
-    if (pub !== '' && sign !== '') {
-      const verdict = await verifyArtifactSignature(url, pub, sign)
-      if (verdict === 'unreachable') {
+    if (hasSignatureMaterial(material)) {
+      const bytes = await fetchArtifactBytes(url)
+      if (!bytes) {
         // 字节没拿到时分不清网络问题与篡改，按加载失败处理，不误报签名无效
         pushEngineLog(`install ${target} failed: artifact fetch failed`)
         report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
         return { ok: false, reason: 'load-failed', detail: 'artifact fetch failed' }
       }
-      if (verdict === 'failed') {
+      signature = await verifyArtifact(bytes, material)
+      if (signature === 'failed') {
         // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
         pushEngineLog(`install ${target}: signature-invalid, install anyway`)
         warn('pluginSignatureInvalid', { id: target })
-        signature = 'failed'
-      } else {
-        signature = 'verified'
       }
     }
     let loadedModule: unknown
@@ -409,16 +460,11 @@ export const installPluginEngine = (): PluginEngine => {
       return { ok: false, reason: 'invalid-manifest' }
     }
     const origin: store.PluginOrigin = {
+      ...encodeSignature(material),
       sourceType,
       sourceUrl: url,
       installedAt: Date.now(),
       trusted: true,
-    }
-    if (pub !== '') {
-      origin.pub = pub
-    }
-    if (sign !== '') {
-      origin.sign = sign
     }
     const result = register(resolved, loaded.plugin, { kind: 'url', url }, { origin, signature })
     if (!result.ok) {
@@ -455,24 +501,24 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginManifestMissing', { id: fallbackId })
       return { ok: false, reason: 'invalid-manifest' }
     }
+    const material: SignatureMaterial = {
+      eec: '',
+      sig: null,
+      authorPub: inspection.authorPub ?? '',
+      authorSig: inspection.authorSig ?? null,
+    }
     const origin: store.PluginOrigin = {
+      ...encodeSignature(material),
       sourceType: 'local',
       installedAt: Date.now(),
       trusted: true,
       code: inspection.codeText,
     }
-    if (inspection.pub) {
-      origin.pub = inspection.pub
-    }
-    if (inspection.sign) {
-      origin.sign = inspection.sign
-    }
-    const signature: SignatureState =
-      inspection.pub && inspection.sign
-        ? inspection.signatureFailed
-          ? 'failed'
-          : 'verified'
-        : 'unverified'
+    const signature: SignatureState = hasSignatureMaterial(material)
+      ? inspection.signatureFailed
+        ? 'failed'
+        : 'verified'
+      : 'unverified'
     if (signature === 'failed') {
       // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
       pushEngineLog(`install local ${fallbackId}: signature-invalid, install anyway`)
@@ -521,12 +567,11 @@ export const installPluginEngine = (): PluginEngine => {
       author: inspection.meta.author,
       license: inspection.meta.license,
       description: inspection.meta.description,
-      signatureVerified:
-        inspection.pub && inspection.sign
-          ? inspection.signatureFailed
-            ? 'failed'
-            : 'verified'
-          : 'unverified',
+      signatureVerified: inspection.authorPub
+        ? inspection.signatureFailed
+          ? 'failed'
+          : 'verified'
+        : 'unverified',
       installed: store.get(id) !== undefined,
     }
     return { ok: true, info, commit: () => commitLocalPackage(inspection) }
@@ -554,11 +599,17 @@ export const installPluginEngine = (): PluginEngine => {
     if (entry.source_url) {
       origin.sourceUrl = entry.source_url
     }
-    if (entry.pub) {
-      origin.pub = entry.pub
+    if (entry.eec) {
+      origin.eec = entry.eec
     }
-    if (entry.sign) {
-      origin.sign = entry.sign
+    if (entry.sig) {
+      origin.sig = entry.sig
+    }
+    if (entry.author_pub) {
+      origin.authorPub = entry.author_pub
+    }
+    if (entry.author_sig) {
+      origin.authorSig = entry.author_sig
     }
     if (entry.code) {
       origin.code = entry.code
@@ -572,7 +623,7 @@ export const installPluginEngine = (): PluginEngine => {
    */
   const restoreExternal = async (
     entry: StoredPluginRecord,
-    verdict: ArtifactVerdict | undefined
+    verdict: RestoreVerdict | undefined
   ): Promise<void> => {
     const id = entry.manifest.id
     const origin = toOrigin(entry)
@@ -646,12 +697,17 @@ export const installPluginEngine = (): PluginEngine => {
       return
     }
     let signature: SignatureState = 'unverified'
-    if (entry.pub && entry.sign) {
-      if (await verifyCodeSignature(code, entry.sign, entry.pub)) {
-        signature = 'verified'
-      } else {
+    const material = decodeSignature({
+      eec: entry.eec,
+      sig: entry.sig,
+      authorPub: entry.author_pub,
+      authorSig: entry.author_sig,
+    })
+    if (hasSignatureMaterial(material)) {
+      // 本地插件没有可拉取的地址，验签对象是存储的代码文本重建出的字节
+      signature = await verifyArtifact(new TextEncoder().encode(code), material)
+      if (signature === 'failed') {
         // 校验不通过只提示，不阻断激活；记录标记为不可信，界面保留标识
-        signature = 'failed'
         origin.trusted = false
         warn('pluginSignatureInvalid', { id })
       }
@@ -714,13 +770,24 @@ export const installPluginEngine = (): PluginEngine => {
     }
     const externals = loaded.records.filter((entry) => !BUILTIN_PLUGIN_IDS.includes(entry.id))
     // 校验只给出结论，不改动注册表；激活顺序仍按存储顺序
-    const verdicts = new Map<string, ArtifactVerdict>()
+    const verdicts = new Map<string, RestoreVerdict>()
     await runLimited(externals, VERIFY_CONCURRENCY, async (entry) => {
       // 本地插件没有可拉取的地址，验签在 restoreLocal 里对存储的代码完成
-      if (entry.source_type === 'local' || !entry.source_url || !entry.pub || !entry.sign) {
+      if (entry.source_type === 'local' || !entry.source_url) {
         return
       }
-      verdicts.set(entry.id, await verifyArtifactSignature(entry.source_url, entry.pub, entry.sign))
+      const material = decodeSignature({
+        eec: entry.eec,
+        sig: entry.sig,
+        authorPub: entry.author_pub,
+        authorSig: entry.author_sig,
+      })
+      if (!hasSignatureMaterial(material)) {
+        return
+      }
+      const bytes = await fetchArtifactBytes(entry.source_url)
+      // 字节拉不到时按不可达处理，不误报篡改
+      verdicts.set(entry.id, bytes ? await verifyArtifact(bytes, material) : 'unreachable')
     })
     for (const entry of externals) {
       if (entry.source_type === 'local') {

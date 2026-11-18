@@ -1,5 +1,5 @@
 import { gunzipSync, unzipSync } from 'fflate'
-import { verifyBytesSignature } from '../../services/integrity/ed25519.js'
+import { verifyDetachedSignature } from '../../services/integrity/ed25519.js'
 import type { CoreCapabilityId } from '../dsc-core/index.js'
 import type { InstallRejection, LocalizedText, PluginManifest } from './types.js'
 
@@ -8,12 +8,11 @@ const TAR_BLOCK = 512
 /** 离线包根目录下的产物文件名 */
 const META_FILE = 'meta.json'
 const PLUGIN_FILE = 'plugin.js'
-const SIGN_FILE = 'plugin_sign.json'
-const PUB_FILE = 'plugin_secret.pub'
+/** 作者签名与作者公钥；合集签名不随离线包分发，离线包只认作者裸签名 */
+const AUTHOR_SIGN_FILE = 'plugin.js.author.sig'
+const AUTHOR_PUB_FILE = 'author_pub.pem'
 /** npm 包内的产物目录；其余内容一律忽略 */
 const NPM_DIST = 'package/dist/'
-/** 被校验的签名对象；与签名约定一致 */
-const SIGN_TARGET = PLUGIN_FILE
 /** 版本号规则，与运行时 meta schema 一致 */
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 /**
@@ -37,8 +36,10 @@ export type PackageInspection = {
   manifest: PluginManifest | null
   /** 插件代码文本，安装后原样存入安装记录 */
   codeText: string
-  sign?: string
-  pub?: string
+  /** 作者公钥 PEM；包内没有时缺省 */
+  authorPub?: string
+  /** 作者签名原始字节；包内没有时缺省 */
+  authorSig?: Uint8Array
   /** 签名材料只提供了一半或不可用，安装后按未校验处理 */
   incompleteSignature: boolean
   /** 签名材料齐全但验签不通过；安装后标记为 failed，仍然允许安装 */
@@ -62,9 +63,6 @@ export type PackageMeta = {
   /** 依赖的 dsc 版本范围，来自 dependencies.dsc */
   engines?: string
 }
-
-/** 签名条目 */
-export type SignEntry = { value: string; for: string; signer: string }
 
 const decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const encoder = new TextEncoder()
@@ -312,31 +310,6 @@ export const toPluginId = (name: string): string | null => {
   return /^[a-z][a-z0-9-]*$/.test(id) ? id : null
 }
 
-/** 解析签名清单；结构不符返回 null */
-export const parseSignList = (text: string): SignEntry[] | null => {
-  const parsed = parseJson(text)
-  if (!isRecord(parsed) || !Array.isArray(parsed.sign)) {
-    return null
-  }
-  const entries: SignEntry[] = []
-  for (const item of parsed.sign) {
-    if (!isRecord(item)) {
-      return null
-    }
-    const { value, signer } = item
-    const target = item.for
-    if (typeof value !== 'string' || typeof target !== 'string' || typeof signer !== 'string') {
-      return null
-    }
-    entries.push({ value, for: target, signer })
-  }
-  return entries
-}
-
-/** 取指定文件的第一条非空签名 */
-export const pickSignature = (entries: readonly SignEntry[], target: string): string | null =>
-  entries.find((entry) => entry.for === target && entry.value !== '')?.value ?? null
-
 /** 由 meta 构造清单；缺 capabilities 或 name 无法转成 id 时返回 null */
 const buildManifest = (meta: PackageMeta): PluginManifest | null => {
   const id = toPluginId(meta.name)
@@ -356,8 +329,8 @@ const buildManifest = (meta: PackageMeta): PluginManifest | null => {
 }
 
 /**
- * 校验解包结果：必需文件、meta.json、代码文本与签名。
- * 包内同时提供 plugin_sign.json 与 plugin_secret.pub 时按约定验签；
+ * 校验解包结果：必需文件、meta.json、代码文本与作者签名。
+ * 包内同时提供 plugin.js.author.sig 与 author_pub.pem 时按约定验签；
  * 验签不通过只记录状态，不拒绝安装，由安装流程提示用户自行判断。
  */
 export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageInspectionResult> => {
@@ -384,11 +357,10 @@ export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageI
   if (codeText === null || !sameBytes(encoder.encode(codeText), pluginBytes)) {
     return { ok: false, reason: 'corrupt-package', detail: 'plugin.js is not valid UTF-8' }
   }
-  const signBytes = files.get(SIGN_FILE)
-  const pubBytes = files.get(PUB_FILE)
-  const signText = signBytes ? decodeText(signBytes) : null
+  const signBytes = files.get(AUTHOR_SIGN_FILE)
+  const pubBytes = files.get(AUTHOR_PUB_FILE)
   const pubText = pubBytes ? decodeText(pubBytes) : null
-  const hasSign = signText !== null && signText.trim() !== ''
+  const hasSign = signBytes !== undefined && signBytes.length > 0
   const hasPub = pubText !== null && pubText.trim() !== ''
   const inspection: PackageInspection = {
     meta,
@@ -397,18 +369,11 @@ export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageI
     incompleteSignature: hasSign !== hasPub,
     signatureFailed: false,
   }
-  if (hasSign && hasPub) {
-    const entries = parseSignList(signText)
-    const value = entries ? pickSignature(entries, SIGN_TARGET) : null
-    if (!value) {
-      // 签名材料存在但不可用：按未校验处理，安装后界面提示用户自行判断
-      inspection.incompleteSignature = true
-      return { ok: true, inspection }
-    }
-    inspection.sign = value
-    inspection.pub = pubText
+  if (hasSign && hasPub && signBytes !== undefined && pubText !== null) {
+    inspection.authorPub = pubText
+    inspection.authorSig = signBytes
     // 验签不通过不拒绝安装，只记录状态
-    inspection.signatureFailed = !(await verifyBytesSignature(pluginBytes, value, pubText))
+    inspection.signatureFailed = !(await verifyDetachedSignature(pluginBytes, signBytes, pubText))
   }
   return { ok: true, inspection }
 }

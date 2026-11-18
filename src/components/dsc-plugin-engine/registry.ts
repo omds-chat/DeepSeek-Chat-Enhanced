@@ -27,10 +27,14 @@ export type PluginOrigin = {
   sourceType: PluginSourceType
   /** 在线插件的 plugin.js 地址；local 来源没有 */
   sourceUrl?: string
-  /** 获取插件时拿到的公钥 PEM */
-  pub?: string
-  /** 插件 plugin.js 的签名 base64 */
-  sign?: string
+  /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签 */
+  eec?: string
+  /** plugin.js.sig 的 base64，启动校验时用于 CMS 验签 */
+  sig?: string
+  /** 作者公钥 PEM，离线包安装时写入 */
+  authorPub?: string
+  /** 作者签名的 base64 */
+  authorSig?: string
   /** 本地插件的代码文本；本地插件没有可重新拉取的地址，恢复时靠它重建模块 */
   code?: string
   installedAt: number

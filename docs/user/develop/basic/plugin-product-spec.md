@@ -91,6 +91,19 @@
 
 不满足时表现为安装失败:引擎把 `import` 抛出的错误写入 `engineLogs()`,安装结果为 `load-failed`,界面提示插件产物加载失败。`import()` 被拒绝时给出的错误文本不含 CORS 细节,具体原因只在浏览器控制台可见。
 
+## 产物签名
+
+插件产物有两套可选的分离签名,约定见 [信任链与 PKI 签名](trust-chain.md):
+
+| 签名 | 签发方 | 随产物分发的文件 | 验签材料 |
+|:---:|:---:|:---:|:---:|
+| 合集 CMS 分离签名 | 合集 EEC 证书 | `plugin.js.sig`、`meta.json.sig` | 该来源根目录的 `eec.pem`,或 online-data 信任清单里登记的证书 |
+| 作者裸签名 | 插件作者 | `plugin.js.author.sig`、`meta.json.author.sig` | 合集内的 `plugins/<作者>/author_pub.pem` |
+
+合集签名为逐字节语义,签名对象是 `plugin.js` 的原始字节,签名者是该来源的 EEC 证书;作者签名为 Ed25519 裸签名,同样直接对原始字节签名。安装与启动时两种材料都有则须同时通过,只有一种则只校验该种,都没有按未校验处理。校验失败只提示,不阻断安装与启动。
+
+合集的可信性由根 CA 签发的 EEC 证书证明:网页从 online-data 分支的 `index.json` 找到该合集的 `eec` 路径,用 `root_ca.crt` 校验证书链;清单里没有该来源时标记为未校验,只警告不阻断。
+
 ## 本地离线包
 
 本地插件由用户上传,面板一次只接受一个文件,扩展名为 `.zip` 或 `.tgz`。包内产物形态:
@@ -124,10 +137,14 @@
 | `manifest` | 安装时的完整清单 |
 | `source_type` | `inner`、`awesome`、`outer`、`local` 之一 |
 | `source_url` | 在线插件的 `plugin.js` 地址;`local` 来源留空 |
-| `pub` | 校验插件签名用的公钥 PEM |
-| `sign` | 插件代码的签名 base64 |
+| `eec` | 合集 EEC 证书 PEM,启动校验时用于 CMS 验签 |
+| `sig` | `plugin.js.sig` 的 base64 |
+| `author_pub` | 作者公钥 PEM,启动校验时用于作者裸签名验签 |
+| `author_sig` | 作者签名的 base64 |
 | `code` | 本地插件的插件代码文本；在线插件不写该字段 |
 | `enabled` | 用户期望的运行状态 |
+
+四个签名字段缺失表示该记录没有对应的签名材料,启动校验按未校验处理;离线包只写 `author_pub` 与 `author_sig`,不写 `eec` 与 `sig`。
 
 页面启动时引擎先装载内置插件,再按记录恢复外部插件:在线插件按 `source_url` 重新加载,本地插件用存储的 `code` 重建模块;带签名材料时先对代码字节验签。加载或验签失败只把该插件标记为 `failed` 并在 `list()` 中可见,不阻塞启动与其他插件。宿主通过 `install()` 直接注册的插件没有可恢复来源,不写入该记录。
 
@@ -147,7 +164,7 @@
 | 离线包无法解压,或 `plugin.js` 不是合法文本 | 预检拒绝,原因 `corrupt-package` |
 | 离线包缺少 `meta.json` 或 `plugin.js` | 预检拒绝,原因 `missing-meta` 或 `missing-plugin` |
 | 离线包 `meta.json` 不合规 | 预检拒绝,原因 `invalid-meta` |
-| 离线包签名校验未通过 | 预检拒绝,原因 `signature-invalid` |
+| 离线包作者签名校验未通过 | 不拒绝安装,记录标记为 `failed` 并提示 |
 | 离线包 `plugin.js` 超过 1 MB | 预检拒绝,原因 `package-too-large` |
 | 激活抛错或超时 | 插件标记 `failed`，引擎与其他插件继续运行 |
 | 未授予的能力被调用 | 抛 `PluginCapabilityError`，并提示 `pluginCapabilityDenied` |

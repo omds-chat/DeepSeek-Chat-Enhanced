@@ -89,6 +89,25 @@ export const activate = (context: PluginContext) => {
 
 不可见：API Key、附件本地 id 与服务端 file_id、附件原件、请求快照、分支内部结构、其他插件的本地数据、请求 Cookie。
 
+## 产物签名
+
+作者可以对产物签名,作者签名与合集签名相互独立,约定见 [信任链与 PKI 签名](trust-chain.md):
+
+```
+openssl genpkey -algorithm ed25519 -out author_secret.pem
+openssl pkey -in author_secret.pem -pubout -out author_secret.pub
+openssl pkeyutl -sign -rawin -inkey author_secret.pem -in plugin.js -out plugin.js.author.sig
+openssl pkeyutl -sign -rawin -inkey author_secret.pem -in meta.json -out meta.json.author.sig
+```
+
+| 产物文件 | 说明 |
+|:---:|:---:|
+| `plugin.js.author.sig` | 作者对 `plugin.js` 原始字节的 Ed25519 裸签名 |
+| `meta.json.author.sig` | 作者对 `meta.json` 原始字节的 Ed25519 裸签名,随合集分发时使用 |
+| `author_pub.pem` | 作者公钥,交给合集放到 `plugins/<作者>/author_pub.pem` |
+
+作者签名是逐字节语义,签名后不得再改动被签名文件。合集签名 `plugin.js.sig` 与 `meta.json.sig` 由合集用 EEC 证书签发,作者不需要处理。安装与启动时签名校验失败只提示,不阻断;未提供签名时按未校验处理。
+
 ## 错误处理
 
 - 未申请的能力被调用时抛 `PluginCapabilityError`，引擎同时提示宿主文案。

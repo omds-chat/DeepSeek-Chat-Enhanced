@@ -51,7 +51,7 @@ export const dscMarketPlugin: DscPlugin = {
   },
 }
 
-export { pickArtifactSignature, parseDatalog, parseRuntimeMeta, parseSourceMeta, parseVersions, toPluginId } from './client.js'
+export { parseDatalog, parseRuntimeMeta, parseSourceMeta, parseVersions, toPluginId } from './client.js'
 export type { MarketClient } from './client.js'
 export type {
   CatalogPlugin,

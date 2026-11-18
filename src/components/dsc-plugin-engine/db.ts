@@ -14,16 +14,22 @@ const SOURCE_TYPES: readonly string[] = ['inner', 'awesome', 'outer', 'local']
 
 /**
  * 一条安装记录。
- * source_url 只对在线分发的插件存在；pub 与 sign 是该插件 plugin.js 的公钥与签名，
- * 缺省表示这条记录没有可校验的签名材料。
+ * source_url 只对在线分发的插件存在；eec 与 sig 是合集对 plugin.js 的证书与 CMS 签名，
+ * author_pub 与 author_sig 是作者公钥与作者裸签名，缺省表示这条记录没有对应的签名材料。
  */
 export type StoredPluginRecord = {
   id: string
   manifest: PluginManifest
   source_type: PluginSourceType
   source_url?: string
-  pub?: string
-  sign?: string
+  /** 合集 EEC 证书 PEM */
+  eec?: string
+  /** plugin.js.sig 的 base64 */
+  sig?: string
+  /** 作者公钥 PEM */
+  author_pub?: string
+  /** 作者签名的 base64 */
+  author_sig?: string
   /**
    * 本地插件的插件代码文本。
    * 本地插件没有可重新拉取的地址，启动恢复时用它重建 Blob 模块；
@@ -82,13 +88,21 @@ const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   if (sourceUrl) {
     record.source_url = sourceUrl
   }
-  const pub = readOptionalText(value.pub)
-  if (pub) {
-    record.pub = pub
+  const eec = readOptionalText(value.eec)
+  if (eec) {
+    record.eec = eec
   }
-  const sign = readOptionalText(value.sign)
-  if (sign) {
-    record.sign = sign
+  const sig = readOptionalText(value.sig)
+  if (sig) {
+    record.sig = sig
+  }
+  const authorPub = readOptionalText(value.author_pub)
+  if (authorPub) {
+    record.author_pub = authorPub
+  }
+  const authorSig = readOptionalText(value.author_sig)
+  if (authorSig) {
+    record.author_sig = authorSig
   }
   const code = readOptionalText(value.code)
   if (code) {
@@ -201,7 +215,7 @@ export const writePluginRecords = async (
 
 /**
  * 旧版记录转成新结构：内置来源记为 inner，url 来源记为 outer 并保留地址，
- * 迁移时拿不到公钥与签名，pub 与 sign 留空。
+ * 迁移时拿不到证书与签名，eec、sig 与作者材料全部留空。
  */
 export const convertLegacyPlugin = (entry: LegacyPlugin): StoredPluginRecord | null => {
   if (entry.source.kind === 'builtin') {

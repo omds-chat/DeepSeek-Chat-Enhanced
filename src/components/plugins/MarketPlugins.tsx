@@ -39,8 +39,8 @@ const trustKey = (runtime: SourceRuntime | null): TranslationKey => {
 }
 
 const trustReasonKey = (runtime: SourceRuntime | null): TranslationKey =>
-  runtime?.trustFailure === 'signature'
-    ? 'pluginMarketTrustReasonSignature'
+  runtime?.trustFailure === 'chain'
+    ? 'pluginMarketTrustReasonChain'
     : 'pluginMarketTrustReasonMissing'
 
 const statusKey = (runtime: SourceRuntime | null): TranslationKey => {
@@ -243,8 +243,11 @@ export const MarketPlugins = ({
     try {
       const result = await engine.installFromUrl(plan.url, plan.manifest, {
         sourceType: plan.sourceType,
-        pub: plan.pub,
-        sign: plan.sign,
+        ...(plan.eec === undefined ? {} : { eec: plan.eec }),
+        ...(plan.eecUrl === undefined ? {} : { eecUrl: plan.eecUrl }),
+        sigUrl: plan.sigUrl,
+        authorPubUrl: plan.authorPubUrl,
+        authorSigUrl: plan.authorSigUrl,
       })
       if (result.ok) {
         instance.countInstall(selectedId, plugin)
@@ -417,8 +420,8 @@ export const MarketPlugins = ({
             {runtime.trust === 'unverified' ? (
               <div className={styles.trustWarn}>{t('pluginMarketTrustUnverifiedHint')}</div>
             ) : null}
-            {runtime.keyFromTrustList ? (
-              <div className={styles.caption}>{t('pluginMarketTrustKeyFromList')}</div>
+            {runtime.eecFromTrustList ? (
+              <div className={styles.caption}>{t('pluginMarketTrustEecFromList')}</div>
             ) : null}
             {runtime.meta?.downloadCountEnabled ? (
               <div className={styles.caption}>{t('pluginMarketCountNotice')}</div>
@@ -444,7 +447,7 @@ export const MarketPlugins = ({
                 {runtime.plugins.map((plugin) => {
                   const id = plugin.manifest?.id ?? toPluginId(plugin.name)
                   const installed = id !== null && installedIds.has(id)
-                  const unusable = plugin.error !== null || plugin.latest === null || plugin.sign === null
+                  const unusable = plugin.error !== null || plugin.latest === null
                   const confirming = confirmKey === plugin.key
                   return (
                     <div
