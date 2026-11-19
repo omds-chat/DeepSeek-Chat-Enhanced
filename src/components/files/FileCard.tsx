@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import type { ReactNode } from 'react'
+import type { AnchorHTMLAttributes, ReactNode } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { formatSize, getExtension } from '../../services/attachments.js'
 import { IconCloseFill14, IconRefreshOutline16 } from '../base/icons.js'
@@ -8,8 +8,8 @@ import styles from './FileCard.module.css'
 
 /**
  * 文档文件卡片：图标 + 文件名 + 「扩展名 大小」或状态文案。
- * 输入框内失败时描边和说明标红；可重试时显示刷新图标，不可重试时常显红色删除按钮。
- * 消息里的不可重试文件保留普通边框和状态说明。
+ * 打开或下载由 link（链接属性）承载，卡片内渲染覆盖全卡的链接元素；
+ * 上传失败时点击整卡走重试，可重试时显示刷新图标，不可重试时常显红色删除按钮。
  */
 export const FileCard = ({
   name,
@@ -18,7 +18,7 @@ export const FileCard = ({
   error,
   onRetry,
   onRemove,
-  onOpen,
+  link,
 }: {
   name: string
   size: number
@@ -26,7 +26,8 @@ export const FileCard = ({
   error?: string
   onRetry?: () => void
   onRemove?: () => void
-  onOpen?: () => void
+  /** 上传完成后的链接属性；打开或下载的规则由调用方给出 */
+  link?: AnchorHTMLAttributes<HTMLAnchorElement>
 }) => {
   const t = useTranslate()
   const ext = getExtension(name)
@@ -42,14 +43,16 @@ export const FileCard = ({
     }
     description = error ?? t('uploadFileStatusFailed')
   }
-  const onClick = status === 'error' ? onRetry : status === 'done' ? onOpen : undefined
+  // 失败只走重试；上传完成后由链接元素承载打开或下载
+  const retry = status === 'error' ? onRetry : undefined
+  const openLink = status === 'done' ? link : undefined
   return (
     <div
       className={clsx(
         styles.card,
         onRemove && styles.editable,
         status === 'error' && (onRemove || onRetry) && styles.failed,
-        onClick && styles.clickable
+        (retry || openLink) && styles.clickable
       )}
       title={
         status === 'error'
@@ -58,8 +61,9 @@ export const FileCard = ({
             : description
           : name
       }
-      onClick={onClick}
+      onClick={retry}
     >
+      {openLink ? <a className={styles.link} {...openLink} aria-label={name} /> : null}
       <div className={clsx(styles.icon, status === 'error' && onRetry && styles.retry)}>{icon}</div>
       <div className={styles.content}>
         <div className={styles.caption}>{name}</div>

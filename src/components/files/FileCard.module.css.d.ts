@@ -2,6 +2,7 @@ declare const styles: {
   readonly "card": string;
   readonly "remove": string;
   readonly "clickable": string;
+  readonly "link": string;
   readonly "editable": string;
   readonly "failed": string;
   readonly "icon": string;

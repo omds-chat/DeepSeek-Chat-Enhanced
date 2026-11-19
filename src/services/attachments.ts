@@ -222,6 +222,38 @@ const MIME_BY_EXT: Record<string, string> = {
 /** 取文件的 MIME：优先用浏览器给出的类型，缺失时按扩展名推断 */
 export const resolveMimeType = (file: File) => file.type || MIME_BY_EXT[getFileExt(file.name)] || ''
 
+/**
+ * 展示用后缀映射：决定缩略图与打开方式。
+ * 覆盖 MIME_BY_EXT 的全部后缀，并补充浏览器可直接预览的图片；svgz 是压缩包，不可预览，不在此列。
+ */
+const VIEW_TYPE_BY_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  apng: 'image/apng',
+  jpe: 'image/jpeg',
+  jfif: 'image/jpeg',
+  pjp: 'image/pjpeg',
+  pjpeg: 'image/pjpeg',
+  bmp: 'image/bmp',
+  dib: 'image/bmp',
+  ico: 'image/x-icon',
+  cur: 'image/x-icon',
+  avif: 'image/avif',
+  avifs: 'image/avif',
+  tif: 'image/tiff',
+  tiff: 'image/tiff',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  svg: 'image/svg+xml',
+  pdf: 'application/pdf',
+}
+
+/** 展示类型（MIME 形态）；未知后缀返回空串 */
+export const getFileViewType = (name: string): string => VIEW_TYPE_BY_EXT[getFileExt(name)] ?? ''
+
 export const isImage = (mimeType: string) => mimeType.startsWith('image/')
 
 /** 文件扩展名（大写），用于卡片元信息 */

@@ -26,6 +26,13 @@
   }
 }
 
+/* 覆盖全卡的链接元素：正文区域也可点击，删除按钮在其上层 */
+.link {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
 .editable {
   padding-right: 24px;
 }
@@ -101,6 +108,7 @@
   position: absolute;
   top: 4px;
   right: 4px;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1,5 +1,6 @@
 import { useTranslate } from '../../i18n/index.js'
 import clsx from 'clsx'
+import { getFileViewType } from '../../services/attachments.js'
 import { memo, useLayoutEffect, useRef, useState } from 'react'
 import { useIsMobile } from '../../app/viewport.js'
 import { IconEditOutline16 } from '../base/icons.js'
@@ -66,7 +67,9 @@ export const UserMessage = memo(function UserMessage({
         <div
           className={clsx(
             styles.files,
-            message.files.some((file) => !file.isImage) && styles.filesWithDocuments
+            // 与消息侧门控一致：按后缀判型，缩略图与文件混排时缩小图片
+            message.files.some((file) => !getFileViewType(file.name).startsWith('image/')) &&
+              styles.filesWithDocuments
           )}
         >
           {message.files.map((file) => (

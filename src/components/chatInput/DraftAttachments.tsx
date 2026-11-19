@@ -6,6 +6,7 @@ import type { DraftAttachment } from '../../services/chat/drafts.js'
 import { IconCloseFill14, IconRefreshOutline16 } from '../base/icons.js'
 import { Tooltip } from '../base/Tooltip.js'
 import { FileCard } from '../files/FileCard.js'
+import { useFileView } from '../files/useFileView.js'
 import styles from './ChatInput.module.css'
 
 const UPLOADING: UploadTask = { status: 'uploading' }
@@ -37,7 +38,7 @@ export const DraftAttachments = memo(function DraftAttachments({
   )
 })
 
-/** 输入框里的文件：图片显示缩略图，其余显示文件卡片 */
+/** 输入框里的文件：可预览的图片显示缩略图，其余显示文件卡片 */
 const AttachmentItem = ({
   item,
   onRetry,
@@ -49,6 +50,7 @@ const AttachmentItem = ({
 }) => {
   const t = useTranslate()
   const task = useUploads((state) => state.tasks[item.id] ?? UPLOADING)
+  const view = useFileView(item.file, item.file.name)
   const status = task.status
   const error = task.status === 'error' ? t(task.error.key, task.error.params) : undefined
   // 过大、格式不支持等重试无效的失败只提示原因，需删除后再发送
@@ -57,12 +59,35 @@ const AttachmentItem = ({
   const retryLabel = t('uploadRetry', { message: error ?? t('uploadFileStatusFailed') })
   // 「上传失败」只显示重试图标，其余原因写在图片上：可重试时在图标下方，不可重试时贴底
   const showReason = failed && error !== undefined && error !== t('uploadFileStatusFailed')
-  return item.previewUrl ? (
+
+  if (!view.image) {
+    return (
+      <FileCard
+        name={item.file.name}
+        size={item.file.size}
+        status={status}
+        error={error}
+        onRetry={retry}
+        onRemove={onRemove}
+        link={view.link ?? undefined}
+      />
+    )
+  }
+
+  const preview = view.url ? <img src={view.url} alt={item.file.name} /> : null
+  return (
     <div
       className={clsx(styles.attachment, failed && styles.attachmentFailed)}
       title={error ?? item.file.name}
     >
-      <img src={item.previewUrl} alt={item.file.name} />
+      {/* 只有上传完成态才可打开或下载；上传中与失败时保持纯预览 */}
+      {status === 'done' && view.link ? (
+        <a {...view.link} aria-label={item.file.name}>
+          {preview}
+        </a>
+      ) : (
+        preview
+      )}
       {status === 'uploading' ? <div className={styles.uploading} /> : null}
       {failed && retry ? (
         <Tooltip content={retryLabel}>
@@ -86,14 +111,5 @@ const AttachmentItem = ({
         <IconCloseFill14 />
       </button>
     </div>
-  ) : (
-    <FileCard
-      name={item.file.name}
-      size={item.file.size}
-      status={status}
-      error={error}
-      onRetry={retry}
-      onRemove={onRemove}
-    />
   )
 }
