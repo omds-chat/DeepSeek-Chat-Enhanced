@@ -6,6 +6,9 @@ import { rspack, type Configuration } from '@rspack/core'
 
 const targets = ['chrome >= 105', 'edge >= 105', 'safari >= 16', 'firefox >= 110']
 const root = path.dirname(fileURLToPath(import.meta.url))
+/** 版本 tag 前缀: 发布 tag 与页面版本统一为 dsc-<版本号> 形式 */
+const VERSION_TAG_PREFIX = 'dsc-'
+
 const { version } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8')
 ) as { version: string }
@@ -129,7 +132,7 @@ export const createConfig = ({
     new rspack.HtmlRspackPlugin({
       template: './src/index.html',
       scriptLoading: 'defer',
-      meta: { 'application-version': version },
+      meta: { 'application-version': `${VERSION_TAG_PREFIX}${version}` },
     }),
     new rspack.DefinePlugin({
       __API_ORIGIN__: JSON.stringify(apiOrigin),

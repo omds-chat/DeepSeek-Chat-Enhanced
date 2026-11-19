@@ -19,6 +19,7 @@ import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { PluginPanel } from '../components/plugins/PluginPanel.js'
 import { usePluginPanel } from '../components/plugins/pluginPanelState.js'
 import { Toast } from '../components/base/Toast.js'
+import { VersionNotice } from '../components/base/VersionNotice.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
@@ -139,6 +140,7 @@ export const App = () => {
         <SearchPanel />
       </div>
       <SettingsDialog />
+      <VersionNotice />
       <Toast />
     </>
   )

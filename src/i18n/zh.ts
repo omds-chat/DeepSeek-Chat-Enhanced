@@ -370,4 +370,10 @@ export const zh = {
     '网页文件签名校验未通过：{count} 个文件 ({files})，文件可能已被改动，请刷新或重新下载页面',
   webIntegrityChainFailed:
     '网页签名证书链或签名清单校验未通过，页面文件可能已被替换，请刷新或重新下载页面',
+  pageVersionTitle: '页面版本已更新',
+  pageVersionBody:
+    '当前页面是 {current}，上次使用的是 {previous}。可以刷新缓存到最新版页面，或打开上次使用的旧版本页面。',
+  pageVersionRefresh: '刷新到最新版',
+  pageVersionOpenPrevious: '打开旧版本',
+  pageVersionLater: '稍后处理',
 } as const

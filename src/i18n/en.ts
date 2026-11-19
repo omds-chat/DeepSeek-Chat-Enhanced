@@ -396,4 +396,10 @@ export const en = {
     'Web file signature check failed for {count} file(s): {files}. Files may have been modified; reload the page or download it again.',
   webIntegrityChainFailed:
     'The web signature certificate chain or file list signature failed to verify, so the page files may have been replaced; reload the page or download it again.',
+  pageVersionTitle: 'Page version changed',
+  pageVersionBody:
+    'This page is {current}, but you last used {previous}. Refresh the cache to the latest page, or open the previous version page.',
+  pageVersionRefresh: 'Refresh to latest',
+  pageVersionOpenPrevious: 'Open previous version',
+  pageVersionLater: 'Later',
 } satisfies Record<keyof typeof zh, string>
