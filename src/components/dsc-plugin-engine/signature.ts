@@ -5,6 +5,7 @@ import {
 } from '../../services/integrity/ed25519.js'
 import { sha512Hex } from '../../services/integrity/manifest.js'
 import { getTrustCrl } from '../../services/trust/crl.js'
+import { isOnline, logMaterial, requestBytes, requestText } from '../../services/trust/net.js'
 import type {
   SignatureState,
   SourceVerdict,
@@ -24,17 +25,16 @@ export const fetchArtifactBytes = async (url: string): Promise<Uint8Array<ArrayB
   }
 }
 
-/** 拉取文本资源（合集证书与作者公钥 PEM）；网络失败与非 2xx 响应都返回 null */
-export const fetchArtifactText = async (url: string): Promise<string | null> => {
-  if (url === '') {
-    return null
+/** 材料来源只提示一次，避免每次启动恢复都刷一条控制台提示 */
+let materialNoted = false
+
+/** 记录一次材料回退：说明当前用的是安装记录里已存的那份或构建内嵌的材料 */
+const noteMaterial = (message: string): void => {
+  if (materialNoted) {
+    return
   }
-  try {
-    const response = await fetch(url, { cache: 'no-store' })
-    return response.ok ? await response.text() : null
-  } catch {
-    return null
-  }
+  materialNoted = true
+  logMaterial('plugin-engine', message)
 }
 
 /** 一份产物的签名材料；缺哪一项就跳过对应的校验 */
@@ -82,9 +82,9 @@ export const authorPubMatches = async (
 
 /**
  * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。
- * 合集证书优先用信任清单已登记的那张，清单没有登记时取来源自带的 <base>/eec.pem；
- * 两种来源的证书都要在本机通过证书链校验才会用于验签，校验在 verifyArtifact 里完成。
- * 都没有时 CMS 验签直接跳过，由调用方按拿不到证书处理。作者材料仍按地址拉取。
+ * 合集证书优先用信任清单已登记或安装记录里已存的那张，没有时在线取来源自带的 <base>/eec.pem；
+ * 离线不发请求，只用已存的证书。证书都必须在本机用构建内嵌的根证书通过证书链校验才会用于验签，
+ * 校验在 verifyArtifact 里完成。都没有时 CMS 验签直接跳过，由调用方按拿不到证书处理。
  */
 export const loadSignatureMaterial = async (
   url: string,
@@ -93,10 +93,10 @@ export const loadSignatureMaterial = async (
   const eec = await resolveEec(source)
   const authorPub = await resolveAuthorPub(source)
   const [sig, authorSig] = await Promise.all([
-    eec === '' ? Promise.resolve(null) : fetchArtifactBytes(source?.sigUrl ?? url + '.sig'),
+    eec === '' ? Promise.resolve(null) : requestBytes(source?.sigUrl ?? url + '.sig'),
     authorPub === ''
       ? Promise.resolve(null)
-      : fetchArtifactBytes(source?.authorSigUrl ?? url + '.author.sig'),
+      : requestBytes(source?.authorSigUrl ?? url + '.author.sig'),
   ])
   return { eec, sig, authorPub, authorSig }
 }
@@ -107,7 +107,7 @@ export const loadSignatureMaterial = async (
  * 不一致时返回空串，作者签名按未校验处理，产物本身的 CMS 验签不受影响。
  */
 const resolveAuthorPub = async (source?: SignatureSource): Promise<string> => {
-  const bytes = await fetchArtifactBytes(source?.authorPubUrl ?? '')
+  const bytes = await requestBytes(source?.authorPubUrl ?? '')
   if (bytes === null) {
     return ''
   }
@@ -117,15 +117,35 @@ const resolveAuthorPub = async (source?: SignatureSource): Promise<string> => {
   return new TextDecoder().decode(bytes)
 }
 
-/** 取验签用的合集证书：清单登记的那张优先，没有登记时取来源自带的 eec.pem */
+/**
+ * 取验签用的合集证书。
+ * 已登记的那份（信任清单登记或安装记录里存的）优先，省一次来源站点的请求；
+ * 没有登记时在线取来源自带的 eec.pem，离线不发请求。
+ * 证书一律由 verifyArtifact 用构建内嵌的根证书校链，链不通过不会用于 CMS 验签。
+ */
 const resolveEec = async (source?: SignatureSource): Promise<string> => {
-  if (source?.eec !== undefined && source.eec !== '') {
-    return source.eec
+  const stored = source?.eec ?? ''
+  const eecUrl = source?.eecUrl ?? ''
+  if (!isOnline()) {
+    // 离线时拉不到任何在线副本，只能用安装记录里已存的那份
+    if (stored !== '') {
+      noteMaterial('当前离线，来源证书使用安装记录或信任清单里已存的那份')
+    } else if (eecUrl !== '') {
+      noteMaterial('当前离线，取不到来源站点的 eec.pem，也没有已存的来源证书，跳过 CMS 验签')
+    }
+    return stored
   }
-  if (source?.eecUrl === undefined || source.eecUrl === '') {
+  if (stored !== '') {
+    return stored
+  }
+  if (eecUrl === '') {
     return ''
   }
-  return (await fetchArtifactText(source.eecUrl)) ?? ''
+  const text = (await requestText(eecUrl)) ?? ''
+  if (text === '') {
+    noteMaterial('没有取到来源站点的 eec.pem，跳过 CMS 验签')
+  }
+  return text
 }
 
 /** 签名材料的可持久化形式；字段名与安装记录一致 */

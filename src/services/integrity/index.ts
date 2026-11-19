@@ -1,7 +1,6 @@
-import type { CertificateRevocationList } from 'pkijs'
 import { showToast } from '../../components/base/toastState.js'
-import { parseTrustIndex, requestBytes, TRUST_MIRRORS } from '../trust/fetch.js'
-import { derEquals, pemToDer } from './pem.js'
+import { comparePublishedRoot, selectPagesEec, selectWebCrl } from './material.js'
+import { pemToDer } from './pem.js'
 
 /** 解析与验签模块按需加载，未注入根证书时不会进入首屏代码 */
 const loadVerifier = async () => ({
@@ -15,12 +14,6 @@ const MANIFEST_FILE = 'web_files.json'
 const SIGNATURE_SUFFIX = '.sig'
 /** 清单结构版本 */
 const SCHEMA_VERSION = 1
-/** online-data 上的信任清单路径，位于 online-data 根目录，用于取吊销列表 */
-const INDEX_FILE = 'index.json'
-/** online-data 上的根证书路径；与构建内嵌的同一份证书，仅用于比对 */
-const ROOT_CA_PATH = 'certs/dsce/root-ca/dsce-root-ca.crt'
-/** online-data 上的网页 EEC 证书路径 */
-const EEC_PATH = 'certs/dsce/dsce-pages/dsce-pages-eec.crt'
 /** 并行校验文件的上限 */
 const CONCURRENCY = 6
 /** 提示文案中最多列出的文件名数量 */
@@ -40,17 +33,6 @@ const isLocalPath = (value: string): boolean =>
 
 /** 构建时注入的根证书 PEM；未注入时为空串 */
 const embeddedRootCa = (): string => (typeof __ROOT_CA_PEM__ === 'string' ? __ROOT_CA_PEM__ : '')
-
-/** 从 online-data 的多镜像依次取文件；全部失败返回 null */
-const fetchFromMirrors = async (path: string): Promise<Uint8Array<ArrayBuffer> | null> => {
-  for (const base of TRUST_MIRRORS) {
-    const bytes = await requestBytes(base + path)
-    if (bytes !== null) {
-      return bytes
-    }
-  }
-  return null
-}
 
 /** 从页面同源取文件；失败返回 null */
 const fetchLocal = async (path: string, base: string): Promise<Uint8Array<ArrayBuffer> | null> => {
@@ -102,12 +84,6 @@ const mapLimited = async <T, R>(
   return results
 }
 
-/** 根证书比对结果只留控制台痕迹，不影响校验流程 */
-const logRootCa = (message: string): void => {
-  // eslint-disable-next-line no-console
-  console.warn('[integrity] ' + message)
-}
-
 /** 证书链或清单层面的失败：只提示一条，不阻断 */
 const warnChain = (): void => {
   showToast({ type: 'error', key: 'webIntegrityChainFailed' })
@@ -123,7 +99,10 @@ const warnFiles = (failed: readonly string[]): void => {
 
 /**
  * 静默校验网页产物：根证书 → 网页 EEC 证书链 → 清单签名 → 逐文件签名，只执行一次。
- * 未注入根证书、环境没有 WebCrypto 或网络失败时静默返回；任何校验失败只提示一条警告，不阻断服务。
+ * 根证书只用构建内嵌的那份，online-data 的同名副本只做比对；网页 EEC 在线优先，
+ * 但必须在内嵌根证书下通过证书链校验，取不到或链不通过时回退内嵌；
+ * 吊销列表离线或取不到时按吊销状态未知处理，不阻断校验。
+ * 未注入根证书、环境没有 WebCrypto 或产物缺少清单时静默返回；任何校验失败只提示一条警告，不阻断服务。
  */
 export const verifyWebIntegrity = async (): Promise<void> => {
   if (started) {
@@ -135,7 +114,7 @@ export const verifyWebIntegrity = async (): Promise<void> => {
   if (anchorPem.trim() === '') {
     return
   }
-  const { ensurePkijsEngine, parseCertificate, parseCrl, verifyCertificateChainWithCrl, verifyDetachedCms } =
+  const { ensurePkijsEngine, parseCertificate, verifyCertificateChainWithCrl, verifyDetachedCms } =
     await loadVerifier()
   if (!ensurePkijsEngine()) {
     return
@@ -146,41 +125,17 @@ export const verifyWebIntegrity = async (): Promise<void> => {
     warnChain()
     return
   }
-  // 根证书以构建时内嵌的信任锚为准：online-data 的同名证书只用于比对，不一致时提示并以内置的为准
-  const publishedRoot = await fetchFromMirrors(ROOT_CA_PATH)
-  if (!publishedRoot) {
-    logRootCa('online-data 缺少 ' + ROOT_CA_PATH + '，按构建内嵌的根证书校验')
-  } else {
-    const publishedDer = pemToDer(new TextDecoder().decode(publishedRoot), 'CERTIFICATE')
-    if (!publishedDer || !derEquals(anchorDer, publishedDer)) {
-      logRootCa(
-        'online-data 的 ' + ROOT_CA_PATH + ' 与构建内嵌的根证书不一致，按构建内嵌的根证书校验'
-      )
-    }
-  }
-  // 网页 EEC 证书必须由根证书签发
-  const eecBytes = await fetchFromMirrors(EEC_PATH)
-  if (!eecBytes) {
-    return
-  }
-  const eec = parseCertificate(new TextDecoder().decode(eecBytes))
+  // 根证书只比对不采用：不一致时仍按内嵌的那份校验，在线副本不参与任何决策
+  await comparePublishedRoot(anchorDer)
+  // 网页 EEC 在线优先并要求在内嵌根证书下通过链校验，离线与失败回退内嵌
+  const selection = await selectPagesEec(anchor)
+  const eec = selection.pem === '' ? null : parseCertificate(selection.pem)
   if (!eec) {
     warnChain()
     return
   }
-  // 清单登记了吊销列表时必须拿到并校验 CRL；拿不到或解析失败直接判失败，不静默退化为只校验证书链
-  const indexBytes = await fetchFromMirrors(INDEX_FILE)
-  const indexText = indexBytes === null ? null : new TextDecoder().decode(indexBytes)
-  const crlPath = indexText === null ? null : (parseTrustIndex(indexText)?.crl ?? null)
-  let crl: CertificateRevocationList | null = null
-  if (crlPath !== null) {
-    const crlBytes = await fetchFromMirrors(crlPath)
-    crl = crlBytes === null ? null : parseCrl(new TextDecoder().decode(crlBytes))
-    if (crl === null) {
-      warnChain()
-      return
-    }
-  }
+  // 吊销列表离线或不可用时按吊销状态未知处理，不据此阻断校验
+  const crl = await selectWebCrl(anchor)
   const chain = await verifyCertificateChainWithCrl(anchor, eec, crl)
   if (!chain.ok) {
     warnChain()

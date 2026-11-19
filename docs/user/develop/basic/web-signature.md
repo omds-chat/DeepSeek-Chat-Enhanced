@@ -9,6 +9,7 @@
 | 签名 | `pnpm run pki -- sign-web` | 对每个 `.html`、`.js`、`.css` 生成 `<文件>.sig` |
 | 清单 | `dist/web_files.json` | 按路径排序列出全部被签名文件,清单自身也有 `.sig` |
 | 信任锚 | `rspack.config.ts` | 构建时把根证书 PEM 注入为 `__ROOT_CA_PEM__` |
+| 离线验签证书 | `rspack.config.ts` | 构建时把网页签名 EEC 证书 PEM 注入为 `__PAGES_EEC_PEM__` |
 | 信任数据分发 | online-data 分支 | 提供 `certs/dsce/root-ca/dsce-root-ca.crt` 与 `certs/dsce/dsce-pages/dsce-pages-eec.crt` |
 | 运行时校验 | `src/services/integrity/` | 页面挂载后异步校验证书链与全部签名,失败只提示一条警告 |
 
@@ -68,17 +69,46 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 
 根 CA 与 EEC 的生成、签发方式见 [信任链与 PKI 签名](trust-chain.md) 。
 
-## 构建时注入根证书
+## 构建时注入信任材料
 
-`rspack.config.ts` 通过 `DefinePlugin` 注入全局常量 `__ROOT_CA_PEM__` ,取值来自 `certs/dsce/root-ca/dsce-root-ca.crt` ;`createConfig` 的 `rootCaPem` 参数可以显式覆盖该默认值。
+`rspack.config.ts` 通过 `DefinePlugin` 注入两个全局常量:
 
-根证书必须内嵌: 离线运行拉不到任何在线副本,没有内嵌根证书就无法校验证书链,因此该文件缺失时构建失败,而不是产出无法校验的产物。
+| 常量 | 取值 | 用途 |
+|:---:|:---:|:---:|
+| `__ROOT_CA_PEM__` | `certs/dsce/root-ca/dsce-root-ca.crt` | 网页校验的信任锚,只认这一份 |
+| `__PAGES_EEC_PEM__` | `certs/dsce/dsce-pages/dsce-pages-eec.crt` | 离线时验证网页签名的 EEC 证书 |
+
+`createConfig` 的 `rootCaPem` 与 `pagesEecPem` 参数可以显式覆盖对应默认值。
+
+两份材料都必须内嵌: 离线运行拉不到任何在线副本,没有内嵌根证书就无法校验证书链,没有内嵌 EEC 就无法验证网页签名,因此文件缺失或不是 PEM 证书时构建直接失败,而不是产出无法校验的产物。
 
 | 情形 | 行为 |
 |:---:|:---:|
-| 根证书文件存在且是 PEM | 注入根证书 PEM |
-| 根证书文件缺失 | 构建失败并提示缺失的文件 |
+| 文件存在且是 PEM 证书 | 注入对应常量 |
+| 文件缺失 | 构建失败并提示缺失的文件 |
 | 文件存在但不是 PEM 证书 | 构建失败并提示不是 PEM 证书,避免把错误内容当成信任锚 |
+
+## 在线与离线的材料选取
+
+产物可能在线运行,也可能离线运行(本地打开或本地服务器)。离线时拉不到任何在线副本,因此四类材料按下面的顺序与判据选取:
+
+| 材料 | 在线 | 离线 | 判据 |
+|:---:|:---:|:---:|:---:|
+| 根证书 | 拉 `certs/dsce/root-ca/dsce-root-ca.crt` 与内嵌副本逐字节比对 | 不比对,直接用内嵌 | 信任锚永远只用内嵌的那份;在线副本不参与任何决策,根证书不能用自己验证自己 |
+| 网页签名 EEC | 先取 online-data 副本,必须能在内嵌根证书下通过证书链校验 | 直接用 `__PAGES_EEC_PEM__` | 链不通过、取不到或无法解析都回退内嵌,回退时留一条控制台提示 |
+| CRL | 按 `index.json` 的登记取并验签 | 不请求,吊销状态视为未知 | 未知时不判定任何证书已吊销,也不阻断任何操作 |
+| 网页清单与逐文件签名 | 与页面同源取 | 与页面同源取 | 属于产物自身,始终按页面地址取,不走 online-data |
+
+选取顺序固定为「在线副本 → 本机校验 → 回退内嵌」,判据只看本机能验证的事实:
+
+| 顺序 | 行为 |
+|:---:|:---:|
+| 1 | `navigator.onLine` 明确为 `false` 时判定离线,一个材料请求都不发 |
+| 2 | 为 `true` 时按「尝试 + 短超时 + 回退」处理,单个材料请求最长 1 秒,失败就换下一个镜像 |
+| 3 | 拿到在线副本先在本机校验: 根证书只比对,网页 EEC 必须在内嵌根证书下通过证书链校验,CRL 必须能由内嵌根证书验签 |
+| 4 | 校验不通过按「在线材料不可用」处理,回退内嵌材料,页面功能不受影响 |
+
+`navigator.onLine` 只决定是否需要发请求,不决定材料是否可用: 它为 `true` 时仍可能无网,所以在线分支一律带短超时与回退;它为 `false` 时直接按离线处理,既不发请求,也不据此判定任何证书不可信。
 
 ## 运行时校验
 
@@ -87,10 +117,13 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 | 步骤 | 行为 |
 |:---:|:---:|
 | 根证书为空 | 直接返回,不发起任何请求 |
-| 拉取 `certs/dsce/root-ca/dsce-root-ca.crt` | 按 online-data 的多镜像依次尝试,单个请求超时 1 秒;拉不到时只记一条提示,继续按内嵌根证书校验 |
-| 核对信任锚 | 拉到的根证书必须与内嵌根证书逐字节一致,否则提示一条警告 |
-| 拉取 `certs/dsce/dsce-pages/dsce-pages-eec.crt` | 同样走多镜像与 1 秒超时;拉不到时静默返回 |
-| 校验证书链 | 签发者与主体匹配、EEC 的签名可用根证书公钥验证、两端都在有效期内、根证书为 CA、EEC 的 `keyUsage` 含 `digitalSignature`、EEC 不是 CA |
+| 判定在线状态 | `navigator.onLine` 为 `false` 时不拉取根证书、EEC 与 CRL,直接用内嵌材料 |
+| 拉取 `certs/dsce/root-ca/dsce-root-ca.crt` | 在线时按 online-data 的多镜像依次尝试,单个请求超时 1 秒;拉不到时只记一条提示,继续按内嵌根证书校验 |
+| 核对信任锚 | 拉到的根证书必须与内嵌根证书逐字节一致,否则提示一条警告并继续用内嵌的那份 |
+| 选取网页 EEC | 在线优先取 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ,并要求在内嵌根证书下通过证书链校验;取不到、无法解析或链不通过时回退 `__PAGES_EEC_PEM__` |
+| 选取吊销列表 | 在线时按 `index.json` 的 `crl` 登记取 CRL 并验签;离线、取不到、解析失败或验签不通过时吊销状态按未知处理,不阻断校验 |
+| 校验证书链 | 签发者与主体匹配、EEC 的签名可用根证书公钥验证、两端都在有效期内、根证书为 CA、EEC 的 `keyUsage` 含 `digitalSignature`、EEC 不是 CA;吊销状态已知时一并检查 |
+| 两份 EEC 都拿不到 | 提示一条证书链警告,不继续逐文件校验 |
 | 拉取 `web_files.json` | 相对页面地址请求;产物没有清单时静默返回 |
 | 验证清单签名 | 用 EEC 校验 `web_files.json.sig` 的 CMS 分离签名 |
 | 逐文件校验 | 并发上限 6,逐个拉取 `<文件>` 与 `<文件>.sig` 并验签 |
@@ -119,9 +152,11 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 | 现象 | 常见原因 |
 |:---:|:---:|
 | 产物里 `__ROOT_CA_PEM__` 为空 | 只有 `createConfig` 显式传入空串才会这样;正常构建会从 `certs/dsce/root-ca/dsce-root-ca.crt` 注入 |
-| 页面提示证书链校验未通过 | online-data 的 `certs/dsce/root-ca/dsce-root-ca.crt` 与内嵌根证书不一致,或 `certs/dsce/dsce-pages/dsce-pages-eec.crt` 不是该根证书签发的 |
-| 页面提示签名校验未通过 | 产物在签名后被改动,或签名用的 EEC 与 `dist/eec.pem` 不是同一张证书 |
-| 校验始终静默 | 产物没有 `web_files.json`,或根证书为空,或拉取 online-data 失败 |
+| 产物里 `__PAGES_EEC_PEM__` 为空 | 同上,只有 `createConfig` 显式传入空串才会这样;正常构建会从 `certs/dsce/dsce-pages/dsce-pages-eec.crt` 注入 |
+| 页面提示证书链校验未通过 | 在线副本与内嵌材料都校验不过: 在线 EEC 不是内嵌根证书签发的且内嵌 EEC 也已过期,或内嵌根证书本身不在有效期内 |
+| 页面提示签名校验未通过 | 产物在签名后被改动,或签名用的 EEC 与产物内嵌的 EEC 不是同一张证书 |
+| 控制台提示改用了内嵌材料 | online-data 的 EEC 取不到、超时或链校验未通过,已按内嵌材料继续校验,属预期回退 |
+| 校验始终静默 | 产物没有 `web_files.json`,或根证书为空 |
 | `sign-web` 报 EEC 证书与私钥不配对 | 传入了别的证书或私钥 |
 
 ## 相关文档

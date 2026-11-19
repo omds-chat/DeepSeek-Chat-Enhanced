@@ -12,8 +12,8 @@ import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** 白名单: 清理后保留的顶层条目,version 目录存放历史发布 */
-export const WHITELIST = ['version']
+/** 白名单: 清理后保留的顶层条目,version 目录存放历史发布,README 是归档仓库的占位说明 */
+export const WHITELIST = ['version', 'README.md']
 
 /** 永远保留的 git 元数据目录 */
 const GIT_ENTRY = '.git'

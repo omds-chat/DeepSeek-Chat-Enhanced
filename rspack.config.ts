@@ -16,30 +16,37 @@ const cssLoader = {
 }
 
 /**
- * 内嵌到产物的根证书路径，相对仓库根目录。
- * 离线运行拉不到在线副本，根证书必须随构建内嵌，因此只认 certs 目录里的这一份。
+ * 内嵌到产物的材料路径，相对仓库根目录。
+ * 离线运行拉不到在线副本，根证书与网页签名 EEC 都必须随构建内嵌，因此只认 certs 目录里的这两份。
  */
 const EMBEDDED_ROOT_CA_PATH = 'certs/dsce/root-ca/dsce-root-ca.crt'
+const EMBEDDED_PAGES_EEC_PATH = 'certs/dsce/dsce-pages/dsce-pages-eec.crt'
 
 /**
- * 读取内嵌根证书 PEM。
- * 文件缺失或不是 PEM 证书时直接让构建失败：产物缺少信任锚就无法做网页校验。
+ * 读取内嵌 PEM 证书。
+ * 文件缺失或不是 PEM 证书时直接让构建失败：产物缺少信任材料就无法做网页校验。
  */
-const readRootCaPem = (): string => {
-  const certPath = path.resolve(root, EMBEDDED_ROOT_CA_PATH)
+const readPem = (relativePath: string, label: string): string => {
+  const certPath = path.resolve(root, relativePath)
   let text: string
   try {
     text = readFileSync(certPath, 'utf8')
   } catch {
     throw new Error(
-      '缺少内嵌根证书 ' + EMBEDDED_ROOT_CA_PATH + '：离线运行无法拉取在线副本，该文件必须随仓库提供'
+      '缺少内嵌' + label + ' ' + relativePath + '：离线运行无法拉取在线副本，该文件必须随仓库提供'
     )
   }
   if (!text.includes('-----BEGIN CERTIFICATE-----')) {
-    throw new Error('内嵌根证书 ' + EMBEDDED_ROOT_CA_PATH + ' 不是 PEM 证书')
+    throw new Error('内嵌' + label + ' ' + relativePath + ' 不是 PEM 证书')
   }
   return text.trim() + '\n'
 }
+
+/** 内嵌根证书 PEM，网页校验的信任锚 */
+const readRootCaPem = (): string => readPem(EMBEDDED_ROOT_CA_PATH, '根证书')
+
+/** 内嵌网页签名 EEC 证书 PEM，离线时用它验证网页签名 */
+const readPagesEecPem = (): string => readPem(EMBEDDED_PAGES_EEC_PATH, '网页签名 EEC 证书')
 
 type ConfigOptions = {
   /** 公开 API 的地址，注入为 __API_ORIGIN__ */
@@ -50,6 +57,8 @@ type ConfigOptions = {
   dev?: boolean
   /** 内嵌到产物的根证书 PEM，注入为 __ROOT_CA_PEM__；缺省读 certs/dsce/root-ca/dsce-root-ca.crt */
   rootCaPem?: string
+  /** 内嵌到产物的网页签名 EEC 证书 PEM，注入为 __PAGES_EEC_PEM__；缺省读 certs/dsce/dsce-pages/dsce-pages-eec.crt */
+  pagesEecPem?: string
 }
 
 /** 创建构建配置，支持自定义 API 地址和开发服务器选项 */
@@ -58,6 +67,7 @@ export const createConfig = ({
   devServer,
   dev = process.env.NODE_ENV !== 'production',
   rootCaPem = readRootCaPem(),
+  pagesEecPem = readPagesEecPem(),
 }: ConfigOptions = {}): Configuration => ({
   mode: dev ? 'development' : 'production',
   entry: './src/main.tsx',
@@ -123,8 +133,9 @@ export const createConfig = ({
     }),
     new rspack.DefinePlugin({
       __API_ORIGIN__: JSON.stringify(apiOrigin),
-      // 网页签名校验用的根证书；只有显式传入空串时运行时不校验
+      // 网页签名校验用的根证书与 EEC 证书；根证书为空串时运行时不校验
       __ROOT_CA_PEM__: JSON.stringify(rootCaPem),
+      __PAGES_EEC_PEM__: JSON.stringify(pagesEecPem),
     }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
