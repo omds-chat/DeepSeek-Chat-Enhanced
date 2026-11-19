@@ -1,31 +1,125 @@
 name: Deploy GitHub Pages
 
+# 发布与旧版留存的 CI 流程
+# - 触发: release published,或手动指定 tag;不再由 push 到 main 触发,避免日常提交误触发部署
+# - 三份检出: 主工作区为 release tag,dist-worktree 与 online-data-worktree 为两条归档分支
+# - 网页产物在主工作区构建并签名,签名完成的 dist 再复制到 dist 分支的三处,
+#   保证分支根目录、version/latest、version/<tag> 三份一致且各自可自校验
+# - 信任数据归档到 online-data 分支,同样复制到三处
+#   online-data 的内容由「certs 目录整体复制 + .github/scripts/build-trust-index.mjs 生成 index.json」得到
+#   (原先切分结构的 scripts/build-online-data.mjs 已退役)
+# - 组装 RUNNER_TEMP/pages 后上传并用 actions/deploy-pages 部署
+
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'scripts/**'
-      - 'rspack.config.ts'
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 待发布的 tag 名
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: github-pages
   cancel-in-progress: false
 
+env:
+  # 发布 tag: release 事件取 release 的 tag,手动触发取输入参数
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  # 主工作区的产物目录,由 pnpm build 生成并就地签名
+  DIST_DIR: dist
+  # 两条归档分支各自的标记 tag 后缀
+  # git 的 tag 位于整个仓库共用的 refs/tags 命名空间,dist 与 online-data 无法持有同名 tag:
+  # 先打的 tag 会让后一步的「已发布」预检查命中并整步跳过,因此按分支加后缀。
+  # 后缀只用于归档分支的标记,发布 tag 本身仍是 release 的 tag。
+  DIST_TAG_SUFFIX: -dist
+  ONLINE_DATA_TAG_SUFFIX: -online-data
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      pages: read
+    timeout-minutes: 30
     steps:
-      - name: Check out source
+      # 三份检出之一: 主工作区检出到 release tag
+      - name: Check out release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # tag 不存在时本步即以非零状态结束,属于预检查的一部分
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # 预检查: tag、两条归档分支、分支内是否已发布过本轮 tag
+      - name: Precheck tag and archive branches
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_TAG}" ]; then
+            echo "::error::未取得发布 tag"
+            exit 1
+          fi
+          if ! git rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            echo "::error::仓库中不存在 tag ${RELEASE_TAG}"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")" ]; then
+            echo "::error::主工作区不在 tag ${RELEASE_TAG} 上"
+            exit 1
+          fi
+          # dist 分支不存在属于预期外情况: 直接报错,不自动创建
+          if ! git ls-remote --exit-code --heads origin refs/heads/dist >/dev/null; then
+            echo "::error::远端不存在 dist 分支,归档流程中止"
+            exit 1
+          fi
+          # online-data 分支同样按预期外情况处理,不自动创建孤立分支
+          if ! git ls-remote --exit-code --heads origin refs/heads/online-data >/dev/null; then
+            echo "::error::远端不存在 online-data 分支,归档流程中止"
+            exit 1
+          fi
+
+      - name: Check out dist branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dist
+          path: dist-worktree
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check out online-data branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: online-data
+          path: online-data-worktree
+          fetch-depth: 0
+          fetch-tags: true
+
+      # 预检查: 分支内是否已有同名 tag。
+      # 判定在本轮 push 之前完成并写入步骤输出,避免 dist 步骤新打的 tag 影响 online-data 的判定。
+      - name: Resolve archive tags
+        id: archive
+        run: |
+          set -euo pipefail
+          dist_tag="${RELEASE_TAG}${DIST_TAG_SUFFIX}"
+          online_data_tag="${RELEASE_TAG}${ONLINE_DATA_TAG_SUFFIX}"
+          if [ -n "$(git -C dist-worktree tag --list "${dist_tag}")" ]; then
+            echo "dist 分支已有 tag ${dist_tag},跳过整个 dist 步骤"
+            echo "skip_dist=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "dist 分支没有 tag ${dist_tag},执行 dist 步骤"
+            echo "skip_dist=false" >> "${GITHUB_OUTPUT}"
+          fi
+          if [ -n "$(git -C online-data-worktree tag --list "${online_data_tag}")" ]; then
+            echo "online-data 分支已有 tag ${online_data_tag},跳过整个 online-data 步骤"
+            echo "skip_online_data=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "online-data 分支没有 tag ${online_data_tag},执行 online-data 步骤"
+            echo "skip_online_data=false" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Set up pnpm
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -47,43 +141,160 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
       - name: Build
-        env:
-          # 根证书内嵌到产物，用于网页运行时校验证书链；未配置时不校验
-          ROOT_CA_CERT: ${{ secrets.ROOT_CA_PEM }}
         run: pnpm build
 
+      # 网页签名: 私钥写入被 git 忽略的 temp/ 临时文件,签名结束立即删除
       - name: Sign web files
         env:
           WEB_EEC_KEY: ${{ secrets.WEB_EEC_KEY }}
         run: |
+          set -euo pipefail
           if [ -z "${WEB_EEC_KEY}" ]; then
-            echo "::error::WEB_EEC_KEY 未配置，无法生成网页签名"
+            echo "::error::WEB_EEC_KEY 未配置,无法生成网页签名"
             exit 1
           fi
           mkdir -p temp
           printf '%s\n' "${WEB_EEC_KEY}" > temp/web-eec.key
-          curl -fsSL \
-            https://raw.githubusercontent.com/omdsc-dev/DeepSeek-Chat-Enhanced/online-data/web/eec.pem \
-            -o temp/web-eec.pem
-          node scripts/pki/ca.mjs sign-web --dir dist --eec temp/web-eec.pem --key temp/web-eec.key
-          rm -f temp/web-eec.key
+          trap 'rm -f temp/web-eec.key' EXIT
+          chmod 600 temp/web-eec.key
+          node scripts/pki/ca.mjs sign-web \
+            --dir "${DIST_DIR}" \
+            --eec certs/dsce/dsce-pages/dsce-pages-eec.crt \
+            --key temp/web-eec.key
 
-      - name: Upload site
+      # 签名自校验: 复制到归档分支之前先按线上口径验一遍
+      - name: Verify dist signatures
+        run: |
+          set -euo pipefail
+          node scripts/pki/ca.mjs verify-web \
+            --dir "${DIST_DIR}" \
+            --root-ca certs/dsce/root-ca/dsce-root-ca.crt
+
+      # dist 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> commit、打 tag、push
+      - name: Publish dist branch
+        if: steps.archive.outputs.skip_dist == 'false'
+        run: |
+          set -euo pipefail
+          archive_tag="${RELEASE_TAG}${DIST_TAG_SUFFIX}"
+          # 白名单在脚本内定义为常量,除 .git 与白名单外全部删除,隐藏文件一并删除
+          node .github/scripts/clean-worktree.mjs --dir dist-worktree
+          rm -rf dist-worktree/version/latest
+          mkdir -p dist-worktree/version/latest "dist-worktree/version/${RELEASE_TAG}"
+          # 分支根目录、version/latest、version/<tag> 三份内容完全一致
+          for target in dist-worktree dist-worktree/version/latest "dist-worktree/version/${RELEASE_TAG}"; do
+            cp -a "${DIST_DIR}/." "${target}/"
+          done
+          git -C dist-worktree config user.name "github-actions[bot]"
+          git -C dist-worktree config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C dist-worktree add -A
+          if git -C dist-worktree diff --cached --quiet; then
+            echo "dist 分支内容无变化,跳过 commit"
+          else
+            git -C dist-worktree commit -m "publish dist ${RELEASE_TAG}"
+          fi
+          git -C dist-worktree tag "${archive_tag}"
+          # 不使用 --force;push 失败时由 set -e 中止整个流程
+          git -C dist-worktree push origin HEAD:dist
+          git -C dist-worktree push origin "refs/tags/${archive_tag}"
+
+      # online-data 分支归档: 清理 -> 重建 version 目录 -> 复制 certs、生成 index.json 与 README.md
+      # -> commit、打 tag、push
+      # 内容来源: certs 目录整体原样复制(保留 certs/... 结构) + build-trust-index.mjs 依据
+      # certs/plugin-set/manifest.json 生成 index.json;旧的切分结构生成器 scripts/build-online-data.mjs 已退役
+      #
+      # index.json 的结构(字段固定):
+      # {
+      #   "schemaVersion": 2,
+      #   "rootCa": "certs/dsce/root-ca/dsce-root-ca.crt",
+      #   "crl": null,
+      #   "collections": [
+      #     { "id": "<合集名>", "eec": "certs/plugin-set/<合集名>/<合集名>-eec.crt" }
+      #   ]
+      # }
+      #
+      # 本轮不对 online-data 产物做整体签名,理由:
+      # 该分支只分发证书与信任清单,消费方(网页运行时、插件引擎、市场)的校验口径是
+      # 「内嵌根证书 + 逐张 EEC 的证书链」,没有消费方会校验覆盖整棵目录树的签名;
+      # 整体签名还会把证书分发的完整性绑到同一张 EEC 私钥上,轮换私钥就要重签全部历史版本。
+      # 因此这里只依赖根证书内嵌与逐张 EEC 的链校验,省略整体签名。
+      - name: Publish online-data branch
+        if: steps.archive.outputs.skip_online_data == 'false'
+        run: |
+          set -euo pipefail
+          archive_tag="${RELEASE_TAG}${ONLINE_DATA_TAG_SUFFIX}"
+          node .github/scripts/clean-worktree.mjs --dir online-data-worktree
+          rm -rf online-data-worktree/version/latest
+          mkdir -p online-data-worktree/version/latest "online-data-worktree/version/${RELEASE_TAG}"
+          # certs 整个目录原样复制,保持 certs/... 结构与主仓库一致
+          mkdir -p online-data-worktree/certs
+          cp -a certs/. online-data-worktree/certs/
+          # 依据 certs/plugin-set/manifest.json 生成信任清单
+          node .github/scripts/build-trust-index.mjs \
+            --manifest certs/plugin-set/manifest.json \
+            --certs-root certs \
+            --out online-data-worktree/index.json
+          # 已归档版本列表,供 README 列出
+          versions="$(ls -1 online-data-worktree/version | grep -vx latest | sort -V | tail -n 20 | paste -sd, -)"
+          readme_args=(
+            --template .github/scripts/online-data-README.md
+            --index online-data-worktree/index.json
+            --out online-data-worktree/README.md
+            --tag "${RELEASE_TAG}"
+          )
+          if [ -n "${versions}" ]; then
+            readme_args+=(--versions "${versions}")
+          fi
+          node .github/scripts/render-online-data-readme.mjs "${readme_args[@]}"
+          # 根目录内容复制到 version/latest 与 version/<tag>
+          for target in version/latest "version/${RELEASE_TAG}"; do
+            mkdir -p "online-data-worktree/${target}/certs"
+            cp -a online-data-worktree/certs/. "online-data-worktree/${target}/certs/"
+            cp -a online-data-worktree/index.json "online-data-worktree/${target}/index.json"
+            cp -a online-data-worktree/README.md "online-data-worktree/${target}/README.md"
+          done
+          git -C online-data-worktree config user.name "github-actions[bot]"
+          git -C online-data-worktree config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C online-data-worktree add -A
+          if git -C online-data-worktree diff --cached --quiet; then
+            echo "online-data 分支内容无变化,跳过 commit"
+          else
+            git -C online-data-worktree commit -m "publish online-data ${RELEASE_TAG}"
+          fi
+          git -C online-data-worktree tag "${archive_tag}"
+          git -C online-data-worktree push origin HEAD:online-data
+          git -C online-data-worktree push origin "refs/tags/${archive_tag}"
+
+      # 组装 Pages 目录
+      # - 站点根目录即 dist 产物,信任数据挂到 /online-data/
+      # - 组装目录放在 RUNNER_TEMP 下,不落在任何一个工作树内,避免污染归档分支
+      # - version 目录随发布线性增长,站点体积与仓库体积都随历史版本累积:
+      #   GitHub Pages 站点上限为 1 GB,单次发布同时写入 dist 与 certs 的全量副本;
+      #   保留历史版本是为了让旧版页面与旧版信任数据仍可按固定路径取用,
+      #   当前不做裁剪,发布量很大时应改为只保留最近若干个版本。
+      - name: Assemble Pages directory
+        run: |
+          set -euo pipefail
+          pages="${RUNNER_TEMP}/pages"
+          rm -rf "${pages}"
+          mkdir -p "${pages}/online-data"
+          cp -a "${DIST_DIR}/." "${pages}/"
+          # 排除 .git;末尾的删除是兜底,确保 git 元数据不会进入站点
+          tar -C online-data-worktree --exclude=./.git -cf - . | tar -C "${pages}/online-data" -xf -
+          rm -rf "${pages}/online-data/.git"
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: dist
+          path: ${{ runner.temp }}/pages
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
