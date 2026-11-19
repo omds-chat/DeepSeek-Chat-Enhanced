@@ -6,7 +6,7 @@
 
 | 项 | 规定 |
 |:---:|:---:|
-| 文件数量 | 单个 js 文件,可附带该文件自身引用的资源 |
+| 文件数量 | 单个 js 文件;代码里不得用相对路径导入其它模块或资源,分发时只交付这一个文件 |
 | 模块格式 | 浏览器可 `import` 的 ESM;不使用 `require`、Node 内置模块与后端接口 |
 | 运行环境 | 页面主线程,可用浏览器 API;不得读写本地文件系统 |
 | 依赖 | 不得新增运行依赖;可复用宿主已加载的浏览器能力 |
@@ -71,7 +71,7 @@
 | 方式 | 接口 | 说明 |
 |:---:|:---:|:---:|
 | 直接注册 | `engine.install(manifest, plugin)` | 宿主已持有插件对象时使用,只登记不激活 |
-| 运行时加载 | `engine.installFromUrl(url, manifest?)` | 下载产物字节后按 `import` 加载,成功后自动激活;超时 10 秒 |
+| 运行时加载 | `engine.installFromUrl(url, manifest?)` | 用 `fetch` 取产物字节,按文本存进安装记录后再以 Blob 地址 `import` 加载,成功后自动激活;超时 10 秒 |
 | 手动激活 | `engine.activate(id)` | 依赖满足时进入 `active` |
 
 `url` 只接受 `https` 的任意主机,或 `http` 的本机回环地址(`localhost`、`127.0.0.1`、`[::1]`),按页面地址解析相对路径;其余地址直接拒绝,结果为 `load-failed`。
@@ -80,16 +80,16 @@
 
 ### 跨源分发与 CORS
 
-产物由浏览器按 ES 模块 `import` 加载,所以加载过程受模块脚本的跨源规则约束:
+安装阶段由引擎用 `fetch` 取产物字节,所以取件过程受普通的跨源请求规则约束:
 
 | 部署形态 | 托管方要求 | 结果 |
 |:---:|:---:|:---:|
-| 与页面同源 | 无需额外响应头 | 正常加载 |
-| 与页面跨源 | 响应必须带 `Access-Control-Allow-Origin`,值为 `*` 或页面来源 | 缺该头时加载被拒绝 |
+| 与页面同源 | 无需额外响应头 | 正常取件 |
+| 与页面跨源 | 响应必须带 `Access-Control-Allow-Origin`,值为 `*` 或页面来源 | 缺该头时取件被拒绝 |
 
-模块导入默认不携带凭证,所以 `Access-Control-Allow-Origin: *` 即可满足要求,不需要 `Access-Control-Allow-Credentials`。产物自行拆出的 chunk 与它引用的资源按同样的规则加载,跨源时也要带上该响应头,或者与入口放在同一个源下。
+取件默认不携带凭证,所以 `Access-Control-Allow-Origin: *` 即可满足要求,不需要 `Access-Control-Allow-Credentials`。产物必须是单文件:安装时取的字节按文本存进安装记录,安装与启动都用 Blob 地址导入,导入的基址不是产物地址,相对路径的模块与资源导入无法解析;需要外部资源时在代码里用绝对地址自行请求。
 
-不满足时表现为安装失败:引擎把 `import` 抛出的错误写入 `engineLogs()`,安装结果为 `load-failed`,界面提示插件产物加载失败。`import()` 被拒绝时给出的错误文本不含 CORS 细节,具体原因只在浏览器控制台可见。
+不满足时表现为安装失败:字节取不到,安装结果为 `artifact-unreachable`,界面提示插件产物地址请求不到;原始错误写入 `engineLogs()`,具体原因只在浏览器控制台可见。
 
 ## 产物签名
 
@@ -193,7 +193,9 @@
 | 能力或贡献点未知 | 安装拒绝,原因 `unknown-capability` 或 `unknown-contribution` |
 | 版本不兼容 | 安装拒绝,原因 `incompatible-version` |
 | 重名、缺依赖、冲突 | 安装拒绝,原因 `duplicate`、`missing-dependency`、`conflict` |
-| 产物无法加载或导出不符 | 安装拒绝,原因 `load-failed` 或 `invalid-plugin` |
+| 产物字节取不到(网络失败、跨源缺 `Access-Control-Allow-Origin`) | 安装拒绝,原因 `artifact-unreachable` |
+| 产物不是可存的 UTF-8 文本 | 安装拒绝,原因 `load-failed` |
+| 产物无法导入或导出不符 | 安装拒绝,原因 `load-failed` 或 `invalid-plugin` |
 | 产物未导出清单且未传入清单 | 安装拒绝,原因 `invalid-manifest`,并提示 `pluginManifestMissing` |
 | 离线包扩展名不是 `.zip` 或 `.tgz` | 预检拒绝,原因 `unsupported-package` |
 | 离线包无法解压,或 `plugin.js` 不是合法文本 | 预检拒绝,原因 `corrupt-package` |

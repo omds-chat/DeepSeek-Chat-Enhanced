@@ -132,7 +132,7 @@ export const activate = (context) => {
 两点补充:
 
 - 面板与 `installFromUrl(url, manifest?)` 共用同一地址判定,所以本地 `http://localhost` 地址可以直接从面板安装;分发给用户时仍应使用 `https` 地址。
-- 产物改动后需要先在面板卸载再重新安装;同一地址的模块会被浏览器缓存,必要时更换文件名或地址。
+- 产物改动后需要先在面板卸载再重新安装;取件带 `cache: 'no-store'`,若托管方对产物另设了长时间缓存,必要时更换文件名或地址。
 
 ## 发布成单个 js 产物
 
@@ -141,13 +141,13 @@ export const activate = (context) => {
 | 入口 | 一个 js 文件,浏览器可直接 `import` 的 ESM |
 | 导出 | 保留 `export const manifest` 与 `export const activate` |
 | 依赖 | 第三方依赖内联进产物,不新增运行依赖 |
-| 资源 | 产物引用的样式、字体、图片随入口一起部署,路径相对入口 |
+| 资源 | 样式、字体、图片内联进产物,或在代码里用绝对地址按需请求;相对路径导入在安装后不会生效 |
 | 格式 | 不使用 `require`、Node 内置模块与打包器专用运行时 |
 
 打包时注意:
 
 - 把入口配置为 ESM 库,保留 `manifest` 与 `activate` 两个导出,不要产出仅供应用使用的 HTML 入口。
-- 若必须拆分代码,被拆出的 chunk 与资源要一起部署,入口地址保持稳定。
+- 产物必须单文件:安装后代码按文本存进浏览器本地,加载时用的是 Blob 地址,拆分出来的 chunk 与相对路径资源无法解析。
 - 构建完成后在浏览器控制台直接 `import('https://example.com/dsc-demo-log.js')` 一次,确认没有语法错误与缺失依赖。
 
 ## 打包成离线包
@@ -193,10 +193,10 @@ npm 包的要点:
 
 - 通过地址安装成功后插件自动激活;安装记录写入浏览器本地,下次打开页面时自动恢复。
 - 从本地安装的插件把代码文本一并存进安装记录,下次打开页面时用保存的代码恢复,不再读取离线包;离线包只需保留用于重装。
-- 产物地址失效时,恢复失败只把该插件标记为 `failed`,不影响其他插件与页面渲染。
+- 启动恢复只用安装时保存的代码,不再访问产物地址;单个插件恢复失败只把它标记为 `failed`,不影响其他插件与页面渲染。
 - 市场索引的结构与收录要求由插件市场侧维护,产物仍须导出 `manifest`,或由索引条目内联清单。
 - 卸载不会清除该插件的本地数据,`context.storage` 写入的内容在卸载后仍然保留;需要清理时由用户在设置的数据管理中执行。
-- 产物按 ES 模块从地址加载,托管方必须允许跨源导入:与页面同源时不需要额外配置;跨源时响应必须带 `Access-Control-Allow-Origin`,否则安装失败。
+- 安装时引擎用 `fetch` 取产物字节,托管方必须允许跨源取件:与页面同源时不需要额外配置;跨源时响应必须带 `Access-Control-Allow-Origin`,否则安装失败。
 - 常见静态托管的默认行为:GitHub Pages 对资源返回 `Access-Control-Allow-Origin: *`,一般可以直接跨源加载;对象存储与多数 CDN 通常默认不返回该头,需要在存储桶或 CDN 侧配置 CORS 规则;不确定时用 `curl -I <产物地址>` 查看响应头里有没有 `Access-Control-Allow-Origin`。
 
 ## 常见错误与排查
@@ -212,8 +212,8 @@ npm 包的要点:
 | `duplicate` | 同 id 插件已存在 | 先卸载旧插件再安装 |
 | `missing-dependency` | `dependencies` 中的插件未安装 | 先安装依赖 |
 | `conflict` | `conflicts` 中的插件已安装 | 先卸载冲突插件 |
-| `load-failed` | 地址协议不支持、网络失败或加载超过 10 秒 | 检查地址与网络 |
-| `load-failed`(跨源托管) | 产物与页面不同源,响应里没有 `Access-Control-Allow-Origin`,浏览器拒绝导入模块 | 在托管侧配置 CORS;或把产物放到与页面同源的地址 |
+| `artifact-unreachable` | 产物字节取不到:网络失败,或跨源托管缺少 `Access-Control-Allow-Origin` | 检查地址、网络与托管侧的 CORS 配置 |
+| `load-failed` | 地址协议不支持、产物不是可存的 UTF-8 文本,或导入超过 10 秒 | 检查地址与产物格式 |
 | `invalid-plugin` | 产物没有导出 `activate`,或导出形态不被识别 | 检查导出形态 |
 | `missing-meta` / `missing-plugin` | 离线包根目录不是 `dist/` 的内容,或 npm 包里没有 `dist/` | 按打包要求重新生成离线包 |
 | `invalid-meta` | `meta.json` 缺少 `name`、`version`、`author`,或版本号不是三段数字 | 修正 `meta.json` |

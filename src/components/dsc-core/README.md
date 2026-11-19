@@ -1,6 +1,6 @@
 # dsc-core
 
-`dsc-core` 是 DeepSeek-Chat-Enhanced(下称 dsc)内核的逻辑归属与唯一出口。它不物理搬迁既有文件,而是用薄门面把内核能力收敛成少量内部接口,只交给 `dsc-plugin-engine` 使用。
+`dsc-core` 是 DeepSeek-Chat-Enhanced 内核的逻辑归属与唯一出口。它不物理搬迁既有文件,而是用薄门面把内核能力收敛成少量内部接口,只交给 `dsc-plugin-engine` 使用。
 
 ## 归属边界
 
@@ -20,7 +20,7 @@
 | `src/utils/`、`src/brand.ts` | 工具函数、品牌常量 | 禁止 |
 | `src/main.tsx`、`src/app/App.tsx`、`rspack.config.ts` | 入口与构建 | 禁止 |
 
-不物理搬迁的理由：rspack 入口固定为 `./src/main.tsx`,全仓 200 余文件使用相对导入与 CSS Modules,搬迁会破坏导入路径、样式引用与产物路径。
+不物理搬迁的理由：rspack 入口固定为 `./src/main.tsx`,全仓普遍使用相对导入与 CSS Modules,搬迁会破坏导入路径、样式引用与产物路径。
 
 ## 目录结构
 

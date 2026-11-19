@@ -1,6 +1,6 @@
 # dsc-plugin-engine
 
-`dsc-plugin-engine` 是 dsc 的内置组件,模仿 DeepSeekRuntime(下称 dsh)的插件机制做浏览器内最小实现。它向 `dsc-core` 申请内部接口,再封装成受限能力对象交给插件。
+`dsc-plugin-engine` 是 DeepSeek-Chat-Enhanced 的内置组件,模仿 DeepSeekRuntime(下称 dsh)的插件机制做浏览器内最小实现。它向 `dsc-core` 申请内部接口,再封装成受限能力对象交给插件。
 
 ## 目录结构
 

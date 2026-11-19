@@ -51,14 +51,14 @@ Note that we only provide the creation, display, and distribution of **static we
 
 ## Plugin panel
 
-The plugin panel is where plugins are managed inside the app. Open it with the Plugins button at the bottom of the sidebar; when the sidebar is collapsed, the entry is the plugin icon in the top-left button group.
+The plugin panel is where plugins are managed inside the app, and it takes over the main area: click the Plugins button at the bottom of the sidebar to switch to the plugin page, then click that button again, click any conversation, or click New chat to return to the chat; when the sidebar is collapsed, the entry is the plugin icon in the top-left button group.
 
 | Tab | Purpose |
 |:---:|:---:|
 | Installed | Lists each plugin's name, version, state, and source, and provides enable, disable, uninstall, and log viewing |
 | Plugin market | Reads the plugin index and lists installable plugins, and can refresh the index or install directly |
 
-The bottom of the panel provides two install entries: Install from URL takes the `https` address of a plugin artifact and reads the manifest from the `manifest` export bundled with the artifact; Install from file takes an offline package and shows its name, version, author, and signature state for confirmation before installing.
+The bottom of the Installed tab provides two install entries: Install from URL takes the `https` address of a plugin artifact and reads the manifest from the `manifest` export bundled with the artifact; Install from file takes an offline package and shows its name, version, author, and signature state for confirmation before installing.
 
 Install records and enable states are stored in browser storage and restored the next time the page loads. A plugin from an online source shows Update available when a newer version exists, and can be updated from the panel.
 
@@ -80,6 +80,23 @@ Plugin sources follow a certificate-based signature scheme: each source holds a 
 A source's trustworthiness is proven by the certificate chain, and the plugin market, the plugin panel, and the web runtime all verify the same certificates, with no separate collection trust signature. When verification fails you only get a warning: the install or the page still works, so decide for yourself whether to continue.
 
 See [trust chain and PKI signatures](docs/user/develop/basic/trust-chain.md) for the signing tools, revocation, and private key boundaries.
+
+
+## Certificate and trust data
+
+The `certs/` directory is the single source of public certificates and public keys:
+
+```
+certs/
+├── dsce/            # material used by dsc itself: root certificate, page signing certificate, same-origin plugin collection certificate
+├── plugin-set/      # plugin collection registry and the EEC of each collection
+└── schemas/         # JSON Schemas and index notes for the above (see certs/schemas/README.md)
+```
+
+- Private keys are not in this directory: the root private key stays in the organisation's offline signing environment, and EEC private keys stay in each collection's CI secrets.
+- Plugin author public keys belong to each plugin collection and are not placed here.
+- Trust data for the page and for plugins is taken from `certs/` only: CI copies it verbatim into the `online-data` branch, and the published layout matches `certs/`.
+- The build embeds `certs/dsce/root-ca/dsce-root-ca.crt` into the artifact; an offline run cannot fetch the online copy, so the embedded root certificate is what makes offline use possible.
 
 
 ## Building plugins

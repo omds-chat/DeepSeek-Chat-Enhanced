@@ -7,7 +7,7 @@
 | 环节 | 位置 | 说明 |
 |:---:|:---:|:---:|
 | 版本来源 | `rspack.config.ts` | 构建时把 `package.json` 的版本号写入 `index.html` 的 meta 标签 `application-version` |
-| 历史版本留存 | `.github/workflows/pages.yml` | 发布时把产物同时放到站点根与 `version/<tag>/`,旧版本页面按此保留 |
+| 历史版本留存 | `.github/workflows/pages.yml` | 发布时把产物同时放到站点根、`version/latest/` 与 `version/<tag>/`,旧版本页面按此保留 |
 | 状态继承 | `src/services/pageVersion.ts` | 页面加载后执行一次,比对版本并决定提示或更新记录 |
 | 提示界面 | `src/components/base/VersionNotice.tsx` | 应用内飘窗提示,提供刷新、打开旧版本与稍后处理三条路径 |
 
@@ -53,7 +53,7 @@
 
 ## 版本 tag 归一化
 
-meta 内容可能是不带前缀的版本号,例如 `1.0.0`;历史版本目录名带前缀,例如 `dsc-1.0.0`。读取后统一补成 tag 再比较,已是 tag 时原样使用。比较只判断字符串是否相等,既不解析版本号,也不判断新旧。
+构建写入的 meta 内容始终带前缀,例如 `dsc-1.0.0`;储存里较早的记录可能是不带前缀的版本号,例如 `1.0.0`。读取后统一补成 tag 再比较,已是 tag 时原样使用。比较只判断字符串是否相等,既不解析版本号,也不判断新旧。
 
 ## 旧版本地址推导
 

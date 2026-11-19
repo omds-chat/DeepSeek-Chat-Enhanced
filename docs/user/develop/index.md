@@ -1,6 +1,6 @@
 # 开发文档
 
-本文是 dsc 开发文档的索引。
+本文是 DeepSeek-Chat-Enhanced 开发文档的索引。
 
 ```
 docs/user/develop/

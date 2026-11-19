@@ -149,7 +149,7 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 
 ## 换行符
 
-签名基于文件字节,换行符变化会让签名失效。仓库统一 LF,`.gitattributes` 的第一条规则为 `* text=auto eol=lf` 。
+签名基于文件字节,换行符变化会让签名失效。仓库统一 LF,`.gitattributes` 的第一条规则为 `* text=auto eol=lf encoding=UTF-8` 。
 
 ## 排错
 

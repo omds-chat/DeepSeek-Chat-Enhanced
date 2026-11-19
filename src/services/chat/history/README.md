@@ -50,12 +50,14 @@ chat_sessions/{session_id}_files/{file_id}_{file_name}  全部图片原件
 
 ## 模块与 ZIP 支持
 
-| 文件                                                                           | 职责                           |
+| 文件 | 职责 |
 |:---:|:---:|
-| [format.ts](./format.ts)、[schema.ts](./schema.ts)                             | 归档类型与字段校验             |
-| [toLocal.ts](./toLocal.ts)、[toArchive.ts](./toArchive.ts)                     | 归档与本地消息转换             |
-| [importArchive.ts](./importArchive.ts)、[exportArchive.ts](./exportArchive.ts) | 条目读取、暂存与归档组装       |
-| [zipReader.ts](./zipReader.ts)、[zipWriter.ts](./zipWriter.ts)                 | ZIP 读写及路径、大小、CRC 校验 |
-| [../backup.ts](../backup.ts)                                                   | 导入导出入口与串行队列         |
+| [format.ts](./format.ts)、[schema.ts](./schema.ts) | 归档类型与字段校验 |
+| [paths.ts](./paths.ts) | ZIP 条目名与条目路径推导 |
+| [toLocal.ts](./toLocal.ts)、[toArchive.ts](./toArchive.ts) | 归档与本地消息转换 |
+| [importArchive.ts](./importArchive.ts)、[exportArchive.ts](./exportArchive.ts) | 条目读取、暂存与归档组装 |
+| [zipReader.ts](./zipReader.ts)、[zipWriter.ts](./zipWriter.ts) | ZIP 读写及路径、大小、CRC 校验 |
+| [errors.ts](./errors.ts) | 导入导出的失败原因与文案键 |
+| [../backup.ts](../backup.ts) | 导入导出入口与串行队列 |
 
 支持单卷 ZIP32 的 STORE / DEFLATE,导出使用 STORE。ZIP64、加密、分卷及非 UTF-8 的非 ASCII 文件名不支持;条目名统一按 NFC 比较。不另设业务大小上限,但受 ZIP32 容量和浏览器资源限制,导出会生成完整下载 Blob。

@@ -1,7 +1,7 @@
 # DSC 与 DSH 的设计异同
 
-- DSH means: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-- DSC means: [DeepSeek Chat (Enhanced)](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced)
+- DSH 指 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。
+- DSC 指 [DeepSeek-Chat-Enhanced](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced),即 dsc 生态的主线产品。
 
 
 ## 设计理念
