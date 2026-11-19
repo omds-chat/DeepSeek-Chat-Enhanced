@@ -45,8 +45,8 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 > 请保护好你的 API Key,因为它直接保存并暴露在浏览器储存中。<br>
 > 不要轻易启用未知来源的、不受用户本人信任的任何插件,以防止你的 API Key 、会话内容发生泄露造成不必要的损失。<br>
 > 由 [omdsc-dev/dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) 提供的插件不会试图泄露你的凭证和数据。<br>
-> 由 [OMDSC-Market](https://omdsc-market.com/) 提供的插件可能存在审查遗漏,使用前请先查证其来源和安全性。<br>
-> 如遇恶意插件,你可以 [提交Issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new) 或 [联系 OMDSC-Market](mailto:JularDepick@gmail.com?subject=恶意插件举报) 甚至 [直接联系 omdsc-dev](mailto:JularDepick@gmail.com?subject=恶意插件举报) 进行举报、要求移除。但我们无法挽回你的损失,请及时移除恶意插件并更新您的 API Key 。
+> 由 [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/) 收录的插件可能存在审查遗漏,使用前请先查证其来源和安全性。<br>
+> 如遇恶意插件,你可以 [提交Issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new) 或 [联系 awesome-dsc-plugin](mailto:JularDepick@gmail.com?subject=恶意插件举报) 甚至 [直接联系 omdsc-dev](mailto:JularDepick@gmail.com?subject=恶意插件举报) 进行举报、要求移除。但我们无法挽回你的损失,请及时移除恶意插件并更新您的 API Key 。
 
 
 ## 插件面板
@@ -67,7 +67,7 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 ## 插件市场
 
-插件市场在线查看列表请访问 [OMDSC-Market](https://omdsc-market.com/zh-CN/) 。
+插件市场在线查看列表请访问 [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/) 。
 
 同源插件列表在线查看请访问 [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) 。
 

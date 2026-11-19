@@ -45,8 +45,8 @@ Note that we only provide the creation, display, and distribution of **static we
 > Protect your API key, because it is stored and exposed directly in browser storage.<br>
 > Do not enable any plugin of unknown or untrusted origin, to prevent your API key and conversation content from leaking.<br>
 > Plugins provided by [omdsc-dev/dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) will not attempt to leak your credentials or data.<br>
-> Plugins provided by [OMDSC-Market](https://omdsc-market.com/) may have review omissions; verify their origin and safety before use.<br>
-> If you encounter a malicious plugin, you can [submit an issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new), [contact OMDSC-Market](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report), or even [contact omdsc-dev directly](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report) to report it and request removal. But we cannot recover your losses; remove the malicious plugin promptly and update your API key.
+> Plugins listed by [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/) may have review omissions; verify their origin and safety before use.<br>
+> If you encounter a malicious plugin, you can [submit an issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new), [contact awesome-dsc-plugin](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report), or even [contact omdsc-dev directly](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report) to report it and request removal. But we cannot recover your losses; remove the malicious plugin promptly and update your API key.
 
 
 ## Plugin panel
@@ -67,7 +67,7 @@ For end-user instructions, see the [plugin user guide](docs/user/guide/plugins.m
 
 ## Plugin market
 
-To view the plugin list online, visit [OMDSC-Market](https://omdsc-market.com/en-US/).
+To view the plugin list online, visit [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/).
 
 To view the same-origin plugin list online, visit [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/).
 
