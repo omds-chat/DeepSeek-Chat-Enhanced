@@ -15,12 +15,12 @@ const MANIFEST_FILE = 'web_files.json'
 const SIGNATURE_SUFFIX = '.sig'
 /** 清单结构版本 */
 const SCHEMA_VERSION = 1
-/** online-data 上的信任清单路径，用于取吊销列表 */
+/** online-data 上的信任清单路径，位于 online-data 根目录，用于取吊销列表 */
 const INDEX_FILE = 'index.json'
-/** online-data 上的根证书路径 */
-const ROOT_CA_PATH = 'root_ca.crt'
+/** online-data 上的根证书路径；与构建内嵌的同一份证书，仅用于比对 */
+const ROOT_CA_PATH = 'certs/dsce/root-ca/dsce-root-ca.crt'
 /** online-data 上的网页 EEC 证书路径 */
-const EEC_PATH = 'web/eec.pem'
+const EEC_PATH = 'certs/dsce/dsce-pages/dsce-pages-eec.crt'
 /** 并行校验文件的上限 */
 const CONCURRENCY = 6
 /** 提示文案中最多列出的文件名数量 */
@@ -146,14 +146,16 @@ export const verifyWebIntegrity = async (): Promise<void> => {
     warnChain()
     return
   }
-  // 根证书以构建时内嵌的信任锚为准：online-data 的 root_ca.crt 只用于比对，不一致时提示并以内置的为准
+  // 根证书以构建时内嵌的信任锚为准：online-data 的同名证书只用于比对，不一致时提示并以内置的为准
   const publishedRoot = await fetchFromMirrors(ROOT_CA_PATH)
   if (!publishedRoot) {
-    logRootCa('online-data 缺少 root_ca.crt，按构建内嵌的根证书校验')
+    logRootCa('online-data 缺少 ' + ROOT_CA_PATH + '，按构建内嵌的根证书校验')
   } else {
     const publishedDer = pemToDer(new TextDecoder().decode(publishedRoot), 'CERTIFICATE')
     if (!publishedDer || !derEquals(anchorDer, publishedDer)) {
-      logRootCa('online-data 的 root_ca.crt 与构建内嵌的根证书不一致，按构建内嵌的根证书校验')
+      logRootCa(
+        'online-data 的 ' + ROOT_CA_PATH + ' 与构建内嵌的根证书不一致，按构建内嵌的根证书校验'
+      )
     }
   }
   // 网页 EEC 证书必须由根证书签发

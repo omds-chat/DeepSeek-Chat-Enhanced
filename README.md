@@ -82,6 +82,22 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 签发工具、重签时机、吊销与私钥边界见 [信任链与 PKI 签名](docs/user/develop/basic/trust-chain.md) 。
 
 
+## 证书与信任数据
+
+`certs/` 目录是公开证书与公钥的唯一来源:
+
+```
+certs/
+├── dsce/            # dsc 自用材料: 根证书、网页签名证书、同源插件合集证书
+├── plugin-set/      # 插件合集登记清单与各合集的 EEC
+└── schemas/         # 上述 JSON 的 Schema 与索引说明(见 certs/schemas/README.md)
+```
+
+- 私钥不在此目录: 根私钥只在组织离线签名环境,EEC 私钥只在各合集的 CI secrets。
+- 插件作者公钥属于各插件合集自身,不放进这里。
+- 网页与插件的信任数据只从 `certs/` 取: CI 把它原样放进 `online-data` 分支,发布结构与 `certs/` 保持一致。
+- 构建时把 `certs/dsce/root-ca/dsce-root-ca.crt` 内嵌进产物;离线运行拉不到在线副本,内嵌的根证书是离线可用的前提。
+
 ## 制作插件
 
 每一个dsc插件在 **开发阶段** 都是一个独立的项目,你可以用 **任何编程语言** 编写插件的逻辑,只需要保证 **构建的运行时产物** 符合 [**dsc插件产物规范**](docs/user/develop/basic/plugin-product-spec.md) 即可保证插件的识别和运行。

@@ -1,6 +1,8 @@
 # 信任链与 PKI 签名
 
-本文说明 dsc 的签名体系如何按 OpenSSL PKI 组织: 三个角色各持有什么、证书与签名产物是什么、吊销怎么做、信任数据如何分发,。内容与 `scripts/pki/ca.mjs`、`scripts/pki/pki.mjs`、`scripts/build-online-data.mjs` 的当前实现一致,未实现的能力不写入本文。
+本文说明 dsc 的签名体系如何按 OpenSSL PKI 组织: 三个角色各持有什么、证书与签名产物是什么、吊销怎么做、信任数据如何分发。内容与 `scripts/pki/ca.mjs`、`scripts/pki/pki.mjs`、`rspack.config.ts` 与 `src/services/` 下的证书校验模块一致,未实现的能力不写入本文。
+
+公开证书与公钥统一放在 `main` 分支的 `certs` 目录,该目录是它们的唯一来源,私钥不进入该目录。运行时看到的在线证书由 CI 把 `certs` 目录原样放进 `online-data` 分支得到,因此在线路径都是 `certs/...` 形式。
 
 ## 角色
 
@@ -119,20 +121,20 @@ L3 不覆盖 `plugin.js`:产物由每版本的 `plugin.js.sig` 独立签名,清�
 ```
 # 清单签名: 与文件签名同一口径,内容为 manifest.json 的字节
 openssl cms -verify -binary -inform DER -in manifest.json.sig -content manifest.json \
-  -CAfile root_ca.crt -certfile eec.pem
+  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile eec.pem
 
 # 文件哈希
 openssl dgst -sha512 -r <文件>
 
 # 合集签名: 根证书作为信任锚,EEC 证书作为候选签名者
 openssl cms -verify -binary -inform DER -in <文件>.sig -content <文件> \
-  -CAfile root_ca.crt -certfile eec.pem
+  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile eec.pem
 
 # 作者签名
 openssl pkeyutl -verify -pubin -inkey author_pub.pem -rawin -in <文件> -sigfile <文件>.author.sig
 
 # 证书链
-openssl verify -CAfile root_ca.crt eec.pem
+openssl verify -CAfile certs/dsce/root-ca/dsce-root-ca.crt eec.pem
 ```
 
 整目录校验用 `verify-web` 子命令: 先校验证书链,再逐个校验 `.sig`,缺失签名与孤儿签名都计入失败清单,有任何失败时以非零状态退出。
@@ -141,16 +143,18 @@ openssl verify -CAfile root_ca.crt eec.pem
 
 ### 运行时验签的证书来源
 
-验签证书的来源不再是必要条件,信任锚才是。根 CA 在构建时注入产物(`__ROOT_CA_PEM__`,由 `rspack.config.ts` 读取 `ROOT_CA_CERT` 写入),证书字节从哪里来并不重要:
+验签证书的来源不再是必要条件,信任锚才是。根 CA 在构建时内嵌进产物(`__ROOT_CA_PEM__`,由 `rspack.config.ts` 读取 `certs/dsce/root-ca/dsce-root-ca.crt` 写入),证书字节从哪里来并不重要:
 
 | 证书来源 | 取用条件 |
 |:---:|:---:|
-| online-data 信任清单登记的 `eec.pem` | 清单已登记该来源时优先使用,省一次请求 |
+| 信任清单登记的合集 `eec`,形如 `certs/plugin-set/<合集 id>/<合集 id>-eec.crt` | 清单已登记该来源时优先使用,省一次请求 |
 | 来源站点自带的 `<base>/eec.pem` | 清单未登记该来源时使用 |
 
 两条路径的证书都必须先在本机用内置根 CA 校验证书链,链校验通过才会交给 CMS 验签;链校验不通过时结论为 `failed`,并且不会发起 CMS 验签。吊销检查使用信任清单分发的 CRL,CRL 本身也用同一张根证书校验。
 
-根证书以内置的为准: online-data 的 `root_ca.crt` 只用于比对,与内置根证书不一致时仍按内置根证书校验,并在控制台留一条提示。
+根证书内嵌是离线运行的前提: 离线时拉不到任何在线副本,没有内嵌根证书就无法校验证书链,因此 `certs/dsce/root-ca/dsce-root-ca.crt` 缺失时构建直接失败。在线那份同名证书只作便利与比对,与内嵌证书不一致时仍按内置根证书校验,并在控制台留一条提示。
+
+网页签名的终端证书同样按 `certs` 布局取用: 在线路径为 `certs/dsce/dsce-pages/dsce-pages-eec.crt`。
 
 安装记录与启动恢复按同一口径给出来源结论:
 
@@ -228,42 +232,45 @@ CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字�
 
 ### online-data 分支
 
-`online-data` 是与 `main` 没有公共祖先的孤立分支,只存放网页在运行时拉取并核对的信任数据。
+`online-data` 是与 `main` 没有公共祖先的孤立分支,只存放网页与插件引擎在运行时拉取并核对的信任数据。CI 把 `main` 分支的 `certs` 目录原样放进该分支,目录结构与 `certs` 完全一致;`index.json` 与 `crl.pem` 位于分支根目录。
 
 ```
 online-data/
-├── index.json          # 信任清单
-├── root_ca.crt         # 根证书
-├── crl.pem             # 吊销列表(可选,生成后才有)
-├── web/
-│   └── eec.pem         # 网页签名的终端签名证书
-└── collections/
-    └── <合集名>/
-        └── eec.pem     # 该合集的终端签名证书
+├── index.json                              # 信任清单
+├── crl.pem                                 # 吊销列表(可选,生成后才有)
+└── certs/                                  # 与 main 分支的 certs 目录逐字节一致
+    ├── dsce/
+    │   ├── root-ca/
+    │   │   └── dsce-root-ca.crt            # 根证书,与构建内嵌的是同一份
+    │   ├── dsce-pages/
+    │   │   └── dsce-pages-eec.crt          # 网页签名的终端签名证书
+    │   └── dsc-inner-plugin/
+    │       └── dsc-inner-plugin-eec.crt
+    ├── plugin-set/
+    │   ├── manifest.json                   # 合集证书登记清单
+    │   └── <合集名>/
+    │       └── <合集名>-eec.crt            # 该合集的终端签名证书
+    └── schemas/
 ```
 
-`index.json` 的结构:
+`index.json` 的结构(路径均相对 online-data 根目录):
 
 ```json
 {
   "schemaVersion": 2,
-  "rootCa": "root_ca.crt",
+  "rootCa": "certs/dsce/root-ca/dsce-root-ca.crt",
   "crl": "crl.pem",
   "collections": [
-    { "id": "<合集名>", "eec": "collections/<合集名>/eec.pem" }
+    { "id": "<合集名>", "eec": "certs/plugin-set/<合集名>/<合集名>-eec.crt" }
   ]
 }
 ```
 
-没有 CRL 时 `crl` 为 `null`。
+没有 CRL 时 `crl` 为 `null`。清单结构由 [certs/schemas/trust-index.schema.json](../../../../certs/schemas/trust-index.schema.json) 约束,合集登记清单由 [certs/schemas/plugin-set-manifest.schema.json](../../../../certs/schemas/plugin-set-manifest.schema.json) 约束。
 
-生成命令在 `main` 工作树上执行,输出目录属于生成物目录:
+代码里只硬编码 `index.json` 的位置(online-data 根目录),根证书与各合集 EEC 的路径一律取自 `index.json`,不另写一套。
 
-```
-pnpm run build:online-data -- --root-ca root_ca.crt --web-eec web-eec.pem --eec awesome-dsc-plugin=../awesome-dsc-plugin/eec.pem --out <输出目录>
-```
-
-脚本写盘前用 `openssl verify` 确认每张 EEC 确实由该根证书签发,并检查 EEC 带 `digitalSignature`、不是 CA、未过期;任一项不通过就不写出任何文件。给出 `--crl` 时还会校验 CRL 确实由该根证书签发。
+`certs` 目录由 CI 整体复制,`index.json` 与 `crl.pem` 由同一流程写出;旧的 `pnpm run build:online-data` 写的是切分结构(`root_ca.crt`、`collections/<合集名>/eec.pem`、`web/eec.pem`),与 `certs` 布局不一致,发布流水线不再使用它。
 
 ### 插件合集
 
@@ -319,7 +326,7 @@ dist/
 | `verify-web` | 用根证书与目录内的 `eec.pem` 校验全部签名 | `--dir`、`--root-ca`、`--eec`、`--crl` |
 | `gen-crl` | 生成 CRL | `--out`、`--days`、`--revoke` |
 
-`issue-eec` 与 `gen-crl` 从环境变量 `ROOT_CA_SECRET`、`ROOT_CA_CERT` 读取根私钥与根证书路径。
+`issue-eec` 与 `gen-crl` 从环境变量 `ROOT_CA_SECRET`、`ROOT_CA_CERT` 读取根私钥与根证书路径;这两个变量只属于签发工具,与构建无关,构建内嵌根证书直接读 `certs/dsce/root-ca/dsce-root-ca.crt`。
 
 ## 私钥边界
 
@@ -327,8 +334,8 @@ dist/
 |:---:|:---:|:---:|
 | 根私钥 | 组织离线签名环境 | 仓库任何被追踪的路径、CI secrets 之外的任何位置、产物 |
 | EEC 私钥 | 合集 CI 的 secrets | 公开仓库文件、Pages 产物 |
-| 根证书 | 仓库、online-data 分支、产物 | 无需保密 |
-| EEC 证书 `eec.pem` | 合集根目录、online-data 分支、网页产物目录 | 无需保密 |
+| 根证书 | `certs/dsce/root-ca/`、online-data 分支、产物 | 无需保密 |
+| EEC 证书 | `certs/plugin-set/<合集名>/`、`certs/dsce/dsce-pages/`、`certs/dsce/dsc-inner-plugin/`、合集根目录、online-data 分支、网页产物目录 | 无需保密 |
 | 作者私钥 | 作者本机 | 合集仓库、产物 |
 
 根 CA 只签发 EEC,不参与日常签名;合集 CI 只用 EEC 私钥签文件,不接触根私钥。
@@ -340,7 +347,7 @@ dist/
 | 项 | 实现方式 |
 |:---:|:---:|
 | 网页产物签名 | `sign-web` 子命令产出 `<文件>.sig` 与 `web_files.json` 清单 |
-| 运行时校验 | 页面用内嵌根证书与 `web/eec.pem` 的证书链校验全部签名 |
+| 运行时校验 | 页面用内嵌根证书与 `certs/dsce/dsce-pages/dsce-pages-eec.crt` 的证书链校验全部签名 |
 | 合集信任 | 引擎用内置根证书校验来源证书链,清单登记的 EEC 只是优先取用的来源 |
 | 吊销检查 | `index.json` 登记 `crl` 时,网页 EEC 与合集 EEC 都按 CRL 检查吊销 |
 
@@ -355,7 +362,7 @@ dist/
 | `verify-web` 报某个文件 CMS 校验失败 | 该文件在签名后被改动过,或签名不是对当前字节生成的 |
 | `verify-web` 报 `certificate revoked` | EEC 已被 `gen-crl` 吊销 |
 | `build:online-data` 报 EEC 不是由该根证书签发 | 传入的 `eec.pem` 与 `--root-ca` 不配对 |
-| 网页运行时提示证书链校验未通过 | online-data 缺少 `web/eec.pem`,或该证书不是当前根证书签发的 |
+| 网页运行时提示证书链校验未通过 | online-data 缺少 `certs/dsce/dsce-pages/dsce-pages-eec.crt`,或该证书不是当前根证书签发的 |
 | 市场提示「证书已被吊销」 | 该合集的 EEC 序列号已写进 `crl.pem`,需要签发新 EEC 并重新生成 CRL,`--revoke` 只列仍需吊销的序列号 |
 | 市场把整份清单判为不可信 | `crl.pem` 拉取失败、已过期、不是当前根证书签发的,或根证书 `keyUsage` 缺 `cRLSign` |
 | 已安装插件显示「来源证书校验未通过」 | 来源提供的 `eec.pem` 不是由内置根证书签发,或已过期、已被吊销;需要来源换发证书 |
@@ -363,6 +370,7 @@ dist/
 | 市场显示「目录数据未校验」但插件仍可安装 | L1 或 L3 清单缺失、验签失败、哈希不一致,属预期的降级;产物仍由 `plugin.js.sig` 单独验证 |
 | 市场提示某层清单 revision 回退 | 该层清单的 `revision` 小于本机记录值,来源可能被回滚或替换;只提示,不阻断 |
 | `init-root` 报不得写入仓库被追踪的路径 | 根私钥只能写到仓库外的目录或 git 忽略的临时目录 |
+| 构建报缺少内嵌根证书 | `certs/dsce/root-ca/dsce-root-ca.crt` 不在工作树里;离线运行必须有内嵌根证书,该文件随仓库提供 |
 
 ## 延伸阅读
 

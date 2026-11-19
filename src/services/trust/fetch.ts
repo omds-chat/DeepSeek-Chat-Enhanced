@@ -12,7 +12,11 @@ export const TRUST_MIRRORS: readonly string[] = [
 export const REQUEST_TIMEOUT = 1000
 /** 合集并发校验上限 */
 const CONCURRENCY = 4
-/** 信任清单文件名；与 online-data 分支一致 */
+/**
+ * 信任清单文件名；固定位于 online-data 根目录。
+ * 根证书与各合集 EEC 的路径不在这里硬编码，一律采用清单里登记的相对路径，
+ * 清单按 certs 目录结构给出 certs/dsce/root-ca/... 与 certs/plugin-set/<合集 id>/<合集 id>-eec.crt。
+ */
 const INDEX_FILE = 'index.json'
 /** 信任清单结构版本 */
 const SCHEMA_VERSION = 2
@@ -200,12 +204,14 @@ export const fetchTrustListFrom = async (
   if (rootText === null || rootText.trim() === '') {
     return null
   }
-  // 根证书以构建时内嵌的信任锚为准：清单里的 root_ca.crt 只用于比对，
+  // 根证书以构建时内嵌的信任锚为准：清单登记的那份只用于比对，
   // 不一致时仍用内置根证书校验各合集证书，只把比对结果记下来
   const rootMatched = normalizePem(rootText) === normalizePem(embeddedRootPem)
   if (!rootMatched) {
     // eslint-disable-next-line no-console
-    console.warn('[trust] online-data 的 root_ca.crt 与构建内嵌的根证书不一致，按构建内嵌的根证书校验')
+    console.warn(
+      '[trust] online-data 的 ' + index.rootCa + ' 与构建内嵌的根证书不一致，按构建内嵌的根证书校验'
+    )
   }
   const { ensurePkijsEngine, isRevoked, parseCertificate, parseCrl, verifyCertificateChain, verifyCrl } =
     await import('../integrity/x509.js')

@@ -8,7 +8,7 @@ declare module '*.css' {}
 /** 公开 API 的地址，见 rspack.config.ts 的 createConfig */
 declare const __API_ORIGIN__: string
 
-/** 网页签名校验用的根证书（PEM），由构建时的 ROOT_CA_CERT 注入；未配置时为空串 */
+/** 网页签名校验用的根证书（PEM），构建时从 certs/dsce/root-ca/dsce-root-ca.crt 注入；为空串时运行时不校验 */
 declare const __ROOT_CA_PEM__: string
 
 /** Prism 语言包通过副作用注册到全局 Prism */

@@ -16,19 +16,27 @@ const cssLoader = {
 }
 
 /**
- * 读取根证书 PEM：ROOT_CA_CERT 可以是 PEM 文本，也可以是证书文件路径。
- * 未配置时返回空串，构建照常完成，运行时不执行网页校验。
+ * 内嵌到产物的根证书路径，相对仓库根目录。
+ * 离线运行拉不到在线副本，根证书必须随构建内嵌，因此只认 certs 目录里的这一份。
+ */
+const EMBEDDED_ROOT_CA_PATH = 'certs/dsce/root-ca/dsce-root-ca.crt'
+
+/**
+ * 读取内嵌根证书 PEM。
+ * 文件缺失或不是 PEM 证书时直接让构建失败：产物缺少信任锚就无法做网页校验。
  */
 const readRootCaPem = (): string => {
-  const value = process.env.ROOT_CA_CERT
-  if (!value || value.trim() === '') {
-    return ''
+  const certPath = path.resolve(root, EMBEDDED_ROOT_CA_PATH)
+  let text: string
+  try {
+    text = readFileSync(certPath, 'utf8')
+  } catch {
+    throw new Error(
+      '缺少内嵌根证书 ' + EMBEDDED_ROOT_CA_PATH + '：离线运行无法拉取在线副本，该文件必须随仓库提供'
+    )
   }
-  const text = value.includes('-----BEGIN CERTIFICATE-----')
-    ? value
-    : readFileSync(path.resolve(root, value.trim()), 'utf8')
   if (!text.includes('-----BEGIN CERTIFICATE-----')) {
-    throw new Error('ROOT_CA_CERT 既不是 PEM 证书文本，也不是可读的证书文件路径')
+    throw new Error('内嵌根证书 ' + EMBEDDED_ROOT_CA_PATH + ' 不是 PEM 证书')
   }
   return text.trim() + '\n'
 }
@@ -40,7 +48,7 @@ type ConfigOptions = {
   devServer?: Configuration['devServer']
   /** 开发模式标记；缺省按 NODE_ENV 判断 */
   dev?: boolean
-  /** 内嵌到产物的根证书 PEM，注入为 __ROOT_CA_PEM__；缺省读环境变量 ROOT_CA_CERT */
+  /** 内嵌到产物的根证书 PEM，注入为 __ROOT_CA_PEM__；缺省读 certs/dsce/root-ca/dsce-root-ca.crt */
   rootCaPem?: string
 }
 
@@ -115,7 +123,7 @@ export const createConfig = ({
     }),
     new rspack.DefinePlugin({
       __API_ORIGIN__: JSON.stringify(apiOrigin),
-      // 网页签名校验用的根证书；为空时运行时不校验
+      // 网页签名校验用的根证书；只有显式传入空串时运行时不校验
       __ROOT_CA_PEM__: JSON.stringify(rootCaPem),
     }),
     new rspack.CopyRspackPlugin({

@@ -97,7 +97,7 @@ dsc-market/
 
 安装计划同时给出两个证书来源: 清单已登记时带 `eec`(优先使用,省一次请求),任何在线来源都带 `eecUrl` 即 `<base_url>/eec.pem`。两种证书都必须由引擎先用内置根 CA 校验链,链不通过时结论为 `failed` 且不发起 CMS 验签,安装记录以 `eec_anchored` 记为未通过链校验。市场把运行态的 `trust` 与 `trustFailure` 一并交给引擎,但只用于界面展示来源是否被官方认可,不参与来源结论判定。
 
-信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时注入。信任清单里的 `root_ca.crt` 只用于比对,与内嵌根证书不一致时以构建内置的为准,并在控制台留一条提示。
+信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时从 `certs/dsce/root-ca/dsce-root-ca.crt` 注入。信任清单里的同名根证书(`certs/dsce/root-ca/dsce-root-ca.crt`)只用于比对,与内嵌根证书不一致时以构建内置的为准,并在控制台留一条提示。
 
 ## 版本更新检查
 
