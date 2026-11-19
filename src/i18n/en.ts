@@ -226,7 +226,10 @@ export const en = {
   pluginVerdictFailed: 'Source verification failed',
   pluginVerdictFailedChain: 'Source certificate verification failed',
   pluginVerdictFailedRevoked: 'Source certificate has been revoked',
+  pluginVerdictFailedMissingCert: 'Source certificate is missing',
   pluginVerdictUnknown: 'Source unconfirmed',
+  pluginLegacyInstallHint:
+    'This plugin was installed by an older version; reinstall it to get full source confirmation',
   pluginVerdictLocal: 'Installed locally',
   pluginSignatureInvalid:
     'Plugin {id} failed signature verification; use it only if you accept the risk',
@@ -241,6 +244,7 @@ export const en = {
   pluginActionUninstall: 'Uninstall',
   pluginActionInstall: 'Install',
   pluginActionInstalled: 'Installed',
+  pluginActionReinstall: 'Reinstall',
   pluginActionLogs: 'View logs',
   pluginEmptyInstalled: 'No plugins are installed yet',
   pluginEngineUnavailable: 'The plugin engine is not ready yet',
@@ -337,6 +341,14 @@ export const en = {
   pluginUpdateFailed: 'Plugin {name} failed to update: {reason}',
   pluginUpdateUnavailable: 'Plugin {name} has no usable version information, so it cannot be updated',
   pluginUpdateUnloadFailed: 'Plugin {name} could not be uninstalled before updating',
+  pluginReinstallConfirm: 'Confirm reinstall',
+  pluginReinstallHint:
+    'Reinstalling uninstalls the current record first, then installs the same version again; the plugin data is kept',
+  pluginReinstalled: 'Plugin {name} has been reinstalled',
+  pluginReinstallFailed: 'Plugin {name} failed to reinstall: {reason}',
+  pluginReinstallUnavailable:
+    'Plugin {name} has no usable source information, so it cannot be reinstalled',
+  pluginReinstallUnloadFailed: 'Plugin {name} could not be uninstalled before reinstalling',
   pluginMarketTrustEndorsed: 'Maintained by dsc',
   pluginMarketTrustEndorsedHint: 'This source is maintained by dsc and is safe to use',
   pluginMarketTrustEndorsedChainHint:

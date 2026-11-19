@@ -239,6 +239,10 @@ export type PluginStateView = {
   sourceVerdictReason: SourceVerdictReason
   /** 信任清单给出的来源信任判定；旧记录没有该字段,只用于界面展示是否被官方认可 */
   sourceTrust?: SourceTrustState
+  /** 信任清单给出的失败原因；缺失时界面按通用文案显示 */
+  sourceTrustFailure?: SourceTrustFailure
+  /** 安装记录没有任何一项校验字段,即旧版本安装；界面据此提示重新安装 */
+  verificationMissing?: boolean
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */
   enabled: boolean
   /** 清单声明的依赖插件 id */

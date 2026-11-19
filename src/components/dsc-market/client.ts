@@ -9,7 +9,9 @@ import {
   type ManifestReader,
   type RevisionMemory,
 } from '../../services/integrity/manifest.js'
+import { collectionCertPaths, normalizeCollectionId } from '../../services/trust/collection.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/types.js'
+import { toPluginId } from '../dsc-plugin-engine/pluginId.js'
 import type {
   NetCapability,
   PluginManifest,
@@ -108,6 +110,8 @@ type ResolveOutcome = {
   eecFromTrustList: boolean
   /** 合集 EEC 证书链是否校验通过 */
   chainVerified: boolean
+  /** 合集 id：源站点上证书路径 certs/<合集 id>-eec.crt 要用它 */
+  collectionId: string
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -253,17 +257,8 @@ export const parseVersions = (text: string): VersionList | null => {
   return { latest, versions }
 }
 
-/** 把插件名转成引擎接受的插件 id；@scope/name 取 name 部分 */
-export const toPluginId = (name: string): string | null => {
-  const slash = name.startsWith('@') ? name.indexOf('/') : -1
-  const base = slash >= 0 ? name.slice(slash + 1) : name
-  const id = base
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return /^[a-z][a-z0-9-]*$/.test(id) ? id : null
-}
+/** 插件 id 规则由引擎侧统一给出，市场侧直接复用，两条安装路径得到同一个 id */
+export { toPluginId }
 
 /** 双语文案归一化；缺失的一侧用另一侧补 */
 const readDescription = (value: unknown): LocalizedText => {
@@ -344,6 +339,7 @@ const emptyRuntime = (id: string): SourceRuntime => ({
   eec: null,
   eecFromTrustList: false,
   chainVerified: false,
+  collectionId: '',
   plugins: [],
   fetchedAt: null,
   catalogVerified: false,
@@ -494,16 +490,27 @@ const revisionsOf = (
   ...(l3 === null ? {} : { l3 }),
 })
 
-/** 合集证书：信任清单已登记时优先用它，否则取来源自带的 eec.pem */
+/**
+ * 合集证书：信任清单已登记时优先用它，省一次请求；
+ * 未登记时按 certs/<合集 id>-eec.crt 取，取不到再退回旧的 eec.pem，
+ * 两条都失败时返回空串，由调用方按拿不到证书处理。
+ */
 const resolveCollectionEec = async (
   net: NetCapability,
   baseUrl: string,
-  listed: string | null
+  listed: string | null,
+  collectionId: string
 ): Promise<string> => {
   if (listed !== null && listed !== '') {
     return listed
   }
-  return (await requestText(net, joinUrl(baseUrl, 'eec.pem'))) ?? ''
+  for (const path of collectionCertPaths(collectionId)) {
+    const text = (await requestText(net, joinUrl(baseUrl, path))) ?? ''
+    if (text !== '') {
+      return text
+    }
+  }
+  return ''
 }
 
 /**
@@ -702,6 +709,7 @@ export const createMarketClient = (
         eec: outcome.eec,
         eecFromTrustList: outcome.eecFromTrustList,
         chainVerified: outcome.chainVerified,
+        collectionId: outcome.collectionId,
         plugins: [],
         fetchedAt: null,
         catalogVerified: false,
@@ -711,7 +719,7 @@ export const createMarketClient = (
       })
     }
     const baseUrl = outcome.baseUrl
-    const eec = await resolveCollectionEec(net, baseUrl, outcome.eec)
+    const eec = await resolveCollectionEec(net, baseUrl, outcome.eec, outcome.collectionId)
     const context: LayerContext = {
       net,
       baseUrl,
@@ -761,6 +769,7 @@ export const createMarketClient = (
       eec: outcome.eec,
       eecFromTrustList: outcome.eecFromTrustList,
       chainVerified: outcome.chainVerified,
+      collectionId: outcome.collectionId,
       plugins,
       fetchedAt: Date.now(),
       catalogVerified: context.catalogVerified,
@@ -827,7 +836,9 @@ export const createMarketClient = (
       source.baseUrls.some((baseUrl) => key.startsWith(baseUrl))
     )
     const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
-    const eec = await resolveCollectionEec(net, location.root, runtime?.eec ?? null)
+    // 同址来源已知合集 id 时直接用；未知时按来源名归一化，仍取不到时只试旧布局
+    const collectionId = runtime?.collectionId ?? (owner ? normalizeCollectionId(owner.name) : '')
+    const eec = await resolveCollectionEec(net, location.root, runtime?.eec ?? null, collectionId)
     const context: LayerContext = {
       net,
       baseUrl: location.root,
@@ -913,6 +924,8 @@ export const createMarketClient = (
       source.baseUrls.some((baseUrl) => location.pluginDir.startsWith(baseUrl))
     )
     const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
+    // 合集 id 取自运行态；来源尚未刷新时按来源名归一化
+    const collectionId = runtime?.collectionId ?? (owner ? normalizeCollectionId(owner.name) : '')
     // 目录结论来自本次拉取时的三层清单；没有缓存时按未校验处理
     const conclusions = conclusionsCache.get(location.pluginDir)
     const plan: InstallPlan = {
@@ -923,8 +936,8 @@ export const createMarketClient = (
       sigUrl: paths.sigUrl,
       authorPubUrl: paths.authorPubUrl,
       authorSigUrl: paths.authorSigUrl,
-      // 来源根目录下的合集证书；清单未登记时由引擎取它并先做链校验
-      eecUrl: joinUrl(location.root, 'eec.pem'),
+      // 来源根目录下的合集证书：certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；引擎取到后先做链校验
+      eecUrls: collectionCertPaths(collectionId).map((path) => joinUrl(location.root, path)),
       ...(conclusions ?? { catalogVerified: false, metaVerified: false, revisions: {} }),
     }
     // 与市场安装同一口径：清单已登记时优先用清单证书，两种证书都要过链校验
@@ -1031,20 +1044,24 @@ export const createMarketClient = (
       }
       const pluginPath = 'plugins/' + plugin.author + '/' + plugin.name + '/'
       const versionPath = pluginPath + plugin.latest + '/'
+      const baseUrl = runtime.baseUrl
+      const eecUrls = collectionCertPaths(runtime.collectionId).map((path) =>
+        joinUrl(baseUrl, path)
+      )
       // 目录结论原样交给引擎：L1 覆盖目录数据，L3 覆盖该版本 meta.json，L2 给出作者公钥哈希
       const plan: InstallPlan = {
         ...plugin.conclusions,
-        url: joinUrl(runtime.baseUrl, versionPath + 'plugin.js'),
+        url: joinUrl(baseUrl, versionPath + 'plugin.js'),
         // 数据基址随安装交给引擎入库,后续检查更新直接请求,不必再从 datalog.json 反查
-        dataBase: joinUrl(runtime.baseUrl, versionPath),
-        pluginBase: joinUrl(runtime.baseUrl, pluginPath),
+        dataBase: joinUrl(baseUrl, versionPath),
+        pluginBase: joinUrl(baseUrl, pluginPath),
         sourceType: sourceTypeOf(id),
-        sigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.sig'),
+        sigUrl: joinUrl(baseUrl, versionPath + 'plugin.js.sig'),
         // 作者公钥放在作者目录，与合集分发结构 plugins/<作者>/author_pub.pem 一致
-        authorPubUrl: joinUrl(runtime.baseUrl, 'plugins/' + plugin.author + '/author_pub.pem'),
-        authorSigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.author.sig'),
-        // 来源自带的合集证书；清单未登记时由引擎取它，先做链校验再验签
-        eecUrl: joinUrl(runtime.baseUrl, 'eec.pem'),
+        authorPubUrl: joinUrl(baseUrl, 'plugins/' + plugin.author + '/author_pub.pem'),
+        authorSigUrl: joinUrl(baseUrl, versionPath + 'plugin.js.author.sig'),
+        // 来源自带的合集证书：certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；引擎取到后先做链校验
+        eecUrls,
       }
       // 清单已登记该来源的证书时优先用它，省一次请求；两种证书都要过链校验
       if (runtime.eec !== null) {

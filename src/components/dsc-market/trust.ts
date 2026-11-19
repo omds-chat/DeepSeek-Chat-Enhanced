@@ -1,3 +1,4 @@
+import { collectionIdOf } from '../../services/trust/collection.js'
 import { getCollectionTrust } from '../../services/trust/index.js'
 import type { MarketSource, SourceTrust, TrustFailure } from './types.js'
 
@@ -21,6 +22,8 @@ export type SourceTrustOutcome = {
   eecFromTrustList: boolean
   /** 清单登记的 EEC 证书链是否校验通过；引擎安装时还会用内置根 CA 重做一次 */
   chainVerified: boolean
+  /** 合集 id：清单登记的 id 优先，其次清单登记的目录名，最后用站点名归一化 */
+  collectionId: string
 }
 
 /**
@@ -33,15 +36,17 @@ export type SourceTrustOutcome = {
  */
 export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => {
   const listed = getCollectionTrust(source.id) ?? getCollectionTrust(source.name)
+  const collectionId = collectionIdOf(listed, source.name)
   if (isEndorsedSource(source)) {
     if (!listed) {
-      // 只有 dsc 背书这一层判定；安装时仍由引擎拉取来源自带的 eec.pem 验签
+      // 只有 dsc 背书这一层判定；安装时仍由引擎按 certs/<合集 id>-eec.crt 取证书验签
       return {
         trust: 'endorsed',
         trustFailure: null,
         eec: null,
         eecFromTrustList: false,
         chainVerified: false,
+        collectionId,
       }
     }
     if (listed.trust === 'trusted' && listed.eec !== null) {
@@ -52,6 +57,7 @@ export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => 
         eec: listed.eec,
         eecFromTrustList: true,
         chainVerified: true,
+        collectionId,
       }
     }
     return {
@@ -60,6 +66,7 @@ export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => 
       eec: null,
       eecFromTrustList: false,
       chainVerified: false,
+      collectionId,
     }
   }
   if (!listed) {
@@ -69,6 +76,7 @@ export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => 
       eec: null,
       eecFromTrustList: false,
       chainVerified: false,
+      collectionId,
     }
   }
   if (listed.trust === 'trusted' && listed.eec !== null) {
@@ -78,6 +86,7 @@ export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => 
       eec: listed.eec,
       eecFromTrustList: true,
       chainVerified: true,
+      collectionId,
     }
   }
   return {
@@ -86,5 +95,6 @@ export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => 
     eec: null,
     eecFromTrustList: false,
     chainVerified: false,
+    collectionId,
   }
 }

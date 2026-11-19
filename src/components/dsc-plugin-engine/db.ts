@@ -195,6 +195,18 @@ const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   return record
 }
 
+/**
+ * 是否为升级前的旧记录：在线安装记录里没有一项校验字段。
+ * 旧版本安装时不写目录清单与信任清单的落盘字段，拿不到证书与签名材料，
+ * 界面据此提示重新安装，重新安装后这些字段才会齐备。
+ */
+export const isLegacyInstallRecord = (entry: StoredPluginRecord): boolean =>
+  entry.source_type !== 'local' &&
+  entry.catalog_verified === undefined &&
+  entry.meta_verified === undefined &&
+  entry.manifest_revisions === undefined &&
+  entry.source_trust === undefined
+
 /** IndexedDB 不可用时的内存镜像；只在本次页面生命周期内有效 */
 const memory = new Map<string, StoredPluginRecord>()
 

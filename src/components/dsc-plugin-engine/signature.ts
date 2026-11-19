@@ -53,8 +53,11 @@ export type SignatureMaterial = {
 export type SignatureSource = {
   /** 合集 EEC 证书 PEM；信任清单已登记时优先使用，省一次请求 */
   eec?: string
-  /** 来源自带的合集证书地址，形如 <base>/eec.pem；清单未登记时取它 */
-  eecUrl?: string
+  /**
+   * 来源自带的合集证书地址，按顺序尝试：
+   * 规范路径 certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；清单未登记时取它
+   */
+  eecUrls?: string[]
   /** plugin.js.sig 地址；缺省为 <url>.sig */
   sigUrl?: string
   /** 作者公钥地址；缺省时不校验作者签名 */
@@ -82,8 +85,8 @@ export const authorPubMatches = async (
 
 /**
  * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。
- * 合集证书优先用信任清单已登记或安装记录里已存的那张，没有时在线取来源自带的 <base>/eec.pem；
- * 离线不发请求，只用已存的证书。证书都必须在本机用构建内嵌的根证书通过证书链校验才会用于验签，
+ * 合集证书优先用信任清单已登记或安装记录里已存的那张，没有时在线依次尝试来源自带的
+ * certs/<合集 id>-eec.crt 与旧的 eec.pem；离线不发请求，只用已存的证书。证书都必须在本机用构建内嵌的根证书通过证书链校验才会用于验签，
  * 校验在 verifyArtifact 里完成。都没有时 CMS 验签直接跳过，由调用方按拿不到证书处理。
  */
 export const loadSignatureMaterial = async (
@@ -120,32 +123,35 @@ const resolveAuthorPub = async (source?: SignatureSource): Promise<string> => {
 /**
  * 取验签用的合集证书。
  * 已登记的那份（信任清单登记或安装记录里存的）优先，省一次来源站点的请求；
- * 没有登记时在线取来源自带的 eec.pem，离线不发请求。
+ * 没有登记时在线按顺序尝试来源自带的地址：规范路径 certs/<合集 id>-eec.crt 优先，
+ * 取不到再试旧的 eec.pem，两条都失败才算拿不到证书；离线不发请求。
  * 证书一律由 verifyArtifact 用构建内嵌的根证书校链，链不通过不会用于 CMS 验签。
  */
 const resolveEec = async (source?: SignatureSource): Promise<string> => {
   const stored = source?.eec ?? ''
-  const eecUrl = source?.eecUrl ?? ''
+  const eecUrls = source?.eecUrls ?? []
   if (!isOnline()) {
     // 离线时拉不到任何在线副本，只能用安装记录里已存的那份
     if (stored !== '') {
       noteMaterial('当前离线，来源证书使用安装记录或信任清单里已存的那份')
-    } else if (eecUrl !== '') {
-      noteMaterial('当前离线，取不到来源站点的 eec.pem，也没有已存的来源证书，跳过 CMS 验签')
+    } else if (eecUrls.length > 0) {
+      noteMaterial('当前离线，取不到来源站点的合集证书，也没有已存的来源证书，跳过 CMS 验签')
     }
     return stored
   }
   if (stored !== '') {
     return stored
   }
-  if (eecUrl === '') {
-    return ''
+  for (const eecUrl of eecUrls) {
+    const text = (await requestText(eecUrl)) ?? ''
+    if (text !== '') {
+      return text
+    }
   }
-  const text = (await requestText(eecUrl)) ?? ''
-  if (text === '') {
-    noteMaterial('没有取到来源站点的 eec.pem，跳过 CMS 验签')
+  if (eecUrls.length > 0) {
+    noteMaterial('没有取到来源站点的合集证书，certs 布局与 eec.pem 兜底都失败，跳过 CMS 验签')
   }
-  return text
+  return ''
 }
 
 /** 签名材料的可持久化形式；字段名与安装记录一致 */

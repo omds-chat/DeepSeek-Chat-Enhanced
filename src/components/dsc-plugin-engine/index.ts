@@ -17,15 +17,20 @@ import {
 } from '../dsc-core/index.js'
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
-import { loadPluginRecords, writePluginRecords, type StoredPluginRecord } from './db.js'
+import {
+  isLegacyInstallRecord,
+  loadPluginRecords,
+  writePluginRecords,
+  type StoredPluginRecord,
+} from './db.js'
 import {
   decodePluginCode,
   inspectPackageFiles,
   readLocalPackage,
-  toPluginId,
   type PackageInspection,
 } from './localPackage.js'
 import { isPluginSourceAllowed, loadPluginModuleFromCode, resolvePluginModule } from './loader.js'
+import { toPluginId } from './pluginId.js'
 import * as store from './registry.js'
 import {
   decodeSignature,
@@ -64,7 +69,8 @@ const MAX_ENGINE_LOG = 100
 
 /**
  * 安装时携带的来源信息。
- * eec 与 eecUrl 都提供合集证书：两者都有时优先用信任清单登记的 eec，省一次请求；
+ * eec 与 eecUrls 都提供合集证书：两者都有时优先用信任清单登记的 eec，省一次请求；
+ * eecUrls 按顺序尝试，规范路径 certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；
  * 证书必须在本机通过证书链校验才会用于 CMS 验签，链不通过时结论为 failed 且不再验签。
  * authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签；没有证书时 CMS 验签直接跳过。
  */
@@ -764,6 +770,9 @@ export const installPluginEngine = (): PluginEngine => {
     if (entry.trust_failure) {
       origin.trustFailure = entry.trust_failure
     }
+    if (isLegacyInstallRecord(entry)) {
+      origin.verificationMissing = true
+    }
     if (entry.sig) {
       origin.sig = entry.sig
     }
@@ -933,6 +942,10 @@ export const installPluginEngine = (): PluginEngine => {
       ...(record.origin?.sourceTrust === undefined
         ? {}
         : { sourceTrust: record.origin.sourceTrust }),
+      ...(record.origin?.trustFailure === undefined
+        ? {}
+        : { sourceTrustFailure: record.origin.trustFailure }),
+      ...(record.origin?.verificationMissing === true ? { verificationMissing: true } : {}),
       enabled: record.enabled,
       dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],

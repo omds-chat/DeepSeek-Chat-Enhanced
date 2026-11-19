@@ -1,6 +1,7 @@
 import { gunzipSync, unzipSync } from 'fflate'
 import { verifyDetachedSignature } from '../../services/integrity/ed25519.js'
 import type { CoreCapabilityId } from '../dsc-core/index.js'
+import { toPluginId } from './pluginId.js'
 import {
   MAX_PLUGIN_CODE_BYTES,
   type InstallRejection,
@@ -305,21 +306,6 @@ export const parsePackageMeta = (text: string): PackageMeta | null => {
     meta.engines = dependencies.dsc.trim()
   }
   return meta
-}
-
-/**
- * 把插件名转成引擎接受的插件 id；@scope/name 取 name 部分。
- * 规则与插件市场一致，保证同一插件在两条安装路径上得到同一个 id。
- */
-export const toPluginId = (name: string): string | null => {
-  const slash = name.startsWith('@') ? name.indexOf('/') : -1
-  const base = slash >= 0 ? name.slice(slash + 1) : name
-  const id = base
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-  return /^[a-z][a-z0-9-]*$/.test(id) ? id : null
 }
 
 /** 由 meta 构造清单；缺 capabilities 或 name 无法转成 id 时返回 null */

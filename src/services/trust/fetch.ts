@@ -22,8 +22,8 @@ const SCHEMA_VERSION = 2
 /** 合集 id 与路径段允许的字符 */
 const SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
-/** 清单中的单个合集条目 */
-type IndexCollection = { id: string; eec: string }
+/** 清单中的单个合集条目；dir 是 eec 路径里的合集目录名 */
+type IndexCollection = { id: string; dir: string; eec: string }
 
 /** 清单解析结果 */
 type TrustIndex = { rootCa: string; crl: string | null; collections: IndexCollection[] }
@@ -46,6 +46,12 @@ const isRelativePath = (value: string): boolean =>
   !value.startsWith('/') &&
   !value.includes('..') &&
   !/^[a-z][a-z0-9+.-]*:/i.test(value)
+
+/** 清单登记的 eec 路径里取合集目录名；路径不足两级时返回空串 */
+const collectionDirOf = (eecPath: string): string => {
+  const segments = eecPath.split('/').filter((segment) => segment !== '')
+  return segments.length >= 2 ? segments[segments.length - 2] : ''
+}
 
 /** 证书文本归一化；只用于比较，不参与验签 */
 const normalizePem = (value: string): string => value.replace(/\r\n?/g, '\n').trim()
@@ -87,9 +93,11 @@ export const parseTrustIndex = (text: string): TrustIndex | null => {
     if (!isFilled(id) || !SEGMENT_PATTERN.test(id.trim()) || seen.has(id.trim())) {
       continue
     }
+    const eecPath = isFilled(eec) && isRelativePath(eec.trim()) ? eec.trim() : ''
     const entry: IndexCollection = {
       id: id.trim(),
-      eec: isFilled(eec) && isRelativePath(eec.trim()) ? eec.trim() : '',
+      dir: collectionDirOf(eecPath),
+      eec: eecPath,
     }
     seen.add(entry.id)
     collections.push(entry)
@@ -98,8 +106,9 @@ export const parseTrustIndex = (text: string): TrustIndex | null => {
 }
 
 /** 不可信条目；证书一律不给出 */
-const untrusted = (id: string, reason: TrustFailureReason): TrustCollection => ({
+const untrusted = (id: string, dir: string, reason: TrustFailureReason): TrustCollection => ({
   id,
+  dir,
   eec: null,
   trust: 'untrusted',
   reason,
@@ -116,17 +125,17 @@ const verifyCollection = async (
   check: ChainCheck
 ): Promise<TrustCollection> => {
   if (entry.eec === '') {
-    return untrusted(entry.id, 'missing')
+    return untrusted(entry.id, entry.dir, 'missing')
   }
   const eecText = await requestText(base + entry.eec)
   if (eecText === null || eecText.trim() === '') {
-    return untrusted(entry.id, 'missing')
+    return untrusted(entry.id, entry.dir, 'missing')
   }
   const outcome = await check(eecText)
   if (!outcome.ok) {
-    return untrusted(entry.id, outcome.revoked ? 'revoked' : 'chain')
+    return untrusted(entry.id, entry.dir, outcome.revoked ? 'revoked' : 'chain')
   }
-  return { id: entry.id, eec: eecText, trust: 'trusted', reason: null }
+  return { id: entry.id, dir: entry.dir, eec: eecText, trust: 'trusted', reason: null }
 }
 
 /** 以固定并发上限处理列表，保持结果顺序 */
@@ -226,7 +235,7 @@ export const fetchTrustListFrom = async (
       origin: base,
       rootCa: rootText,
       crl: index.crl,
-      collections: index.collections.map((entry) => untrusted(entry.id, 'chain')),
+      collections: index.collections.map((entry) => untrusted(entry.id, entry.dir, 'chain')),
     }
   }
 

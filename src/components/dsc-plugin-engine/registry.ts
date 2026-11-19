@@ -36,7 +36,7 @@ export type PluginOrigin = {
   dataBase?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/ */
   pluginBase?: string
-  /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签；清单已登记时取清单证书，未登记时取来源的 eec.pem */
+  /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签；清单已登记时取清单证书，未登记时取来源 certs 目录下的证书 */
   eec?: string
   /** 证书链是否已在本机校验通过；缺省视为未校验，来源结论按 failed 处理 */
   eecAnchored?: boolean
@@ -44,6 +44,8 @@ export type PluginOrigin = {
   sourceTrust?: SourceTrustState
   /** 信任清单给出的失败原因；revoked 表示证书已被吊销 */
   trustFailure?: SourceTrustFailure
+  /** 旧版本安装的记录没有校验字段；只在恢复时按存储记录判定,不落盘 */
+  verificationMissing?: boolean
   /** plugin.js.sig 的 base64，启动校验时用于 CMS 验签 */
   sig?: string
   /** 作者公钥 PEM，离线包安装时写入 */

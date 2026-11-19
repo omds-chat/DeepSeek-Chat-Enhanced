@@ -294,7 +294,7 @@ export const MarketPlugins = ({
         dataBase: plan.dataBase,
         pluginBase: plan.pluginBase,
         ...(plan.eec === undefined ? {} : { eec: plan.eec }),
-        ...(plan.eecUrl === undefined ? {} : { eecUrl: plan.eecUrl }),
+        ...(plan.eecUrls === undefined ? {} : { eecUrls: plan.eecUrls }),
         sigUrl: plan.sigUrl,
         authorPubUrl: plan.authorPubUrl,
         authorSigUrl: plan.authorSigUrl,

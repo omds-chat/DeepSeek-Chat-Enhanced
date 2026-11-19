@@ -19,6 +19,7 @@ import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { formatDateTime } from '../../utils/format.js'
+import { isLegacyInstall } from './legacyInstall.js'
 import styles from './PluginPanel.module.css'
 
 const stateLabels: Record<PluginState, TranslationKey> = {
@@ -53,7 +54,10 @@ const sourceLabel = (plugin: PluginStateView): TranslationKey => {
 const CONFIRM_MS = 3000
 
 /** 正在进行的操作；用于按钮的忙碌文案与禁用 */
-type Busy = { id: string; action: 'toggle' | 'uninstall' | 'update' }
+type Busy = { id: string; action: 'toggle' | 'uninstall' | 'update' | 'reinstall' }
+
+/** 需要二次确认的操作；3 秒内再次点击同一按钮才真正执行 */
+type PendingConfirm = { id: string; kind: 'update' | 'reinstall' }
 
 /** 日志快照：读取时间用于提示日志时效 */
 type LogSnapshot = { name: string; lines: readonly string[]; capturedAt: number }
@@ -74,7 +78,7 @@ export const InstalledPlugins = ({
   const [logs, setLogs] = useState<LogSnapshot | null>(null)
   /** 版本更新检查结论；没有条目的插件不显示任何标注 */
   const [updates, setUpdates] = useState<ReadonlyMap<string, UpdateCheck>>(new Map())
-  const [confirmUpdate, setConfirmUpdate] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingConfirm | null>(null)
   const confirmTimer = useRef(0)
   const running = busy !== null
 
@@ -188,29 +192,35 @@ export const InstalledPlugins = ({
     showToast({ type: 'error', key: 'pluginUninstallFailed', params: { id: plugin.id } })
   }
 
-  /** 更新按钮的二次确认：3 秒内再次点击才真正执行 */
-  const armUpdate = (id: string) => {
-    setConfirmUpdate(id)
+  /** 更新与重装按钮的二次确认：3 秒内再次点击才真正执行 */
+  const armConfirm = (id: string, kind: PendingConfirm['kind']) => {
+    setPending({ id, kind })
     window.clearTimeout(confirmTimer.current)
-    confirmTimer.current = window.setTimeout(() => setConfirmUpdate(null), CONFIRM_MS)
+    confirmTimer.current = window.setTimeout(() => setPending(null), CONFIRM_MS)
   }
 
-  /** 安装计划转成引擎需要的来源信息；eec 只来自清单，与其他安装入口同一口径 */
+  /** 安装计划转成引擎需要的来源信息；证书与市场安装同一口径，清单证书优先，来源证书地址按序兜底 */
   const installSourceOf = (reinstall: ReinstallPlan): InstallSource => ({
     sourceType: reinstall.plan.sourceType,
     sigUrl: reinstall.plan.sigUrl,
     authorPubUrl: reinstall.plan.authorPubUrl,
     authorSigUrl: reinstall.plan.authorSigUrl,
     ...(reinstall.plan.eec === undefined ? {} : { eec: reinstall.plan.eec }),
+    ...(reinstall.plan.eecUrls === undefined ? {} : { eecUrls: reinstall.plan.eecUrls }),
     ...(reinstall.trust === null ? {} : { trust: reinstall.trust }),
     ...(reinstall.trustFailure === null ? {} : { trustFailure: reinstall.trustFailure }),
   })
 
   /**
-   * 更新到最新版：引擎没有覆盖安装的入口，先卸载旧记录再按最新版走完整安装流程，
-   * 验签、清单校验与落库都与市场安装一致。新版本安装失败时按记录里的版本回滚，避免插件就此消失。
+   * 按指定版本重建插件：引擎没有覆盖安装的入口，先卸载旧记录再走完整安装流程，
+   * 验签、清单校验与落库都与市场安装一致。安装失败时按记录里的版本回滚，避免插件就此消失。
+   * 版本更新与旧记录重装共用这一条路径，区别只在目标版本与提示文案。
    */
-  const updatePlugin = async (plugin: PluginStateView, check: UpdateCheck) => {
+  const rebuildPlugin = async (
+    plugin: PluginStateView,
+    version: string,
+    kind: PendingConfirm['kind']
+  ) => {
     const client = market()
     const engine = getPluginEngine()
     if (!client) {
@@ -222,16 +232,24 @@ export const InstalledPlugins = ({
       return
     }
     const target = targets.find((item) => item.id === plugin.id)
-    const next = target ? client.reinstallPlan(target, check.latest) : null
+    const next = target ? client.reinstallPlan(target, version) : null
     if (!target || !next) {
-      showToast({ type: 'error', key: 'pluginUpdateUnavailable', params: { name: plugin.name } })
+      showToast({
+        type: 'error',
+        key: kind === 'update' ? 'pluginUpdateUnavailable' : 'pluginReinstallUnavailable',
+        params: { name: plugin.name },
+      })
       return
     }
-    setConfirmUpdate(null)
-    setBusy({ id: plugin.id, action: 'update' })
+    setPending(null)
+    setBusy({ id: plugin.id, action: kind })
     try {
       if (!(await engine.unload(plugin.id)).removed) {
-        showToast({ type: 'error', key: 'pluginUpdateUnloadFailed', params: { name: plugin.name } })
+        showToast({
+          type: 'error',
+          key: kind === 'update' ? 'pluginUpdateUnloadFailed' : 'pluginReinstallUnloadFailed',
+          params: { name: plugin.name },
+        })
         return
       }
       const result = await engine.installFromUrl(
@@ -240,7 +258,11 @@ export const InstalledPlugins = ({
         installSourceOf(next)
       )
       if (result.ok) {
-        showToast({ key: 'pluginUpdated', params: { name: plugin.name, version: check.latest } })
+        showToast(
+          kind === 'update'
+            ? { key: 'pluginUpdated', params: { name: plugin.name, version } }
+            : { key: 'pluginReinstalled', params: { name: plugin.name } }
+        )
         return
       }
       const previous = client.reinstallPlan(target, plugin.version)
@@ -253,13 +275,13 @@ export const InstalledPlugins = ({
       }
       showToast({
         type: 'error',
-        key: 'pluginUpdateFailed',
+        key: kind === 'update' ? 'pluginUpdateFailed' : 'pluginReinstallFailed',
         params: { name: plugin.name, reason: pluginReasonText(result.reason, result.detail) },
       })
     } catch {
       showToast({
         type: 'error',
-        key: 'pluginUpdateFailed',
+        key: kind === 'update' ? 'pluginUpdateFailed' : 'pluginReinstallFailed',
         params: { name: plugin.name, reason: pluginReasonText('load-failed') },
       })
     } finally {
@@ -303,8 +325,11 @@ export const InstalledPlugins = ({
           const active = plugin.state === 'active'
           const toggling = busy?.id === plugin.id && busy.action === 'toggle'
           const check = updates.get(plugin.id) ?? null
-          const confirmingUpdate = confirmUpdate === plugin.id
+          const legacy = isLegacyInstall(plugin)
+          const confirmingUpdate = pending?.id === plugin.id && pending.kind === 'update'
+          const confirmingReinstall = pending?.id === plugin.id && pending.kind === 'reinstall'
           const updating = busy?.id === plugin.id && busy.action === 'update'
+          const reinstalling = busy?.id === plugin.id && busy.action === 'reinstall'
           return (
             <div key={plugin.id} className={styles.row} role="row" aria-busy={busy?.id === plugin.id}>
               <div className={styles.nameCell} role="cell">
@@ -320,8 +345,17 @@ export const InstalledPlugins = ({
                       plugin.sourceVerdict === 'failed' && styles.signatureFailed
                     )}
                   >
-                    {t(verdictTextKey(plugin.sourceVerdict, plugin.sourceVerdictReason))}
+                    {t(
+                      verdictTextKey(
+                        plugin.sourceVerdict,
+                        plugin.sourceVerdictReason,
+                        plugin.sourceTrustFailure
+                      )
+                    )}
                   </span>
+                ) : null}
+                {legacy ? (
+                  <span className={styles.caption}>{t('pluginLegacyInstallHint')}</span>
                 ) : null}
                 {plugin.sourceVerdict === 'confirmed' && isUnlistedTrust(plugin.sourceTrust) ? (
                   <span className={styles.caption}>{t('pluginMarketNotListed')}</span>
@@ -367,10 +401,10 @@ export const InstalledPlugins = ({
                     title={confirmingUpdate ? t('pluginUpdateHint') : undefined}
                     onClick={() => {
                       if (!confirmingUpdate) {
-                        armUpdate(plugin.id)
+                        armConfirm(plugin.id, 'update')
                         return
                       }
-                      void updatePlugin(plugin, check)
+                      void rebuildPlugin(plugin, check.latest, 'update')
                     }}
                   >
                     {updating
@@ -378,6 +412,27 @@ export const InstalledPlugins = ({
                       : confirmingUpdate
                         ? t('pluginUpdateConfirm')
                         : t('pluginUpdateAvailable')}
+                  </Button>
+                ) : null}
+                {legacy ? (
+                  <Button
+                    variant={confirmingReinstall ? 'danger' : 'primary'}
+                    size="s"
+                    disabled={running}
+                    title={confirmingReinstall ? t('pluginReinstallHint') : undefined}
+                    onClick={() => {
+                      if (!confirmingReinstall) {
+                        armConfirm(plugin.id, 'reinstall')
+                        return
+                      }
+                      void rebuildPlugin(plugin, plugin.version, 'reinstall')
+                    }}
+                  >
+                    {reinstalling
+                      ? t('pluginOperationBusy')
+                      : confirmingReinstall
+                        ? t('pluginReinstallConfirm')
+                        : t('pluginActionReinstall')}
                   </Button>
                 ) : null}
                 <Button

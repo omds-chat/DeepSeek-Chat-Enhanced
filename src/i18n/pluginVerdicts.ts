@@ -1,5 +1,6 @@
 import type { TranslationKey } from './index.js'
 import type {
+  SourceTrustFailure,
   SourceTrustState,
   SourceVerdict,
   SourceVerdictReason,
@@ -15,11 +16,13 @@ const VERDICT_KEYS: Record<SourceVerdict, TranslationKey> = {
 
 /**
  * 来源结论文案键。
- * failed 按原因细分：链校验失败与证书吊销各自成句，其余（含产物验签未通过）用通用文案。
+ * failed 按原因细分：链校验失败与证书吊销各自成句；
+ * 信任清单登记了证书但证书文件缺失时单列「来源证书缺失」，其余（含产物验签未通过）用通用文案。
  */
 export const verdictTextKey = (
   verdict: SourceVerdict,
-  reason: SourceVerdictReason
+  reason: SourceVerdictReason,
+  trustFailure?: SourceTrustFailure
 ): TranslationKey => {
   if (verdict !== 'failed') {
     return VERDICT_KEYS[verdict]
@@ -29,6 +32,9 @@ export const verdictTextKey = (
   }
   if (reason === 'revoked') {
     return 'pluginVerdictFailedRevoked'
+  }
+  if (trustFailure === 'missing') {
+    return 'pluginVerdictFailedMissingCert'
   }
   return 'pluginVerdictFailed'
 }
