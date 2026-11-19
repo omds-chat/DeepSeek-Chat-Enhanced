@@ -311,11 +311,10 @@ export const en = {
   pluginMarketMetaFailed: 'The plugin metadata could not be fetched',
   pluginMarketTrustTrusted: 'Trusted',
   pluginMarketTrustUntrusted: 'Untrusted',
-  pluginMarketTrustUnverified: 'Trust unknown',
+  pluginMarketTrustUnverified: 'Not listed',
   pluginMarketTrustUntrustedHint:
     'Source trust verification failed ({reason}); you can still install, but decide for yourself whether to continue',
-  pluginMarketTrustUnverifiedHint:
-    'The trustworthiness of this source cannot be confirmed; confirm the source yourself before installing',
+  pluginMarketNotListed: 'Not registered in the official list',
   pluginMarketTrustReasonMissing: 'the source certificate cannot be confirmed',
   pluginMarketTrustReasonChain: 'the source certificate did not verify',
   pluginMarketTrustReasonRevoked: 'the source certificate has been revoked',

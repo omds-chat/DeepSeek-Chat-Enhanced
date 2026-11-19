@@ -2,10 +2,10 @@ import type { TranslationKey } from '../../i18n/index.js'
 import type { PluginManifest, PluginSourceType } from '../dsc-plugin-engine/types.js'
 
 /**
- * 来源信任状态。
- * trusted 由合集 EEC 证书链校验通过；endorsed 表示来源由 dsc 直接背书，即 dsc 内部插件索引，
- * 不依赖合集 EEC 链但仍走与外部来源完全一致的安装校验；untrusted 为证书链校验未通过；
- * unverified 表示 online-data 信任清单里没有该来源，或构建未注入根证书。
+ * 来源信任状态；只表示 online-data 信任清单是否登记并认可该来源,不参与来源结论判定。
+ * trusted 表示清单登记了该来源的 EEC 且证书链校验通过；endorsed 表示来源由 dsc 直接背书，
+ * 即 dsc 内部插件索引；untrusted 表示清单登记了但证书链校验未通过；
+ * unverified 表示清单里没有该来源，或构建未注入根证书。
  */
 export type SourceTrust = 'trusted' | 'endorsed' | 'untrusted' | 'unverified'
 
@@ -71,7 +71,7 @@ export type SourceRuntime = {
   trust: SourceTrust
   trustFailure: TrustFailure | null
   meta: SourceMeta | null
-  /** 该来源的合集 EEC 证书 PEM；来自 online-data 信任清单，未列入清单时为 null */
+  /** 该来源在信任清单登记的合集 EEC 证书 PEM；未列入清单时为 null */
   eec: string | null
   /** 证书来自 online-data 信任清单，而不是来源自己分发的 eec.pem */
   eecFromTrustList: boolean
@@ -86,8 +86,8 @@ export type SourceRuntime = {
 
 /**
  * 安装计划；交给引擎的 installFromUrl。
- * eec 只来自 online-data 信任清单；没有清单证书时计划里没有 eec，引擎跳过 CMS 验签并把来源结论记为 unknown，
- * 来源站点自带的 eec.pem 不作为验签依据。
+ * eec 是信任清单登记的合集证书，登记了就用它，省一次请求；eecUrl 是来源自带的 <base>/eec.pem。
+ * 两种证书都必须由引擎用内置根 CA 通过证书链校验才会用于验签，链不通过时来源结论为 failed。
  */
 export type InstallPlan = {
   /** plugin.js 地址 */
@@ -98,8 +98,10 @@ export type InstallPlan = {
   pluginBase: string
   manifest?: PluginManifest
   sourceType: PluginSourceType
-  /** 合集 EEC 证书 PEM；只来自 online-data 信任清单 */
+  /** 合集 EEC 证书 PEM；来自 online-data 信任清单，已登记时优先使用 */
   eec?: string
+  /** 来源自带的合集证书地址，形如 <base>/eec.pem；清单未登记时由引擎取它 */
+  eecUrl?: string
   /** plugin.js.sig 地址，CMS 分离签名 */
   sigUrl: string
   /** 作者公钥地址，作者裸签名为可选材料 */

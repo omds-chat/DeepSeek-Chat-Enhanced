@@ -44,9 +44,10 @@ export type SignatureState = 'verified' | 'unverified' | 'failed'
 
 /**
  * 来源结论。
- * confirmed 表示验签证书来自 online-data 信任清单且合集 CMS 验签通过；
- * failed 表示校验未通过：证书来自清单但验签未通过,或来源在清单里但证书链校验失败、证书已被吊销；
- * unknown 表示清单里没有该来源,无法确认；local 表示本地安装,不参与来源判定。
+ * confirmed 表示合集证书链已在本机校验通过且 CMS 验签通过；
+ * failed 表示校验未通过：证书链不通过（含过期、非本根签发、被吊销）,或拿不到证书、验签不通过；
+ * unknown 表示完全没有来源信息；local 表示本地安装,不参与来源判定。
+ * 信任清单的结论不参与这里的判定,只用于界面展示来源是否被官方认可。
  */
 export type SourceVerdict = 'confirmed' | 'failed' | 'unknown' | 'local'
 
@@ -230,6 +231,8 @@ export type PluginStateView = {
   sourceVerdict: SourceVerdict
   /** 来源结论的原因；只有 failed 有值 */
   sourceVerdictReason: SourceVerdictReason
+  /** 信任清单给出的来源信任判定；旧记录没有该字段,只用于界面展示是否被官方认可 */
+  sourceTrust?: SourceTrustState
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */
   enabled: boolean
   /** 清单声明的依赖插件 id */

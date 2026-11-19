@@ -35,13 +35,13 @@ export type PluginOrigin = {
   dataBase?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/ */
   pluginBase?: string
-  /** 合集 EEC 证书 PEM，只来自 online-data 信任清单，启动校验时用于 CMS 验签 */
+  /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签；清单已登记时取清单证书，未登记时取来源的 eec.pem */
   eec?: string
-  /** 证书来自 online-data 信任清单；缺省视为未锚定，来源结论为 unknown */
+  /** 证书链是否已在本机校验通过；缺省视为未校验，来源结论按 failed 处理 */
   eecAnchored?: boolean
-  /** 来源信任判定；恢复时据此区分确定的负面结论 */
+  /** 信任清单判定；只用于界面展示来源是否被官方认可 */
   sourceTrust?: SourceTrustState
-  /** 信任失败原因；revoked 表示证书已被吊销 */
+  /** 信任清单给出的失败原因；revoked 表示证书已被吊销 */
   trustFailure?: SourceTrustFailure
   /** plugin.js.sig 的 base64，启动校验时用于 CMS 验签 */
   sig?: string

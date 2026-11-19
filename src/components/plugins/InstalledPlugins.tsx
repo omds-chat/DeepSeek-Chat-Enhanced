@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
-import { verdictTextKey } from '../../i18n/pluginVerdicts.js'
+import { isUnlistedTrust, verdictTextKey } from '../../i18n/pluginVerdicts.js'
 import { market, readRecordDataBase, type ReinstallPlan, type UpdateCheck } from '../dsc-market/index.js'
 import {
   getPluginEngine,
@@ -322,6 +322,9 @@ export const InstalledPlugins = ({
                   >
                     {t(verdictTextKey(plugin.sourceVerdict, plugin.sourceVerdictReason))}
                   </span>
+                ) : null}
+                {plugin.sourceVerdict === 'confirmed' && isUnlistedTrust(plugin.sourceTrust) ? (
+                  <span className={styles.caption}>{t('pluginMarketNotListed')}</span>
                 ) : null}
                 {plugin.error ? (
                   <span className={styles.errorText}>{pluginReasonText(plugin.error)}</span>

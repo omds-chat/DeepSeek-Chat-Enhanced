@@ -621,7 +621,7 @@ export const createMarketClient = (
     if (!versionDir || !paths) {
       return null
     }
-    // 同址来源沿用它的信任结论：清单证书与吊销状态都按该来源取
+    // 同址来源沿用它的信任清单判定：清单已登记时优先用清单证书，证书地址按来源根目录推导
     const owner = sourceList.find((source) =>
       source.baseUrls.some((baseUrl) => location.pluginDir.startsWith(baseUrl))
     )
@@ -634,8 +634,10 @@ export const createMarketClient = (
       sigUrl: paths.sigUrl,
       authorPubUrl: paths.authorPubUrl,
       authorSigUrl: paths.authorSigUrl,
+      // 来源根目录下的合集证书；清单未登记时由引擎取它并先做链校验
+      eecUrl: joinUrl(location.root, 'eec.pem'),
     }
-    // 与市场安装同一口径：只用清单证书，没有清单证书时计划里没有 eec
+    // 与市场安装同一口径：清单已登记时优先用清单证书，两种证书都要过链校验
     if (runtime?.eec) {
       plan.eec = runtime.eec
     }
@@ -749,8 +751,10 @@ export const createMarketClient = (
         // 作者公钥放在作者目录，与合集分发结构 plugins/<作者>/author_pub.pem 一致
         authorPubUrl: joinUrl(runtime.baseUrl, 'plugins/' + plugin.author + '/author_pub.pem'),
         authorSigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.author.sig'),
+        // 来源自带的合集证书；清单未登记时由引擎取它，先做链校验再验签
+        eecUrl: joinUrl(runtime.baseUrl, 'eec.pem'),
       }
-      // 只有清单里的证书进入安装计划；没有清单证书时计划里没有 eec，来源结论为 unknown
+      // 清单已登记该来源的证书时优先用它，省一次请求；两种证书都要过链校验
       if (runtime.eec !== null) {
         plan.eec = runtime.eec
       }

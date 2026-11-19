@@ -102,6 +102,12 @@ const mapLimited = async <T, R>(
   return results
 }
 
+/** 根证书比对结果只留控制台痕迹，不影响校验流程 */
+const logRootCa = (message: string): void => {
+  // eslint-disable-next-line no-console
+  console.warn('[integrity] ' + message)
+}
+
 /** 证书链或清单层面的失败：只提示一条，不阻断 */
 const warnChain = (): void => {
   showToast({ type: 'error', key: 'webIntegrityChainFailed' })
@@ -140,15 +146,15 @@ export const verifyWebIntegrity = async (): Promise<void> => {
     warnChain()
     return
   }
-  // 根证书通过 online-data 分发，必须与内嵌的信任锚逐字节一致
+  // 根证书以构建时内嵌的信任锚为准：online-data 的 root_ca.crt 只用于比对，不一致时提示并以内置的为准
   const publishedRoot = await fetchFromMirrors(ROOT_CA_PATH)
   if (!publishedRoot) {
-    return
-  }
-  const publishedDer = pemToDer(new TextDecoder().decode(publishedRoot), 'CERTIFICATE')
-  if (!publishedDer || !derEquals(anchorDer, publishedDer)) {
-    warnChain()
-    return
+    logRootCa('online-data 缺少 root_ca.crt，按构建内嵌的根证书校验')
+  } else {
+    const publishedDer = pemToDer(new TextDecoder().decode(publishedRoot), 'CERTIFICATE')
+    if (!publishedDer || !derEquals(anchorDer, publishedDer)) {
+      logRootCa('online-data 的 root_ca.crt 与构建内嵌的根证书不一致，按构建内嵌的根证书校验')
+    }
   }
   // 网页 EEC 证书必须由根证书签发
   const eecBytes = await fetchFromMirrors(EEC_PATH)
@@ -190,7 +196,7 @@ export const verifyWebIntegrity = async (): Promise<void> => {
   }
   // 先验证清单签名，再按清单逐个验证文件
   const manifestSignature = await fetchLocal(MANIFEST_FILE + SIGNATURE_SUFFIX, base)
-  if (!manifestSignature || !(await verifyDetachedCms(manifestSignature, manifestBytes, eec))) {
+  if (!manifestSignature || !(await verifyDetachedCms(manifestSignature, manifestBytes, eec, anchor))) {
     warnChain()
     return
   }
@@ -203,7 +209,7 @@ export const verifyWebIntegrity = async (): Promise<void> => {
     if (!signature) {
       return false
     }
-    return await verifyDetachedCms(signature, content, eec)
+    return await verifyDetachedCms(signature, content, eec, anchor)
   })
   const failed = files.filter((_, index) => !results[index])
   if (failed.length > 0) {

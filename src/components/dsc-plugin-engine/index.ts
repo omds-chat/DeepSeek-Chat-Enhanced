@@ -34,6 +34,7 @@ import {
   loadSignatureMaterial,
   sourceVerdictOf,
   verifyArtifact,
+  type ChainState,
   type SignatureMaterial,
   type SignatureSource,
 } from './signature.js'
@@ -62,9 +63,9 @@ const MAX_ENGINE_LOG = 100
 
 /**
  * 安装时携带的来源信息。
- * eec 与 sigUrl 齐全时做合集 CMS 验签，authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签。
- * eec 只能来自 online-data 信任清单，来源站点自带的证书不作为验签依据；
- * 没有 eec 时跳过 CMS 验签，安装记录的来源结论为 unknown。
+ * eec 与 eecUrl 都提供合集证书：两者都有时优先用信任清单登记的 eec，省一次请求；
+ * 证书必须在本机通过证书链校验才会用于 CMS 验签，链不通过时结论为 failed 且不再验签。
+ * authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签；没有证书时 CMS 验签直接跳过。
  */
 export type InstallSource = SignatureSource & {
   sourceType: PluginSourceType
@@ -471,15 +472,24 @@ export const installPluginEngine = (): PluginEngine => {
     }
     const outcome = hasSignatureMaterial(material)
       ? await verifyArtifact(bytes, material)
-      : { cms: null, author: null, state: 'unverified' as SignatureState }
+      : {
+          cms: null,
+          author: null,
+          chain: 'none' as ChainState,
+          state: 'unverified' as SignatureState,
+        }
     const signature: SignatureState = outcome.state
-    // 只有来自信任清单的证书才算锚定；清单里没有该来源才是无法确认，链失败与吊销都是确定的负面结论
+    // 来源结论只看本机结论：链通过且验签通过才是 confirmed，链不通过与拿不到证书都是确定的负面结论
     const { verdict, reason: verdictReason } = sourceVerdictOf({
-      anchored: material.eec !== '',
+      // 调用方没有给出来源信息时按「完全不知道来源」处理，结论为 unknown
+      hasSource: source !== undefined,
+      chain: outcome.chain,
       cms: outcome.cms,
-      ...(source?.trust === undefined ? {} : { trust: source.trust }),
-      ...(source?.trustFailure === undefined ? {} : { trustFailure: source.trustFailure }),
     })
+    // 链校验不通过时不会发起 CMS 验签，把这一步结论写进引擎日志便于排查
+    if (material.eec !== '' && outcome.chain !== 'ok') {
+      pushEngineLog(`install ${target}: certificate chain ${outcome.chain}, cms skipped`)
+    }
     if (signature === 'failed') {
       // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
       pushEngineLog(`install ${target}: signature-invalid, install anyway`)
@@ -518,7 +528,7 @@ export const installPluginEngine = (): PluginEngine => {
     const dataBase = normalizeDirectoryUrl(source?.dataBase) ?? deriveDataBase(url)
     const origin: store.PluginOrigin = {
       ...encodeSignature(material),
-      eecAnchored: material.eec !== '',
+      eecAnchored: outcome.chain === 'ok',
       ...(source?.trust === undefined ? {} : { sourceTrust: source.trust }),
       ...(source?.trustFailure === undefined ? {} : { trustFailure: source.trustFailure }),
       sourceType,
@@ -748,15 +758,21 @@ export const installPluginEngine = (): PluginEngine => {
     const outcome = hasSignatureMaterial(material)
       ? // 验签对象是存储的代码文本重建出的字节,与安装时验签的原始字节一致
         await verifyArtifact(new TextEncoder().encode(code), material)
-      : { cms: null, author: null, state: 'unverified' as SignatureState }
+      : {
+          cms: null,
+          author: null,
+          chain: 'none' as ChainState,
+          state: 'unverified' as SignatureState,
+        }
     const signature: SignatureState = outcome.state
-    // 旧记录没有 eec_anchored 与来源信任判定,按未锚定、未登记处理,来源结论为 unknown
+    // 旧记录的 eec_anchored 不再直接采信:恢复时按存储的证书重新做链校验,结论只看本次结果
     const computed = sourceVerdictOf({
-      anchored: entry.eec_anchored === true,
+      hasSource: true,
+      chain: outcome.chain,
       cms: outcome.cms,
-      ...(entry.source_trust === undefined ? {} : { trust: entry.source_trust }),
-      ...(entry.trust_failure === undefined ? {} : { trustFailure: entry.trust_failure }),
     })
+    // 锚定标记按本次链校验结果重写,旧记录里「证书来自清单」的旧语义不再沿用
+    origin.eecAnchored = outcome.chain === 'ok'
     // 本地包没有来源,不参与来源判定
     const verdict: SourceVerdict = entry.source_type === 'local' ? 'local' : computed.verdict
     const verdictReason = entry.source_type === 'local' ? null : computed.reason
@@ -850,6 +866,9 @@ export const installPluginEngine = (): PluginEngine => {
       ...(record.origin?.dataBase === undefined ? {} : { dataBase: record.origin.dataBase }),
       sourceVerdict: record.verdict,
       sourceVerdictReason: record.verdictReason,
+      ...(record.origin?.sourceTrust === undefined
+        ? {}
+        : { sourceTrust: record.origin.sourceTrust }),
       enabled: record.enabled,
       dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],

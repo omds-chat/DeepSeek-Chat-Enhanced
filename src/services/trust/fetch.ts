@@ -1,4 +1,5 @@
 import type { Certificate, CertificateRevocationList } from 'pkijs'
+import { setTrustCrl } from './crl.js'
 import type { TrustCollection, TrustFailureReason, TrustList } from './types.js'
 
 /** 信任清单的镜像地址；按顺序尝试，前者失败才用后者 */
@@ -199,14 +200,19 @@ export const fetchTrustListFrom = async (
   if (rootText === null || rootText.trim() === '') {
     return null
   }
-  // 根证书通过 online-data 分发，必须与构建时内嵌的信任锚逐字一致
-  if (embeddedRootPem.trim() === '' || normalizePem(rootText) !== normalizePem(embeddedRootPem)) {
-    return { rootMatched: false, origin: base, rootCa: rootText, crl: index.crl, collections: [] }
+  // 根证书以构建时内嵌的信任锚为准：清单里的 root_ca.crt 只用于比对，
+  // 不一致时仍用内置根证书校验各合集证书，只把比对结果记下来
+  const rootMatched = normalizePem(rootText) === normalizePem(embeddedRootPem)
+  if (!rootMatched) {
+    // eslint-disable-next-line no-console
+    console.warn('[trust] online-data 的 root_ca.crt 与构建内嵌的根证书不一致，按构建内嵌的根证书校验')
   }
   const { ensurePkijsEngine, isRevoked, parseCertificate, parseCrl, verifyCertificateChain, verifyCrl } =
     await import('../integrity/x509.js')
-  const root: Certificate | null = ensurePkijsEngine() ? parseCertificate(rootText) : null
+  const anchorPem = embeddedRootPem.trim() === '' ? rootText : embeddedRootPem
+  const root: Certificate | null = ensurePkijsEngine() ? parseCertificate(anchorPem) : null
   if (!root) {
+    setTrustCrl(null)
     return emptyCollections(base, rootText, index.crl)
   }
 
@@ -232,9 +238,11 @@ export const fetchTrustListFrom = async (
 
   // 清单登记了 CRL 却拿不到或校验不过时，吊销状态无法确认，整份清单按不可信处理
   const crl = index.crl === null ? null : await loadRegisteredCrl(index.crl, root)
+  // 吊销列表交给运行时按需取用：清单只负责分发，吊销结论由使用方用同一张根证书校验
+  setTrustCrl(crl)
   if (index.crl !== null && crl === null) {
     return {
-      rootMatched: true,
+      rootMatched,
       origin: base,
       rootCa: rootText,
       crl: index.crl,
@@ -260,5 +268,5 @@ export const fetchTrustListFrom = async (
   const collections = await mapLimited(index.collections, CONCURRENCY, (entry) =>
     verifyCollection(base, entry, check)
   )
-  return { rootMatched: true, origin: base, rootCa: rootText, crl: index.crl, collections }
+  return { rootMatched, origin: base, rootCa: rootText, crl: index.crl, collections }
 }

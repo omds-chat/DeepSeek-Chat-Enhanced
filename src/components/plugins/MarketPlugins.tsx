@@ -2,10 +2,9 @@ import clsx from 'clsx'
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
-import { verdictTextKey } from '../../i18n/pluginVerdicts.js'
+import { isUnlistedTrust } from '../../i18n/pluginVerdicts.js'
 import { useSettings } from '../../services/settings.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
-import type { SourceVerdict, SourceVerdictReason } from '../dsc-plugin-engine/types.js'
 import {
   market,
   toPluginId,
@@ -70,25 +69,6 @@ const trustReasonKey = (runtime: SourceRuntime | null): TranslationKey => {
   return runtime?.trustFailure === 'chain'
     ? 'pluginMarketTrustReasonChain'
     : 'pluginMarketTrustReasonMissing'
-}
-
-/** 来源级结论：安装前只有来源判定，产物验签在安装时进行 */
-const sourceLevelVerdict = (
-  runtime: SourceRuntime
-): { verdict: SourceVerdict; reason: SourceVerdictReason } => {
-  if (runtime.trust === 'untrusted') {
-    const reason: SourceVerdictReason =
-      runtime.trustFailure === 'revoked'
-        ? 'revoked'
-        : runtime.trustFailure === 'chain'
-          ? 'chain'
-          : 'other'
-    return { verdict: 'failed', reason }
-  }
-  if (runtime.eecFromTrustList && runtime.chainVerified) {
-    return { verdict: 'confirmed', reason: null }
-  }
-  return { verdict: 'unknown', reason: null }
 }
 
 const statusKey = (runtime: SourceRuntime | null): TranslationKey => {
@@ -307,13 +287,14 @@ export const MarketPlugins = ({
     }
     setBusyKey(plugin.key)
     try {
-      // 来源信任判定一并交给引擎：链失败与吊销都要落成确定的负面结论
+      // 来源信任判定一并交给引擎，只用于界面展示是否被官方认可
       const trustFailure = runtime?.trustFailure ?? null
       const result = await engine.installFromUrl(plan.url, plan.manifest, {
         sourceType: plan.sourceType,
         dataBase: plan.dataBase,
         pluginBase: plan.pluginBase,
         ...(plan.eec === undefined ? {} : { eec: plan.eec }),
+        ...(plan.eecUrl === undefined ? {} : { eecUrl: plan.eecUrl }),
         sigUrl: plan.sigUrl,
         authorPubUrl: plan.authorPubUrl,
         authorSigUrl: plan.authorSigUrl,
@@ -345,8 +326,7 @@ export const MarketPlugins = ({
 
   // 信任校验未通过不再禁用安装：保留「不可信」标识与提示，由用户自行判断
   const untrusted = runtime?.trust === 'untrusted'
-  /** 来源级结论；没有选中来源时为空 */
-  const sourceVerdict = runtime === null ? null : sourceLevelVerdict(runtime)
+  // 未在官方清单登记只是中性说明，不按不可信处理；安装时仍按本机链校验与验签给出结论
   const needsConfirm = runtime?.trust === 'unverified' || untrusted
 
   return (
@@ -513,8 +493,8 @@ export const MarketPlugins = ({
                 {t('pluginMarketTrustUntrustedHint', { reason: t(trustReasonKey(runtime)) })}
               </div>
             ) : null}
-            {runtime.trust === 'unverified' ? (
-              <div className={styles.trustWarn}>{t('pluginMarketTrustUnverifiedHint')}</div>
+            {isUnlistedTrust(runtime.trust) ? (
+              <div className={styles.caption}>{t('pluginMarketNotListed')}</div>
             ) : null}
             {runtime.trust === 'endorsed' ? (
               <div className={styles.trustWarn}>
@@ -523,11 +503,6 @@ export const MarketPlugins = ({
                     ? 'pluginMarketTrustEndorsedChainHint'
                     : 'pluginMarketTrustEndorsedHint'
                 )}
-              </div>
-            ) : null}
-            {sourceVerdict !== null ? (
-              <div className={styles.caption}>
-                {t(verdictTextKey(sourceVerdict.verdict, sourceVerdict.reason))}
               </div>
             ) : null}
             {runtime.meta?.downloadCountEnabled ? (
