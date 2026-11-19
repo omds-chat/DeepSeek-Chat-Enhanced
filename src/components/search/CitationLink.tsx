@@ -1,13 +1,22 @@
 import type { MouseEvent } from 'react'
 import type { Source } from '../../services/chat/view.js'
+import { isWebUrl } from '../../utils/url.js'
 import { HoverCard, type HoverCardTrigger } from './HoverCard.js'
 import { SourceCard } from './SourceCard.js'
 
 /**
  * 正文里 [citation:N] 的数字角标：悬停预览来源，点击新标签打开。
  * 角标使用带 link 角色的 span，可嵌入链接文字。样式由 .ds-markdown-cite 提供。
+ * 来源地址协议不合法时降级为纯文本角标：不可点击，也不打开窗口。
  */
 export const CitationLink = ({ source }: { source: Source }) => {
+  if (!isWebUrl(source.url)) {
+    return (
+      <span className="ds-markdown-cite" style={{ cursor: 'default' }}>
+        {source.index}
+      </span>
+    )
+  }
   const open = (event: MouseEvent<HTMLElement>) => {
     event.preventDefault()
     event.stopPropagation()

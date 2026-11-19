@@ -276,24 +276,27 @@ const ToolRow = ({
   </div>
 )
 
-const PageLink = ({ page, failedTip }: { page: PageItem; failedTip?: string }) => (
-  <span
-    className={clsx(styles.page, page.status === 'failed' ? styles.pageFailed : styles.pageDone)}
-  >
-    {page.status === 'failed' ? (
-      <Tooltip content={failedTip}>
-        <span className={styles.pageText}>{page.title}</span>
-      </Tooltip>
-    ) : (
-      <a className={styles.pageText} href={page.url} target="_blank" rel="noreferrer">
-        {page.title}
-      </a>
-    )}
-    <span className={styles.pageIcon}>
-      <IconRightUpOutline14 />
+/** 页面条目：地址缺失（协议不合法）时按失败态展示，不渲染 href */
+const PageLink = ({ page, failedTip }: { page: PageItem; failedTip?: string }) => {
+  const url = page.url
+  const failed = page.status === 'failed' || !url
+  return (
+    <span className={clsx(styles.page, failed ? styles.pageFailed : styles.pageDone)}>
+      {url && !failed ? (
+        <a className={styles.pageText} href={url} target="_blank" rel="noreferrer">
+          {page.title}
+        </a>
+      ) : (
+        <Tooltip content={failedTip}>
+          <span className={styles.pageText}>{page.title}</span>
+        </Tooltip>
+      )}
+      <span className={styles.pageIcon}>
+        <IconRightUpOutline14 />
+      </span>
     </span>
-  </span>
-)
+  )
+}
 
 /** 边想边搜打开的网页：「浏览 N 个页面」+ 最多 5 个页面 */
 const OpenRow = ({
