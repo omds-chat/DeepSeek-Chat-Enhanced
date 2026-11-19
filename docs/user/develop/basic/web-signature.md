@@ -8,6 +8,7 @@
 |:---:|:---:|:---:|
 | 签名 | `pnpm run pki -- sign-web` | 对每个 `.html`、`.js`、`.css` 生成 `<文件>.sig` |
 | 清单 | `dist/web_files.json` | 按路径排序列出全部被签名文件,清单自身也有 `.sig` |
+| 证书落盘 | `pnpm run pki -- sign-web` | 写出 `dist/certs/dsce/dsce-pages/dsce-pages-eec.crt` |
 | 信任锚 | `rspack.config.ts` | 构建时把根证书 PEM 注入为 `__ROOT_CA_PEM__` |
 | 离线验签证书 | `rspack.config.ts` | 构建时把网页签名 EEC 证书 PEM 注入为 `__PAGES_EEC_PEM__` |
 | 信任数据分发 | online-data 分支 | 提供 `certs/dsce/root-ca/dsce-root-ca.crt` 与 `certs/dsce/dsce-pages/dsce-pages-eec.crt` |
@@ -21,7 +22,7 @@
 | `.js` | 是 | 主包与异步分包 |
 | `.css` | 是 | 主样式与异步样式 |
 | 图片、字体 | 否 | 二进制资源 |
-| `LICENSE`、`eec.pem` | 否 | 非代码文件与证书 |
+| `LICENSE`、`certs/` 下的证书 | 否 | 非代码文件与证书 |
 
 `web_files.json` 只列出被逐文件签名的产物,清单自身不在其中,它的签名是 `web_files.json.sig` 。
 
@@ -58,7 +59,7 @@ pnpm build
 node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pages-eec.crt --key eec_secret.pem
 ```
 
-`sign-web` 依次做四件事:遍历 `dist` 下全部 `.html`、`.js`、`.css` 生成 `<文件>.sig`;写出 `dist/web_files.json`;对清单生成 `web_files.json.sig`;把 EEC 证书复制为 `dist/eec.pem` 。签名只读取文件字节,不修改被签名的文件。
+`sign-web` 依次做四件事:遍历 `dist` 下全部 `.html`、`.js`、`.css` 生成 `<文件>.sig`;写出 `dist/web_files.json`;对清单生成 `web_files.json.sig`;把 EEC 证书按 certs 布局写为 `dist/certs/dsce/dsce-pages/dsce-pages-eec.crt` 。签名只读取文件字节,不修改被签名的文件。证书只按 certs 布局写出,不再产出产物根目录的 `eec.pem`;目标目录若仍留有旧布局的 `eec.pem`,`sign-web` 以非零退出码结束并要求先删除该文件,避免同一份产物带两份可能不同步的证书。
 
 | 情形 | 行为 |
 |:---:|:---:|
@@ -66,6 +67,7 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 | 目录下没有可签名文件 | 以非零退出码结束,避免产出空清单 |
 | EEC 证书与私钥不配对 | 以非零退出码结束,不做签名 |
 | EEC 证书或私钥不存在 | 以非零退出码结束并指出缺失的文件 |
+| 目标目录存在旧布局的 `eec.pem` | 以非零退出码结束,要求先删除该文件再签名 |
 
 根 CA 与 EEC 的生成、签发方式见 [信任链与 PKI 签名](trust-chain.md) 。
 
@@ -141,6 +143,8 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 - EEC 证书取 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ;
 - 执行 `node scripts/pki/ca.mjs sign-web --dir dist --eec <EEC> --key <私钥>` 。
 
+`sign-web` 把证书写到 `dist/certs/dsce/dsce-pages/dsce-pages-eec.crt` ,产物不再生成 `dist/eec.pem` 。
+
 密钥缺失时签名步骤直接失败并给出明确错误,避免发布未签名的产物。
 
 ## 换行符
@@ -158,6 +162,8 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 | 控制台提示改用了内嵌材料 | online-data 的 EEC 取不到、超时或链校验未通过,已按内嵌材料继续校验,属预期回退 |
 | 校验始终静默 | 产物没有 `web_files.json`,或根证书为空 |
 | `sign-web` 报 EEC 证书与私钥不配对 | 传入了别的证书或私钥 |
+| `sign-web` 报目标目录存在旧布局的证书 | 产物目录仍留着 `eec.pem`,删除该文件后重新运行,证书改由 certs 布局提供 |
+| `verify-web` 提示只有旧布局的证书 | 目录内缺 `certs/dsce/dsce-pages/dsce-pages-eec.crt`,已按兼容回退用了 `eec.pem`;重新运行 `sign-web` 生成规范路径 |
 
 ## 相关文档
 

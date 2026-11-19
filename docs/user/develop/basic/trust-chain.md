@@ -57,10 +57,10 @@ EEC 持有方对每个文件单独签名,产物是 `<文件>.sig`:
 
 ```
 openssl cms -sign -binary -in <文件> -out <文件>.sig \
-  -signer eec.pem -inkey eec_secret.pem -nocerts -noattr -outform DER
+  -signer <EEC 证书> -inkey eec_secret.pem -nocerts -noattr -outform DER
 ```
 
-`-binary` 表示按原始字节签名,不做换行规范化,与作者签名的逐字节语义一致;`-nocerts` 表示签名里不带证书,验证方从分发结构里取 `eec.pem`。网页产物对 `dist/` 下的 `.html`、`.js`、`.css` 逐个签名,由 `sign-web` 子命令完成,同时写出按路径排序的 `web_files.json` 清单并对其单独签名,最后把 `eec.pem` 复制到产物目录供校验方取用。签名加 `-outform DER` 输出裸 CMS,浏览器端可直接解析。
+`-binary` 表示按原始字节签名,不做换行规范化,与作者签名的逐字节语义一致;`-nocerts` 表示签名里不带证书,验证方从分发结构里取对应的 EEC 证书。网页产物对 `dist/` 下的 `.html`、`.js`、`.css` 逐个签名,由 `sign-web` 子命令完成,同时写出按路径排序的 `web_files.json` 清单并对其单独签名,最后把 EEC 证书按 certs 布局写到产物目录的 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ,不再写入产物根目录的 `eec.pem` ;旧布局的 `eec.pem` 只保留读取侧的兼容回退,待全部产物与来源迁移完成后可连同回退逻辑一起移除。签名加 `-outform DER` 输出裸 CMS,浏览器端可直接解析。
 
 插件合集的目录数据不再逐文件签名,改为每层一份哈希清单并只对清单签名,插件产物 `plugin.js` 仍逐版本单独签名,见下文「合集目录: 三层哈希清单」。
 
@@ -98,7 +98,7 @@ openssl pkeyutl -sign -rawin -inkey author_secret.pem -in <文件> -out <文件>
 
 ```
 openssl cms -sign -binary -md sha512 -in manifest.json -out manifest.json.sig \
-  -signer eec.pem -inkey eec_secret.pem -nocerts -noattr -outform DER
+  -signer <EEC 证书> -inkey eec_secret.pem -nocerts -noattr -outform DER
 ```
 
 L3 不覆盖 `plugin.js`:产物由每版本的 `plugin.js.sig` 独立签名,清单只管目录数据。原先的 `meta.json.sig` 已取消,该版本 `meta.json` 的完整性由 L3 清单覆盖。
@@ -121,20 +121,20 @@ L3 不覆盖 `plugin.js`:产物由每版本的 `plugin.js.sig` 独立签名,清�
 ```
 # 清单签名: 与文件签名同一口径,内容为 manifest.json 的字节
 openssl cms -verify -binary -inform DER -in manifest.json.sig -content manifest.json \
-  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile eec.pem
+  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile certs/dsce/dsce-pages/dsce-pages-eec.crt
 
 # 文件哈希
 openssl dgst -sha512 -r <文件>
 
 # 合集签名: 根证书作为信任锚,EEC 证书作为候选签名者
 openssl cms -verify -binary -inform DER -in <文件>.sig -content <文件> \
-  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile eec.pem
+  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile certs/dsce/dsce-pages/dsce-pages-eec.crt
 
 # 作者签名
 openssl pkeyutl -verify -pubin -inkey author_pub.pem -rawin -in <文件> -sigfile <文件>.author.sig
 
 # 证书链
-openssl verify -CAfile certs/dsce/root-ca/dsce-root-ca.crt eec.pem
+openssl verify -CAfile certs/dsce/root-ca/dsce-root-ca.crt certs/dsce/dsce-pages/dsce-pages-eec.crt
 ```
 
 整目录校验用 `verify-web` 子命令: 先校验证书链,再逐个校验 `.sig`,缺失签名与孤儿签名都计入失败清单,有任何失败时以非零状态退出。
@@ -308,7 +308,7 @@ online-data/
 <collection>/
 ├── certs/
 │   └── <合集 id>-eec.crt       # 终端签名证书,随 Pages 分发;来源证书的规范路径
-├── eec.pem                     # 旧布局,仅作兼容兜底;已迁移的来源不再提供
+├── eec.pem                     # 旧布局,仅作兼容兜底;sign-web 不再生成,已迁移的来源不再提供
 ├── meta.json
 ├── datalog.json
 ├── tags.json
@@ -354,8 +354,8 @@ dist/
 |:---:|:---:|:---:|
 | `init-root` | 生成 ECDSA P-256 根私钥与自签名根证书 | `--dir`、`--days`、`--org`、`--name`、`--force` |
 | `issue-eec` | 用根私钥签发 EEC | `--csr`、`--out`、`--days`、`--force` |
-| `sign-web` | 对目录下的 `.html`/`.js`/`.css` 生成 CMS 分离签名 | `--dir`、`--eec`、`--key` |
-| `verify-web` | 用根证书与目录内的 `eec.pem` 校验全部签名 | `--dir`、`--root-ca`、`--eec`、`--crl` |
+| `sign-web` | 对目录下的 `.html`/`.js`/`.css` 生成 CMS 分离签名,并把证书按 certs 布局写入产物目录 | `--dir`、`--eec`、`--key` |
+| `verify-web` | 用根证书与目录内的 EEC 证书校验全部签名;默认取 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ,旧布局的 `eec.pem` 只作兼容回退 | `--dir`、`--root-ca`、`--eec`、`--crl` |
 | `gen-crl` | 生成 CRL | `--out`、`--days`、`--revoke` |
 
 `issue-eec` 与 `gen-crl` 从环境变量 `ROOT_CA_SECRET`、`ROOT_CA_CERT` 读取根私钥与根证书路径;这两个变量只属于签发工具,与构建无关,构建内嵌根证书直接读 `certs/dsce/root-ca/dsce-root-ca.crt`。
@@ -367,7 +367,7 @@ dist/
 | 根私钥 | 组织离线签名环境 | 仓库任何被追踪的路径、CI secrets 之外的任何位置、产物 |
 | EEC 私钥 | 合集 CI 的 secrets | 公开仓库文件、Pages 产物 |
 | 根证书 | `certs/dsce/root-ca/`、online-data 分支、产物 | 无需保密 |
-| EEC 证书 | `certs/plugin-set/<合集名>/`、`certs/dsce/dsce-pages/`、`certs/dsce/dsc-inner-plugin/`、合集根目录的 `certs/`、online-data 分支、网页产物目录 | 无需保密 |
+| EEC 证书 | `certs/plugin-set/<合集名>/`、`certs/dsce/dsce-pages/`、`certs/dsce/dsc-inner-plugin/`、合集根目录的 `certs/`、online-data 分支、网页产物的 `certs/dsce/dsce-pages/` | 无需保密 |
 | 作者私钥 | 作者本机 | 合集仓库、产物 |
 
 根 CA 只签发 EEC,不参与日常签名;合集 CI 只用 EEC 私钥签文件,不接触根私钥。
@@ -391,7 +391,9 @@ dist/
 | 现象 | 常见原因 |
 |:---:|:---:|
 | `openssl cms -sign` 报 `provider signature failure` | EEC 私钥是 Ed25519,必须换成 ECDSA P-256 |
-| `verify-web` 报证书链校验失败 | 目录内的 `eec.pem` 不是该根证书签发的,或换根后没有重新签发 |
+| `verify-web` 报证书链校验失败 | 目录内的 `certs/dsce/dsce-pages/dsce-pages-eec.crt`(旧布局的 `eec.pem`)不是该根证书签发的,或换根后没有重新签发 |
+| `sign-web` 报目标目录存在旧布局的证书 | 产物目录仍留着 `eec.pem`;删除该文件后重新运行,证书改由 certs 布局提供 |
+| `verify-web` 报目录内没有 EEC 证书 | 目录内既没有 `certs/dsce/dsce-pages/dsce-pages-eec.crt`,也没有兼容回退的 `eec.pem`;重新运行 `sign-web` 生成规范路径 |
 | `verify-web` 报某个文件 CMS 校验失败 | 该文件在签名后被改动过,或签名不是对当前字节生成的 |
 | `verify-web` 报 `certificate revoked` | EEC 已被 `gen-crl` 吊销 |
 | 生成的 `index.json` 里某个合集 `eec` 路径不对 | `certs/plugin-set/manifest.json` 的 `eec` 字段必须写成 `<合集 id>/<合集 id>-eec.crt` |

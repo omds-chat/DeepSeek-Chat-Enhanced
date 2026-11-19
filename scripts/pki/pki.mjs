@@ -21,8 +21,14 @@ import { dirname, join, resolve } from 'node:path'
 export const ROOT_CA_FILE = 'root_ca.crt'
 /** 根 CA 私钥文件名,只在签名环境使用,不入库 */
 export const ROOT_CA_KEY_FILE = 'root_secret.pem'
-/** 合集根目录的终端签名证书文件名 */
-export const EEC_CERT_FILE = 'eec.pem'
+/** 网页签名证书在产物内的相对路径,证书统一按 certs 布局存放 */
+export const EEC_CERT_FILE = 'certs/dsce/dsce-pages/dsce-pages-eec.crt'
+/**
+ * 旧布局的 EEC 证书文件名。
+ * 早期 sign-web 把证书复制到产物根目录的 eec.pem,尚未迁移的产物与第三方来源仍按该路径提供证书,
+ * 因此读取端保留兼容回退,写入端只写 certs 布局。所有产物与来源迁移完成后,本常量连同回退逻辑一并删除。
+ */
+export const LEGACY_EEC_CERT_FILE = 'eec.pem'
 /** EEC 私钥文件名,只从 CI secret 读取 */
 export const EEC_KEY_FILE = 'eec_secret.pem'
 /** EEC 证书签名请求文件名 */
@@ -57,6 +63,28 @@ export function cmsSignaturePath(filePath) {
 /** 文件的作者分离签名路径,即 <文件>.author.sig */
 export function authorSignaturePath(filePath) {
   return filePath + '.author.sig'
+}
+
+/** 把相对产物根的证书路径拼成绝对路径,分隔符跟随平台 */
+export function certsLayoutPath(dir, relativePath) {
+  return join(dir, ...relativePath.split('/'))
+}
+
+/**
+ * 在产物目录里按「certs 布局 -> 旧布局 eec.pem」的顺序定位 EEC 证书。
+ * legacy 为真表示命中的是旧布局,调用方应提示迁移。
+ * 两份都不存在时返回 certs 布局路径,让报错指向规范路径。
+ */
+export function resolveEecCertPath(dir) {
+  const canonical = certsLayoutPath(dir, EEC_CERT_FILE)
+  if (existsSync(canonical)) {
+    return { path: canonical, legacy: false }
+  }
+  const legacy = join(dir, LEGACY_EEC_CERT_FILE)
+  if (existsSync(legacy)) {
+    return { path: legacy, legacy: true }
+  }
+  return { path: canonical, legacy: false }
 }
 
 function head(text, lines = 3) {

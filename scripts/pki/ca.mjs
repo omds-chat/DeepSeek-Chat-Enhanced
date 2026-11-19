@@ -12,22 +12,25 @@
  * - 合集与网页签名 openssl cms -sign -binary -nocerts -noattr,产出 <文件>.sig
  */
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   EEC_CERT_FILE,
+  LEGACY_EEC_CERT_FILE,
   ROOT_CA_FILE,
   ROOT_CA_KEY_FILE,
   PkiError,
   certMatchesKey,
+  certsLayoutPath,
   cmsSignaturePath,
   describeCertificate,
   genRootCa,
   hasDigitalSignature,
   issueEec,
   requireOpenssl,
+  resolveEecCertPath,
   signFileCms,
   verifyChain,
   verifyFileCms,
@@ -59,7 +62,7 @@ const USAGE = [
   '  init-root   生成 ECDSA P-256 根私钥与自签名根证书',
   '  issue-eec   用根私钥签发终端签名证书(EEC)',
   '  sign-web    对目录下的 .html/.js/.css 生成 CMS 分离签名',
-  '  verify-web  用根证书与目录内的 eec.pem 校验全部签名',
+  '  verify-web  用根证书与目录内的 EEC 证书校验全部签名',
   '  gen-crl     生成证书吊销列表(CRL)',
   '',
   '各子命令的选项用 --help 查看。',
@@ -100,15 +103,18 @@ const USAGES = {
     '  --key <私钥>    EEC 私钥',
     '',
     '每个 .html/.js/.css 生成 <文件>.sig(CMS 分离签名, -binary),同时写出 ' + WEB_MANIFEST_FILE,
-    '记录全部已签名文件(按路径排序)并对其单独签名;EEC 证书会复制为 <目录>/eec.pem,',
-    '供 verify-web 与网页校验直接取用。',
+    '记录全部已签名文件(按路径排序)并对其单独签名;EEC 证书按 certs 布局写成',
+    '<目录>/' + EEC_CERT_FILE + ',供 verify-web 与网页校验直接取用。',
+    '目标目录若留有旧布局的 <目录>/' + LEGACY_EEC_CERT_FILE + ',本子命令报错要求先删除,',
+    '不再产出也不再覆盖旧布局的证书。',
   ].join('\n'),
   'verify-web': [
     '用法: node scripts/pki/ca.mjs verify-web --dir <目录> --root-ca <根证书> [--eec <证书>] [--crl <吊销列表>]',
     '',
     '  --dir <目录>      待校验目录',
     '  --root-ca <证书>  根证书,作为信任锚',
-    '  --eec <证书>      EEC 证书,默认 <目录>/eec.pem',
+    '  --eec <证书>      EEC 证书,默认 <目录>/' + EEC_CERT_FILE + ';',
+    '                    旧布局的 <目录>/' + LEGACY_EEC_CERT_FILE + ' 只作兼容回退',
     '  --crl <文件>      吊销列表,给出时同时做吊销检查',
     '',
     '先校验证书链,再逐文件校验 .sig;缺失签名与孤儿签名都计入失败清单。',
@@ -413,6 +419,18 @@ const signWeb = (argv) => {
   if (!certMatchesKey(eecPath, keyPath)) {
     fail('EEC 证书与私钥不配对: ' + display(eecPath) + ' 与 ' + display(keyPath))
   }
+  // 旧布局把证书放在产物根目录,与 certs 布局并存会让打包带上两份可能不同步的证书,
+  // 因此这里要求先迁移,而不是静默覆盖或忽略
+  const legacyEec = join(dir, LEGACY_EEC_CERT_FILE)
+  if (existsSync(legacyEec)) {
+    fail(
+      '目标目录存在旧布局的证书 ' +
+        display(legacyEec) +
+        ': sign-web 只写出 ' +
+        EEC_CERT_FILE +
+        ',请先删除该文件再签名,迁移说明见 docs/user/develop/basic/web-signature.md'
+    )
+  }
   const files = listFiles(dir).filter(isSignedFile).sort()
   if (files.length === 0) {
     fail('目录下没有可签名的 .html/.js/.css 文件: ' + display(dir))
@@ -428,8 +446,9 @@ const signWeb = (argv) => {
     'utf8'
   )
   signFileCms(manifestPath, eecPath, keyPath)
-  const targetEec = join(dir, EEC_CERT_FILE)
+  const targetEec = certsLayoutPath(dir, EEC_CERT_FILE)
   if (resolve(targetEec) !== eecPath) {
+    mkdirSync(dirname(targetEec), { recursive: true })
     copyFileSync(eecPath, targetEec)
   }
   console.log('[pki] 目录: ' + display(dir))
@@ -500,9 +519,27 @@ const verifyWeb = (argv) => {
   }
   const dir = resolve(requireOption(options, 'dir'))
   const rootCa = resolve(requireOption(options, 'root-ca'))
-  const eecPath = options.eec === undefined ? join(dir, EEC_CERT_FILE) : resolve(options.eec)
   requireDir(dir, '待校验目录')
   requireFile(rootCa, '根证书')
+  let eecPath = ''
+  if (options.eec === undefined) {
+    const located = resolveEecCertPath(dir)
+    eecPath = located.path
+    if (!existsSync(eecPath)) {
+      fail(
+        '目录内没有 EEC 证书: 缺少 ' +
+          display(certsLayoutPath(dir, EEC_CERT_FILE)) +
+          ',旧布局的 ' +
+          display(join(dir, LEGACY_EEC_CERT_FILE)) +
+          ' 也不存在'
+      )
+    }
+    if (located.legacy) {
+      console.log('[pki] 提示: 目录内只有旧布局的证书 ' + display(eecPath) + ',已按兼容回退使用')
+    }
+  } else {
+    eecPath = resolve(options.eec)
+  }
   requireFile(eecPath, 'EEC 证书')
 
   const checkCrl = options.crl !== undefined
