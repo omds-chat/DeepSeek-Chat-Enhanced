@@ -8,6 +8,8 @@ name: Deploy GitHub Pages
 # - 信任数据归档到 online-data 分支,同样复制到三处
 #   online-data 的内容由「certs 目录整体复制 + .github/scripts/build-trust-index.mjs 生成 index.json」得到
 #   (原先切分结构的 scripts/build-online-data.mjs 已退役)
+# - 预检查: 发布 tag 必须形如 dsc-主版本.次版本.修订版本;三条分支必须两两无公共祖先
+# - 版本留存: version 目录只保留最近 1000 个版本,裁剪在 commit 之前完成
 # - 组装 RUNNER_TEMP/pages 后上传并用 actions/deploy-pages 部署
 
 on:
@@ -37,6 +39,8 @@ env:
   # 两条归档分支各自的标记 tag 后缀
   # git 的 tag 位于整个仓库共用的 refs/tags 命名空间,dist 与 online-data 无法持有同名 tag:
   # 先打的 tag 会让后一步的「已发布」预检查命中并整步跳过,因此按分支加后缀。
+  # 基础 tag 即发布 tag(形如 dsc-1.0.0),归档分支的标记 tag 为基础 tag 加后缀;
+  # version 目录名使用基础 tag,即 version/dsc-1.0.0/ 这样的形式。
   # 后缀只用于归档分支的标记,发布 tag 本身仍是 release 的 tag。
   DIST_TAG_SUFFIX: -dist
   ONLINE_DATA_TAG_SUFFIX: -online-data
@@ -46,6 +50,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # 预检查: 发布 tag 的命名格式。
+      # 版本号统一为 dsc-主版本.次版本.修订版本,三段均为十进制数;
+      # 格式不符直接中止,避免不合规的 tag 进入 version 目录并污染后续归档。
+      - name: Validate release tag format
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_TAG}" ]; then
+            echo "::error::未取得发布 tag"
+            exit 1
+          fi
+          if [[ ! "${RELEASE_TAG}" =~ ^dsc-[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::发布 tag ${RELEASE_TAG} 不符合格式;正确格式为 dsc-主版本.次版本.修订版本,三段均为十进制数,例如 dsc-1.0.0"
+            exit 1
+          fi
+          echo "发布 tag ${RELEASE_TAG} 格式符合 dsc-主版本.次版本.修订版本"
+
       # 三份检出之一: 主工作区检出到 release tag
       - name: Check out release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,6 +117,51 @@ jobs:
           path: online-data-worktree
           fetch-depth: 0
           fetch-tags: true
+
+      # 预检查: 三条分支必须两两无公共祖先。
+      # main(发行 tag 的提交)、dist、online-data 三者互不共享历史;
+      # 任意两条出现公共祖先都说明分支基线被污染,归档口径随之失真,因此直接中止。
+      - name: Precheck orphan branches
+        run: |
+          set -euo pipefail
+          # 两条归档分支取进主工作区的仓库,使三个提交能在同一仓库内比较
+          git fetch --no-tags origin \
+            "+refs/heads/dist:refs/remotes/origin/dist" \
+            "+refs/heads/online-data:refs/remotes/origin/online-data"
+          sha_main="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          sha_dist="$(git -C dist-worktree rev-parse HEAD)"
+          sha_online_data="$(git -C online-data-worktree rev-parse HEAD)"
+          for sha in "${sha_main}" "${sha_dist}" "${sha_online_data}"; do
+            if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
+              echo "::error::主仓库中缺少提交 ${sha},无法比较公共祖先"
+              exit 1
+            fi
+          done
+          # 无公共祖先时 git merge-base 退出码为 1 且无输出;其余非零退出码视为比较失败
+          assert_orphan() {
+            local name_a="$1"
+            local sha_a="$2"
+            local name_b="$3"
+            local sha_b="$4"
+            local output=""
+            local status=0
+            set +e
+            output="$(git merge-base "${sha_a}" "${sha_b}" 2>&1)"
+            status=$?
+            set -e
+            if [ "${status}" -eq 0 ]; then
+              echo "::error::${name_a} 与 ${name_b} 存在公共祖先 ${output},三条分支必须两两无公共祖先"
+              exit 1
+            fi
+            if [ "${status}" -ne 1 ]; then
+              echo "::error::git merge-base 比较 ${name_a} 与 ${name_b} 失败(status=${status}): ${output}"
+              exit 1
+            fi
+            echo "${name_a} 与 ${name_b} 无公共祖先"
+          }
+          assert_orphan main "${sha_main}" dist "${sha_dist}"
+          assert_orphan main "${sha_main}" online-data "${sha_online_data}"
+          assert_orphan dist "${sha_dist}" online-data "${sha_online_data}"
 
       # 预检查: 分支内是否已有同名 tag。
       # 判定在本轮 push 之前完成并写入步骤输出,避免 dist 步骤新打的 tag 影响 online-data 的判定。
@@ -171,7 +236,7 @@ jobs:
             --dir "${DIST_DIR}" \
             --root-ca certs/dsce/root-ca/dsce-root-ca.crt
 
-      # dist 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> commit、打 tag、push
+      # dist 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> 裁剪历史版本 -> commit、打 tag、push
       - name: Publish dist branch
         if: steps.archive.outputs.skip_dist == 'false'
         run: |
@@ -185,6 +250,9 @@ jobs:
           for target in dist-worktree dist-worktree/version/latest "dist-worktree/version/${RELEASE_TAG}"; do
             cp -a "${DIST_DIR}/." "${target}/"
           done
+          # 版本留存: 只保留最近的 MAX_VERSIONS 个版本目录(latest 不参与计数);
+          # 裁剪发生在 commit 之前,删除与新增因此进入同一个 commit
+          node .github/scripts/prune-versions.mjs --dir dist-worktree/version
           git -C dist-worktree config user.name "github-actions[bot]"
           git -C dist-worktree config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C dist-worktree add -A
@@ -199,7 +267,7 @@ jobs:
           git -C dist-worktree push origin "refs/tags/${archive_tag}"
 
       # online-data 分支归档: 清理 -> 重建 version 目录 -> 复制 certs、生成 index.json 与 README.md
-      # -> commit、打 tag、push
+      # -> 裁剪历史版本 -> commit、打 tag、push
       # 内容来源: certs 目录整体原样复制(保留 certs/... 结构) + build-trust-index.mjs 依据
       # certs/plugin-set/manifest.json 生成 index.json;旧的切分结构生成器 scripts/build-online-data.mjs 已退役
       #
@@ -253,6 +321,8 @@ jobs:
             cp -a online-data-worktree/index.json "online-data-worktree/${target}/index.json"
             cp -a online-data-worktree/README.md "online-data-worktree/${target}/README.md"
           done
+          # 版本留存: 规则与 dist 分支一致,裁剪在 commit 之前完成
+          node .github/scripts/prune-versions.mjs --dir online-data-worktree/version
           git -C online-data-worktree config user.name "github-actions[bot]"
           git -C online-data-worktree config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C online-data-worktree add -A
@@ -271,7 +341,7 @@ jobs:
       # - version 目录随发布线性增长,站点体积与仓库体积都随历史版本累积:
       #   GitHub Pages 站点上限为 1 GB,单次发布同时写入 dist 与 certs 的全量副本;
       #   保留历史版本是为了让旧版页面与旧版信任数据仍可按固定路径取用,
-      #   当前不做裁剪,发布量很大时应改为只保留最近若干个版本。
+      #   两条归档分支各自只保留最近 1000 个版本,裁剪由 .github/scripts/prune-versions.mjs 完成。
       - name: Assemble Pages directory
         run: |
           set -euo pipefail
