@@ -67,17 +67,18 @@ dsc-market/
 
 `dsc-inner-plugin` 是 dsc 直接签名的内部插件索引,由 dsc 背书而不是由合集 EEC 链证明,因此单列 `endorsed` 状态。背书来源仍走与外部来源相同的安装通道：验签、落库与启动校验全部由 `dsc-plugin-engine` 完成,市场侧不为 inner 提供任何跳过校验的分支。用户自建的来源即使 id 与内部索引相同也不按背书处理,`isEndorsedSource` 要求来源是内置来源。
 
-### 来源结论三态
+### 来源结论
 
-安装计划与安装记录按三态描述来源结论,只有锚定证书且 CMS 验签通过才算已确认:
+安装计划与安装记录按同一口径描述来源结论,只有锚定证书且 CMS 验签通过才算已确认:
 
 | 结论 | 含义 | 触发条件 |
 |:---:|:---:|:---:|
 | `confirmed` | 来源已确认 | 证书来自 online-data 信任清单,且 CMS 验签通过 |
-| `failed` | 校验未通过 | 证书来自清单,但 CMS 验签未通过 |
-| `unknown` | 无法确认来源 | 没有清单证书: 来源未登记、清单不可达,或信任判定为不可信 |
+| `failed` | 校验未通过 | 证书来自清单但验签未通过;或来源在清单里但证书链校验失败、证书已被吊销 |
+| `unknown` | 无法确认来源 | 清单里没有该来源: 未登记,或清单不可达 |
+| `local` | 本地安装 | 用户上传的离线包,没有来源,不参与来源判定 |
 
-验签使用的证书只来自 online-data 信任清单,来源站点上的 `eec.pem` 不作为验签依据。信任判定为 `trusted` 或 `endorsed` 且链校验通过时,运行态的 `eec` 才有值,安装计划里才带 `eec`;其余情形计划里没有 `eec`,引擎跳过 CMS 验签,安装记录以 `eec_anchored` 记为未锚定,来源结论为 `unknown`。
+验签使用的证书只来自 online-data 信任清单,来源站点上的 `eec.pem` 不作为验签依据。信任判定为 `trusted` 或 `endorsed` 且链校验通过时,运行态的 `eec` 才有值,安装计划里才带 `eec`;其余情形计划里没有 `eec`,引擎跳过 CMS 验签,安装记录以 `eec_anchored` 记为未锚定。安装时把运行态的 `trust` 与 `trustFailure` 一并交给引擎: 判定为 `untrusted` 时按确定的负面结论记为 `failed` 并区分链失败与吊销,只有 `unverified` 才记为 `unknown`。
 
 信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时注入。信任清单里的 `root_ca.crt` 必须与内嵌根证书逐字一致,否则整份清单不被采信,所有来源按未校验处理;这可以避免镜像方自带根证书自签 EEC。
 
@@ -118,7 +119,7 @@ dsc-market/
 | 顶部 | 来源列表:名称、当前生效的 `base_url`、信任状态、下载计数标识、刷新、编辑、排序与删除;新增来源表单 |
 | 主体 | 选中来源的插件目录:插件名、作者、标签、最新版本、简介(来自该版本的 `meta.json`)与安装按钮 |
 
-来源不可信或信任未知时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。目录上方按来源结论显示「来源已确认」或「来源未确认」: 证书取自 online-data 信任清单且链校验通过时显示前者,其余情形显示后者,不再出现「已校验」这类肯定措辞。
+来源不可信或信任未知时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。目录上方按来源结论显示文案: 证书取自 online-data 信任清单且链校验通过时显示「来源已确认」,判定为不可信时按原因显示「来源证书校验未通过」或「来源证书已被吊销」,清单里没有该来源时显示「来源未确认」,不再出现「已校验」这类肯定措辞。
 
 ## 对外接口
 
@@ -138,7 +139,7 @@ client?.removeSource('custom-3')        // 内置来源与最后一个来源不�
 client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, sigUrl, authorPubUrl, authorSigUrl };eec 只来自信任清单
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 await client?.checkUpdates([{ id: 'demo', version: '1.0.0', sourceUrl: 'https://example.com/plugins/a/demo/1.0.0/plugin.js' }]) // 更新检查：Map<id, { status: 'outdated' | 'latest', latest }>
-client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trustFailure }，地址结构不符时为 null
+client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trust, trustFailure }，地址结构不符时为 null
 ```
 
 `refresh`、`plan`、`countInstall` 之外的接口都是同步快照。界面用 `subscribe` 与 `version` 配合 `useSyncExternalStore` 订阅状态变化。

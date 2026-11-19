@@ -36,7 +36,7 @@ dsc-plugin-engine/
 
 清单可以随产物一起导出：`export const manifest = {...}`,也可以挂在 `default` 导出对象上,模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`;两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
-`installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一,缺省按 `outer` 处理。签名材料共四项：`eec` 是合集 EEC 证书 PEM,`sigUrl` 是 `plugin.js.sig` 地址(缺省为 `<url>.sig`),两者齐全时做合集 CMS 分离验签;`authorPubUrl` 与 `authorSigUrl` 是作者公钥与作者签名地址(后者缺省为 `<url>.author.sig`),两者齐全时做作者裸签名验签。`eec` 只能来自 online-data 信任清单,引擎不会为验签去拉取来源站点上的 `eec.pem`;`eec` 缺省时跳过 CMS 验签,来源结论为 `unknown`。安装阶段先校验产物签名,不通过只提示用户,仍照常安装,签名状态标记为 `failed`。
+`installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型、来源信任判定与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一,缺省按 `outer` 处理;`trust` 与 `trustFailure` 是插件市场给出的来源信任判定,缺省按未登记处理。签名材料共四项：`eec` 是合集 EEC 证书 PEM,`sigUrl` 是 `plugin.js.sig` 地址(缺省为 `<url>.sig`),两者齐全时做合集 CMS 分离验签;`authorPubUrl` 与 `authorSigUrl` 是作者公钥与作者签名地址(后者缺省为 `<url>.author.sig`),两者齐全时做作者裸签名验签。`eec` 只能来自 online-data 信任清单,引擎不会为验签去拉取来源站点上的 `eec.pem`;`eec` 缺省时跳过 CMS 验签,来源结论为 `unknown`。安装阶段先校验产物签名,不通过只提示用户,仍照常安装,签名状态标记为 `failed`。
 
 `source` 还可携带两个目录地址：`dataBase` 是该版本目录(`<base>/plugins/<作者>/<插件>/<版本>/`),`pluginBase` 是插件目录(`<base>/plugins/<作者>/<插件>/`)。两者缺省时由 `url` 推导:`deriveDataBase` 去掉最后一段文件名,`derivePluginBase` 再去掉版本号。安装时两个地址一并写入安装记录,后续检查更新直接按 `dataBase` 请求 `versions.json` 与 `meta.json`,不再从来源根目录的 `datalog.json` 反查。
 
@@ -97,6 +97,8 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 |:---:|:---:|:---:|
 | `eec` | 合集 EEC 证书 PEM,CMS 验签用 | 只取 online-data 信任清单的证书,没有清单证书时留空 |
 | `eec_anchored` | 证书是否来自信任清单 | 安装时按传入的 `eec` 是否来自清单写入;旧记录没有该字段,按未锚定处理 |
+| `source_trust` | 来源信任判定(`trusted`、`endorsed`、`untrusted`、`unverified`) | 安装时由插件市场传入;旧记录没有该字段,按未登记处理 |
+| `trust_failure` | 信任失败原因(`missing`、`chain`、`revoked`) | 安装时由插件市场传入;用于区分链失败与吊销 |
 | `sig` | `plugin.js.sig` 的 base64(DER 字节) | 版本目录下的 `plugin.js.sig` |
 | `author_pub` | 作者公钥 PEM,作者裸签名验签用 | 在线插件取 `plugins/<作者>/author_pub.pem`,离线包取包内 `author_pub.pem` |
 | `author_sig` | 作者签名的 base64(原始 64 字节) | `plugin.js.author.sig` |
@@ -139,15 +141,16 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名者为该来源的 EEC 证书;作者签名是 Ed25519 裸签名,同样直接对原始字节验签,不做摘要预处理。`signature.ts` 负责把两种签名收拢成一个 `verified`、`failed`、`unverified` 结论:两种材料都有时须同时通过,只有一种材料时只校验该种,都没有时为 `unverified`。证书链与 CMS 校验模块按需动态加载,未启用签名校验的构建不会把 `pkijs` 带进首屏代码。
 
-来源结论另按三态给出,只有锚定证书且 CMS 验签通过才算已确认:
+来源结论另按四态给出,只有锚定证书且 CMS 验签通过才算已确认:
 
 | 结论 | 含义 | 触发条件 |
 |:---:|:---:|:---:|
 | `confirmed` | 来源已确认 | 证书来自 online-data 信任清单,且 CMS 验签通过 |
-| `failed` | 校验未通过 | 证书来自清单,但 CMS 验签未通过 |
-| `unknown` | 无法确认来源 | 没有清单证书: 来源未登记、清单不可达,或信任判定为不可信 |
+| `failed` | 校验未通过 | 证书来自清单但验签未通过;或来源在清单里但证书链校验失败、证书已被吊销 |
+| `unknown` | 无法确认来源 | 清单里没有该来源: 未登记,或清单不可达 |
+| `local` | 本地安装 | 用户上传的离线包,没有来源,不参与来源判定 |
 
-验签使用的证书只来自 online-data 信任清单,来源站点上的 `eec.pem` 不作为验签依据。没有传入 `eec` 时 CMS 验签直接跳过,结论为 `unknown`,既不算通过也不算失败;安装记录用 `eec_anchored` 标记证书是否来自清单,启动恢复只有锚定且验签通过的记录才算 `confirmed`。界面按三态显示「来源已确认」「来源校验失败」「来源未确认」,不再对未锚定的情形使用肯定措辞。
+验签使用的证书只来自 online-data 信任清单,来源站点上的 `eec.pem` 不作为验签依据。没有传入 `eec` 时 CMS 验签直接跳过;此时若来源信任判定为 `untrusted`,结论按确定的负面结论记为 `failed`,并由 `trustFailure` 区分链失败(`chain`)与吊销(`revoked`),只有判定为 `unverified` 才记为 `unknown`。安装记录用 `eec_anchored` 标记证书是否来自清单,用 `source_trust`、`trust_failure` 保存信任判定,启动恢复按同一规则重算结论,只有锚定且验签通过的记录才算 `confirmed`。界面据此显示「来源已确认」「来源校验未通过」「来源证书校验未通过」「来源证书已被吊销」「来源未确认」「本地安装」,不再对未锚定的情形使用肯定措辞。
 
 - 安装阶段:`installFromUrl` 按 `InstallSource` 收集材料后对刚下载的产物字节验签,不通过只提示用户,仍照常安装,记录标记为 `failed`。
 - 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节校验作者签名,不通过只标记 `failed` 并提示,仍可确认安装;包内没有签名材料时按 `unverified` 安装。合集签名不随离线包分发,离线包只认作者签名。

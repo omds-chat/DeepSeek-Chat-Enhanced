@@ -129,8 +129,10 @@ export type UpdateCheck = {
 /** 更新检查报告；无法判断（无来源、请求失败、版本号不合法）的插件不出现在报告里 */
 export type UpdateReport = Map<string, UpdateCheck>
 
-/** 重新安装计划；trustFailure 随来源信任判定一并给出 */
+/** 重新安装计划；来源信任判定一并给出，供引擎区分来源结论 */
 export type ReinstallPlan = {
   plan: InstallPlan
+  /** 同址来源的信任判定；找不到同址来源时为 null */
+  trust: SourceTrust | null
   trustFailure: TrustFailure | null
 }

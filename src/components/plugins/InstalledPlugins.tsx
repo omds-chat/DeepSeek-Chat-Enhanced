@@ -2,6 +2,7 @@ import clsx from 'clsx'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
+import { verdictTextKey } from '../../i18n/pluginVerdicts.js'
 import { market, readRecordDataBase, type ReinstallPlan, type UpdateCheck } from '../dsc-market/index.js'
 import {
   getPluginEngine,
@@ -13,7 +14,6 @@ import type {
   PluginSourceType,
   PluginState,
   PluginStateView,
-  SourceVerdict,
 } from '../dsc-plugin-engine/types.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
@@ -34,13 +34,6 @@ const sourceTypeLabels: Record<PluginSourceType, TranslationKey> = {
   awesome: 'pluginSourceAwesome',
   outer: 'pluginSourceOuter',
   local: 'pluginSourceLocal',
-}
-
-/** 来源结论文案；没有清单证书时只能是来源未确认 */
-const verdictLabels: Record<SourceVerdict, TranslationKey> = {
-  confirmed: 'pluginVerdictConfirmed',
-  failed: 'pluginVerdictFailed',
-  unknown: 'pluginVerdictUnknown',
 }
 
 const sourceLabel = (plugin: PluginStateView): TranslationKey => {
@@ -209,7 +202,8 @@ export const InstalledPlugins = ({
     authorPubUrl: reinstall.plan.authorPubUrl,
     authorSigUrl: reinstall.plan.authorSigUrl,
     ...(reinstall.plan.eec === undefined ? {} : { eec: reinstall.plan.eec }),
-    ...(reinstall.trustFailure === 'revoked' ? { trustFailure: reinstall.trustFailure } : {}),
+    ...(reinstall.trust === null ? {} : { trust: reinstall.trust }),
+    ...(reinstall.trustFailure === null ? {} : { trustFailure: reinstall.trustFailure }),
   })
 
   /**
@@ -326,7 +320,7 @@ export const InstalledPlugins = ({
                       plugin.sourceVerdict === 'failed' && styles.signatureFailed
                     )}
                   >
-                    {t(verdictLabels[plugin.sourceVerdict])}
+                    {t(verdictTextKey(plugin.sourceVerdict, plugin.sourceVerdictReason))}
                   </span>
                 ) : null}
                 {plugin.error ? (

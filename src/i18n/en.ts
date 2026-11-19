@@ -224,7 +224,10 @@ export const en = {
   pluginSourceHost: 'Host',
   pluginVerdictConfirmed: 'Source confirmed',
   pluginVerdictFailed: 'Source verification failed',
+  pluginVerdictFailedChain: 'Source certificate verification failed',
+  pluginVerdictFailedRevoked: 'Source certificate has been revoked',
   pluginVerdictUnknown: 'Source unconfirmed',
+  pluginVerdictLocal: 'Installed locally',
   pluginSignatureInvalid:
     'Plugin {id} failed signature verification; use it only if you accept the risk',
   pluginSignatureRevoked:

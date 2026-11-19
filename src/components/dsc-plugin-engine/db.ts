@@ -2,7 +2,12 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { APP_NAME } from '../../brand.js'
 import { readManifest } from './registry.js'
 import { clearLegacyInstalled, readLegacyInstalled, type LegacyPlugin } from './storage.js'
-import type { PluginManifest, PluginSourceType } from './types.js'
+import type {
+  PluginManifest,
+  PluginSourceType,
+  SourceTrustFailure,
+  SourceTrustState,
+} from './types.js'
 
 /** 独立数据库名，避免与聊天历史库冲突 */
 const DB_NAME = `${APP_NAME}-plugins`
@@ -30,6 +35,10 @@ export type StoredPluginRecord = {
   eec?: string
   /** 证书来自 online-data 信任清单；旧记录没有该字段，按未锚定处理 */
   eec_anchored?: boolean
+  /** 来源信任判定；旧记录没有该字段 */
+  source_trust?: SourceTrustState
+  /** 信任失败原因；旧记录没有该字段 */
+  trust_failure?: SourceTrustFailure
   /** plugin.js.sig 的 base64 */
   sig?: string
   /** 作者公钥 PEM */
@@ -65,6 +74,19 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const readSourceType = (value: unknown): PluginSourceType | null =>
   typeof value === 'string' && SOURCE_TYPES.includes(value) ? (value as PluginSourceType) : null
+
+/** 合法的来源信任判定 */
+const TRUST_STATES: readonly string[] = ['trusted', 'endorsed', 'untrusted', 'unverified']
+/** 合法的信任失败原因 */
+const TRUST_FAILURES: readonly string[] = ['missing', 'chain', 'revoked']
+
+const readTrustState = (value: unknown): SourceTrustState | undefined =>
+  typeof value === 'string' && TRUST_STATES.includes(value) ? (value as SourceTrustState) : undefined
+
+const readTrustFailure = (value: unknown): SourceTrustFailure | undefined =>
+  typeof value === 'string' && TRUST_FAILURES.includes(value)
+    ? (value as SourceTrustFailure)
+    : undefined
 
 const readOptionalText = (value: unknown): string | undefined =>
   typeof value === 'string' && value !== '' ? value : undefined
@@ -107,6 +129,14 @@ const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   }
   if (value.eec_anchored === true) {
     record.eec_anchored = true
+  }
+  const sourceTrust = readTrustState(value.source_trust)
+  if (sourceTrust) {
+    record.source_trust = sourceTrust
+  }
+  const trustFailure = readTrustFailure(value.trust_failure)
+  if (trustFailure) {
+    record.trust_failure = trustFailure
   }
   const sig = readOptionalText(value.sig)
   if (sig) {

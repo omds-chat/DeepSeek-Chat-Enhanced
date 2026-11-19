@@ -3,7 +3,13 @@ import {
   bytesToBase64,
   verifyDetachedSignature,
 } from '../../services/integrity/ed25519.js'
-import type { SignatureState, SourceVerdict } from './types.js'
+import type {
+  SignatureState,
+  SourceTrustFailure,
+  SourceTrustState,
+  SourceVerdict,
+  SourceVerdictReason,
+} from './types.js'
 
 /** 拉取资源字节；网络失败与非 2xx 响应都返回 null */
 export const fetchArtifactBytes = async (url: string): Promise<Uint8Array<ArrayBuffer> | null> => {
@@ -203,13 +209,43 @@ export const verifyArtifact = async (
   return { cms: cms ? true : null, author: author ? true : null, state: 'verified' }
 }
 
+/** 来源结论的判定输入；信任判定来自插件市场的 online-data 信任清单 */
+export type SourceVerdictInput = {
+  /** 证书是否来自 online-data 信任清单 */
+  anchored: boolean
+  /** CMS 验签结论；没有锚定证书时为 null */
+  cms: boolean | null
+  /** 来源信任判定；缺省按未登记处理 */
+  trust?: SourceTrustState
+  /** 信任失败原因 */
+  trustFailure?: SourceTrustFailure
+}
+
+/** 来源结论与原因 */
+export type SourceVerdictResult = {
+  verdict: SourceVerdict
+  reason: SourceVerdictReason
+}
+
 /**
- * 来源结论：只有证书锚定在 online-data 信任清单且 CMS 验签通过才算已确认；
- * 证书锚定但验签未通过（含拿不到签名材料）为校验失败；没有锚定证书一律无法确认来源。
+ * 来源结论：只有证书锚定在 online-data 信任清单且 CMS 验签通过才算已确认。
+ * 证书锚定但验签未通过为 failed；来源在清单里但证书链校验失败或证书已被吊销同样是 failed,
+ * 这是确定的负面结论,不按「无法确认」处理；只有清单里没有该来源时才为 unknown。
  */
-export const sourceVerdictOf = (anchored: boolean, cms: boolean | null): SourceVerdict => {
-  if (!anchored) {
-    return 'unknown'
+export const sourceVerdictOf = (input: SourceVerdictInput): SourceVerdictResult => {
+  if (input.anchored) {
+    return input.cms === true
+      ? { verdict: 'confirmed', reason: null }
+      : { verdict: 'failed', reason: 'other' }
   }
-  return cms === true ? 'confirmed' : 'failed'
+  if (input.trust === 'untrusted') {
+    const reason: SourceVerdictReason =
+      input.trustFailure === 'revoked'
+        ? 'revoked'
+        : input.trustFailure === 'chain'
+          ? 'chain'
+          : 'other'
+    return { verdict: 'failed', reason }
+  }
+  return { verdict: 'unknown', reason: null }
 }

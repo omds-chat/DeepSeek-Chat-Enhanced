@@ -49,6 +49,9 @@ import type {
   PluginSourceType,
   PluginStateView,
   SignatureState,
+  SourceTrustFailure,
+  SourceTrustState,
+  SourceVerdict,
 } from './types.js'
 
 /** 激活与停用的时间上限（毫秒） */
@@ -69,8 +72,10 @@ export type InstallSource = SignatureSource & {
   dataBase?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/；缺省由 dataBase 推导 */
   pluginBase?: string
-  /** 信任清单给出的吊销结论；revoked 表示合集 EEC 证书已被吊销 */
-  trustFailure?: 'revoked'
+  /** 来源信任判定；缺省按未登记处理 */
+  trust?: SourceTrustState
+  /** 信任清单给出的失败原因；revoked 表示合集 EEC 证书已被吊销 */
+  trustFailure?: SourceTrustFailure
 }
 
 /**
@@ -217,6 +222,12 @@ export const installPluginEngine = (): PluginEngine => {
     }
     if (origin.eecAnchored) {
       stored.eec_anchored = true
+    }
+    if (origin.sourceTrust) {
+      stored.source_trust = origin.sourceTrust
+    }
+    if (origin.trustFailure) {
+      stored.trust_failure = origin.trustFailure
     }
     if (origin.sig) {
       stored.sig = origin.sig
@@ -462,8 +473,13 @@ export const installPluginEngine = (): PluginEngine => {
       ? await verifyArtifact(bytes, material)
       : { cms: null, author: null, state: 'unverified' as SignatureState }
     const signature: SignatureState = outcome.state
-    // 只有来自信任清单的证书才算锚定，未锚定时 CMS 验签跳过，结论为无法确认来源
-    const verdict = sourceVerdictOf(material.eec !== '', outcome.cms)
+    // 只有来自信任清单的证书才算锚定；清单里没有该来源才是无法确认，链失败与吊销都是确定的负面结论
+    const { verdict, reason: verdictReason } = sourceVerdictOf({
+      anchored: material.eec !== '',
+      cms: outcome.cms,
+      ...(source?.trust === undefined ? {} : { trust: source.trust }),
+      ...(source?.trustFailure === undefined ? {} : { trustFailure: source.trustFailure }),
+    })
     if (signature === 'failed') {
       // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
       pushEngineLog(`install ${target}: signature-invalid, install anyway`)
@@ -503,6 +519,8 @@ export const installPluginEngine = (): PluginEngine => {
     const origin: store.PluginOrigin = {
       ...encodeSignature(material),
       eecAnchored: material.eec !== '',
+      ...(source?.trust === undefined ? {} : { sourceTrust: source.trust }),
+      ...(source?.trustFailure === undefined ? {} : { trustFailure: source.trustFailure }),
       sourceType,
       sourceUrl: url,
       dataBase,
@@ -515,6 +533,7 @@ export const installPluginEngine = (): PluginEngine => {
       origin,
       signature,
       verdict,
+      verdictReason,
     })
     if (!result.ok) {
       return result
@@ -573,10 +592,11 @@ export const installPluginEngine = (): PluginEngine => {
       pushEngineLog(`install local ${fallbackId}: signature-invalid, install anyway`)
       warn('pluginSignatureInvalid', { id: fallbackId })
     }
+    // 本地包没有来源，不参与来源判定，结论记为 local
     const result = register(resolved, loaded.plugin, { kind: 'local' }, {
       origin,
       signature,
-      verdict: 'unknown',
+      verdict: 'local',
     })
     if (!result.ok) {
       return result
@@ -670,6 +690,12 @@ export const installPluginEngine = (): PluginEngine => {
     if (entry.eec_anchored === true) {
       origin.eecAnchored = true
     }
+    if (entry.source_trust) {
+      origin.sourceTrust = entry.source_trust
+    }
+    if (entry.trust_failure) {
+      origin.trustFailure = entry.trust_failure
+    }
     if (entry.sig) {
       origin.sig = entry.sig
     }
@@ -707,7 +733,7 @@ export const installPluginEngine = (): PluginEngine => {
       // 没有代码就无法重建模块,只能等用户重新安装
       const record = store.addFailed(entry.manifest, source, 'no-plugin-instance', {
         origin,
-        verdict: 'unknown',
+        verdict: entry.source_type === 'local' ? 'local' : 'unknown',
       })
       record.enabled = entry.enabled
       report('pluginRestoreFailed', { id, reason: pluginReasonText('no-plugin-instance') })
@@ -724,8 +750,16 @@ export const installPluginEngine = (): PluginEngine => {
         await verifyArtifact(new TextEncoder().encode(code), material)
       : { cms: null, author: null, state: 'unverified' as SignatureState }
     const signature: SignatureState = outcome.state
-    // 旧记录没有 eec_anchored,按未锚定处理,来源结论为 unknown
-    const verdict = sourceVerdictOf(entry.eec_anchored === true, outcome.cms)
+    // 旧记录没有 eec_anchored 与来源信任判定,按未锚定、未登记处理,来源结论为 unknown
+    const computed = sourceVerdictOf({
+      anchored: entry.eec_anchored === true,
+      cms: outcome.cms,
+      ...(entry.source_trust === undefined ? {} : { trust: entry.source_trust }),
+      ...(entry.trust_failure === undefined ? {} : { trustFailure: entry.trust_failure }),
+    })
+    // 本地包没有来源,不参与来源判定
+    const verdict: SourceVerdict = entry.source_type === 'local' ? 'local' : computed.verdict
+    const verdictReason = entry.source_type === 'local' ? null : computed.reason
     if (signature === 'failed') {
       // 校验不通过只提示,不阻断激活;记录标记为不可信,界面保留标识
       origin.trusted = false
@@ -741,6 +775,7 @@ export const installPluginEngine = (): PluginEngine => {
         origin,
         signature,
         verdict,
+        verdictReason,
       })
       record.enabled = entry.enabled
       report('pluginRestoreFailed', { id, reason: pluginReasonText(reason) })
@@ -750,6 +785,7 @@ export const installPluginEngine = (): PluginEngine => {
       origin,
       signature,
       verdict,
+      verdictReason,
     })
     const record = store.get(id)
     if (!result.ok || !record) {
@@ -813,6 +849,7 @@ export const installPluginEngine = (): PluginEngine => {
       sourceType: record.origin?.sourceType ?? 'inner',
       ...(record.origin?.dataBase === undefined ? {} : { dataBase: record.origin.dataBase }),
       sourceVerdict: record.verdict,
+      sourceVerdictReason: record.verdictReason,
       enabled: record.enabled,
       dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],
@@ -879,7 +916,10 @@ export type {
   SessionsCapability,
   SettingsCapability,
   SignatureState,
+  SourceTrustFailure,
+  SourceTrustState,
   SourceVerdict,
+  SourceVerdictReason,
   StorageCapability,
   UiCapability,
 } from './types.js'

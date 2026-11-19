@@ -43,11 +43,21 @@ export type PluginSourceType = 'inner' | 'awesome' | 'outer' | 'local'
 export type SignatureState = 'verified' | 'unverified' | 'failed'
 
 /**
- * 来源结论三态。
+ * 来源结论。
  * confirmed 表示验签证书来自 online-data 信任清单且合集 CMS 验签通过；
- * failed 表示证书来自清单但验签未通过；unknown 表示没有清单证书，无法确认来源。
+ * failed 表示校验未通过：证书来自清单但验签未通过,或来源在清单里但证书链校验失败、证书已被吊销；
+ * unknown 表示清单里没有该来源,无法确认；local 表示本地安装,不参与来源判定。
  */
-export type SourceVerdict = 'confirmed' | 'failed' | 'unknown'
+export type SourceVerdict = 'confirmed' | 'failed' | 'unknown' | 'local'
+
+/** 来源结论的原因；只有 failed 有值,其余为 null */
+export type SourceVerdictReason = 'chain' | 'revoked' | 'other' | null
+
+/** 来源信任判定；与插件市场的来源信任状态取值一致 */
+export type SourceTrustState = 'trusted' | 'endorsed' | 'untrusted' | 'unverified'
+
+/** 信任失败原因；missing 表示清单登记或证书文件缺失 */
+export type SourceTrustFailure = 'missing' | 'chain' | 'revoked'
 
 /** 插件清单 */
 export type PluginManifest = {
@@ -216,8 +226,10 @@ export type PluginStateView = {
   sourceType: PluginSourceType
   /** 在线插件的版本目录地址，来自安装记录；旧记录没有该字段 */
   dataBase?: string
-  /** 来源结论；没有清单证书的记录为 unknown */
+  /** 来源结论；local 表示本地安装,不参与来源判定 */
   sourceVerdict: SourceVerdict
+  /** 来源结论的原因；只有 failed 有值 */
+  sourceVerdictReason: SourceVerdictReason
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */
   enabled: boolean
   /** 清单声明的依赖插件 id */

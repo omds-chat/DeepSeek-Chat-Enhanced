@@ -639,7 +639,11 @@ export const createMarketClient = (
     if (runtime?.eec) {
       plan.eec = runtime.eec
     }
-    return { plan, trustFailure: runtime?.trustFailure ?? null }
+    return {
+      plan,
+      trust: runtime?.trust ?? null,
+      trustFailure: runtime?.trustFailure ?? null,
+    }
   }
 
   return {
