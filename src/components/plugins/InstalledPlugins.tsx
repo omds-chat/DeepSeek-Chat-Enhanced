@@ -13,7 +13,7 @@ import type {
   PluginSourceType,
   PluginState,
   PluginStateView,
-  SignatureState,
+  SourceVerdict,
 } from '../dsc-plugin-engine/types.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
@@ -36,11 +36,11 @@ const sourceTypeLabels: Record<PluginSourceType, TranslationKey> = {
   local: 'pluginSourceLocal',
 }
 
-/** 签名状态文案；只对在线分发的插件展示 */
-const signatureLabels: Record<SignatureState, TranslationKey> = {
-  verified: 'pluginSignatureVerified',
-  unverified: 'pluginSignatureUnverified',
-  failed: 'pluginSignatureFailed',
+/** 来源结论文案；没有清单证书时只能是来源未确认 */
+const verdictLabels: Record<SourceVerdict, TranslationKey> = {
+  confirmed: 'pluginVerdictConfirmed',
+  failed: 'pluginVerdictFailed',
+  unknown: 'pluginVerdictUnknown',
 }
 
 const sourceLabel = (plugin: PluginStateView): TranslationKey => {
@@ -202,14 +202,13 @@ export const InstalledPlugins = ({
     confirmTimer.current = window.setTimeout(() => setConfirmUpdate(null), CONFIRM_MS)
   }
 
-  /** 安装计划转成引擎需要的来源信息；eec 与 eecUrl 二选一，与其他安装入口同一口径 */
+  /** 安装计划转成引擎需要的来源信息；eec 只来自清单，与其他安装入口同一口径 */
   const installSourceOf = (reinstall: ReinstallPlan): InstallSource => ({
     sourceType: reinstall.plan.sourceType,
     sigUrl: reinstall.plan.sigUrl,
     authorPubUrl: reinstall.plan.authorPubUrl,
     authorSigUrl: reinstall.plan.authorSigUrl,
     ...(reinstall.plan.eec === undefined ? {} : { eec: reinstall.plan.eec }),
-    ...(reinstall.plan.eecUrl === undefined ? {} : { eecUrl: reinstall.plan.eecUrl }),
     ...(reinstall.trustFailure === 'revoked' ? { trustFailure: reinstall.trustFailure } : {}),
   })
 
@@ -324,10 +323,10 @@ export const InstalledPlugins = ({
                   <span
                     className={clsx(
                       styles.signatureText,
-                      plugin.signatureVerified === 'failed' && styles.signatureFailed
+                      plugin.sourceVerdict === 'failed' && styles.signatureFailed
                     )}
                   >
-                    {t(signatureLabels[plugin.signatureVerified])}
+                    {t(verdictLabels[plugin.sourceVerdict])}
                   </span>
                 ) : null}
                 {plugin.error ? (

@@ -42,6 +42,13 @@ export type PluginSourceType = 'inner' | 'awesome' | 'outer' | 'local'
 /** 插件签名校验状态；unverified 表示没有可校验的签名材料 */
 export type SignatureState = 'verified' | 'unverified' | 'failed'
 
+/**
+ * 来源结论三态。
+ * confirmed 表示验签证书来自 online-data 信任清单且合集 CMS 验签通过；
+ * failed 表示证书来自清单但验签未通过；unknown 表示没有清单证书，无法确认来源。
+ */
+export type SourceVerdict = 'confirmed' | 'failed' | 'unknown'
+
 /** 插件清单 */
 export type PluginManifest = {
   /** 唯一标识；小写字母开头，可含数字与连字符 */
@@ -209,8 +216,8 @@ export type PluginStateView = {
   sourceType: PluginSourceType
   /** 在线插件的版本目录地址，来自安装记录；旧记录没有该字段 */
   dataBase?: string
-  /** 签名校验状态 */
-  signatureVerified: SignatureState
+  /** 来源结论；没有清单证书的记录为 unknown */
+  sourceVerdict: SourceVerdict
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */
   enabled: boolean
   /** 清单声明的依赖插件 id */

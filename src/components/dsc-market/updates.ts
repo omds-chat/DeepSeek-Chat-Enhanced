@@ -122,7 +122,6 @@ export type ReinstallPaths = {
   sigUrl: string
   authorSigUrl: string
   authorPubUrl: string
-  eecUrl: string
 }
 
 /** 按插件目录与目标版本拼出重新安装的材料地址 */
@@ -139,6 +138,5 @@ export const reinstallPathsOf = (
     sigUrl: joinUrl(versionDir, PLUGIN_FILE + '.sig'),
     authorSigUrl: joinUrl(versionDir, PLUGIN_FILE + '.author.sig'),
     authorPubUrl: joinUrl(location.root, PLUGIN_ROOT + '/' + location.author + '/author_pub.pem'),
-    eecUrl: joinUrl(location.root, 'eec.pem'),
   }
 }

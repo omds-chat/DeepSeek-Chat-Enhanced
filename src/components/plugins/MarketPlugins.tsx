@@ -293,7 +293,6 @@ export const MarketPlugins = ({
         dataBase: plan.dataBase,
         pluginBase: plan.pluginBase,
         ...(plan.eec === undefined ? {} : { eec: plan.eec }),
-        ...(plan.eecUrl === undefined ? {} : { eecUrl: plan.eecUrl }),
         sigUrl: plan.sigUrl,
         authorPubUrl: plan.authorPubUrl,
         authorSigUrl: plan.authorSigUrl,
@@ -502,9 +501,13 @@ export const MarketPlugins = ({
                 )}
               </div>
             ) : null}
-            {runtime.eecFromTrustList ? (
-              <div className={styles.caption}>{t('pluginMarketTrustEecFromList')}</div>
-            ) : null}
+            <div className={styles.caption}>
+              {t(
+                runtime.eecFromTrustList && runtime.chainVerified
+                  ? 'pluginVerdictConfirmed'
+                  : 'pluginVerdictUnknown'
+              )}
+            </div>
             {runtime.meta?.downloadCountEnabled ? (
               <div className={styles.caption}>{t('pluginMarketCountNotice')}</div>
             ) : null}

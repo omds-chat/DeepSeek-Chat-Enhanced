@@ -28,6 +28,8 @@ export type StoredPluginRecord = {
   plugin_base?: string
   /** 合集 EEC 证书 PEM */
   eec?: string
+  /** 证书来自 online-data 信任清单；旧记录没有该字段，按未锚定处理 */
+  eec_anchored?: boolean
   /** plugin.js.sig 的 base64 */
   sig?: string
   /** 作者公钥 PEM */
@@ -102,6 +104,9 @@ const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   const eec = readOptionalText(value.eec)
   if (eec) {
     record.eec = eec
+  }
+  if (value.eec_anchored === true) {
+    record.eec_anchored = true
   }
   const sig = readOptionalText(value.sig)
   if (sig) {

@@ -30,10 +30,12 @@ import {
   decodeSignature,
   encodeSignature,
   fetchArtifactBytes,
-  fetchArtifactText,
   hasSignatureMaterial,
+  loadSignatureMaterial,
+  sourceVerdictOf,
   verifyArtifact,
   type SignatureMaterial,
+  type SignatureSource,
 } from './signature.js'
 import { MAX_PLUGIN_CODE_BYTES } from './types.js'
 import type {
@@ -57,21 +59,12 @@ const MAX_ENGINE_LOG = 100
 
 /**
  * 安装时携带的来源信息。
- * eec 与 sigUrl 齐全时做合集 CMS 验签，authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签；
- * eec 缺省时按 eecUrl 拉取来源自带的证书。
+ * eec 与 sigUrl 齐全时做合集 CMS 验签，authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签。
+ * eec 只能来自 online-data 信任清单，来源站点自带的证书不作为验签依据；
+ * 没有 eec 时跳过 CMS 验签，安装记录的来源结论为 unknown。
  */
-export type InstallSource = {
+export type InstallSource = SignatureSource & {
   sourceType: PluginSourceType
-  /** 合集 EEC 证书 PEM */
-  eec?: string
-  /** 来源自带的 eec.pem 地址；eec 缺省时使用 */
-  eecUrl?: string
-  /** plugin.js.sig 地址；缺省为 <url>.sig */
-  sigUrl?: string
-  /** 作者公钥地址；缺省时不校验作者签名 */
-  authorPubUrl?: string
-  /** 作者签名地址；缺省为 <url>.author.sig */
-  authorSigUrl?: string
   /** 该版本目录的地址,形如 <base>/plugins/<作者>/<插件>/<版本>/；缺省由 url 推导 */
   dataBase?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/；缺省由 dataBase 推导 */
@@ -221,6 +214,9 @@ export const installPluginEngine = (): PluginEngine => {
     }
     if (origin.eec) {
       stored.eec = origin.eec
+    }
+    if (origin.eecAnchored) {
+      stored.eec_anchored = true
     }
     if (origin.sig) {
       stored.sig = origin.sig
@@ -424,31 +420,6 @@ export const installPluginEngine = (): PluginEngine => {
   const unload = (id: string): Promise<UnloadResult> => serialize(id, () => unloadNow(id))
 
   /**
-   * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。
-   * 证书优先用调用方传入的 PEM（来自 online-data 信任清单），否则按 eecUrl 拉取来源自带的 eec.pem；
-   * 缺少哪一项就跳过对应的校验，由界面按未校验展示。
-   */
-  const loadSignatureMaterial = async (
-    url: string,
-    source?: InstallSource
-  ): Promise<SignatureMaterial> => {
-    const declaredEec = source?.eec ?? ''
-    const [eecText, authorPubText] = await Promise.all([
-      declaredEec !== '' ? Promise.resolve(declaredEec) : fetchArtifactText(source?.eecUrl ?? ''),
-      fetchArtifactText(source?.authorPubUrl ?? ''),
-    ])
-    const eec = eecText ?? ''
-    const authorPub = authorPubText ?? ''
-    const [sig, authorSig] = await Promise.all([
-      eec === '' ? Promise.resolve(null) : fetchArtifactBytes(source?.sigUrl ?? url + '.sig'),
-      authorPub === ''
-        ? Promise.resolve(null)
-        : fetchArtifactBytes(source?.authorSigUrl ?? url + '.author.sig'),
-    ])
-    return { eec, sig, authorPub, authorSig }
-  }
-
-  /**
    * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，
    * 两者都没有则按清单非法拒绝。安装阶段下载产物字节并保存代码文本，
    * 带签名材料时先对原始字节验签，通过后才加载模块。
@@ -487,14 +458,16 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
       return { ok: false, reason: 'load-failed', detail: 'artifact is not valid UTF-8' }
     }
-    let signature: SignatureState = 'unverified'
-    if (hasSignatureMaterial(material)) {
-      signature = await verifyArtifact(bytes, material)
-      if (signature === 'failed') {
-        // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
-        pushEngineLog(`install ${target}: signature-invalid, install anyway`)
-        warn('pluginSignatureInvalid', { id: target })
-      }
+    const outcome = hasSignatureMaterial(material)
+      ? await verifyArtifact(bytes, material)
+      : { cms: null, author: null, state: 'unverified' as SignatureState }
+    const signature: SignatureState = outcome.state
+    // 只有来自信任清单的证书才算锚定，未锚定时 CMS 验签跳过，结论为无法确认来源
+    const verdict = sourceVerdictOf(material.eec !== '', outcome.cms)
+    if (signature === 'failed') {
+      // 签名不通过只提示，不阻断安装；安装记录标记为 failed，界面保留标识
+      pushEngineLog(`install ${target}: signature-invalid, install anyway`)
+      warn('pluginSignatureInvalid', { id: target })
     }
     if (source?.trustFailure === 'revoked') {
       // 证书已被吊销同样只提示，不阻断安装；安装记录标记为不可信
@@ -529,6 +502,7 @@ export const installPluginEngine = (): PluginEngine => {
     const dataBase = normalizeDirectoryUrl(source?.dataBase) ?? deriveDataBase(url)
     const origin: store.PluginOrigin = {
       ...encodeSignature(material),
+      eecAnchored: material.eec !== '',
       sourceType,
       sourceUrl: url,
       dataBase,
@@ -537,7 +511,11 @@ export const installPluginEngine = (): PluginEngine => {
       trusted: source?.trustFailure !== 'revoked',
       code: codeText,
     }
-    const result = register(resolved, loaded.plugin, { kind: 'url', url }, { origin, signature })
+    const result = register(resolved, loaded.plugin, { kind: 'url', url }, {
+      origin,
+      signature,
+      verdict,
+    })
     if (!result.ok) {
       return result
     }
@@ -595,7 +573,11 @@ export const installPluginEngine = (): PluginEngine => {
       pushEngineLog(`install local ${fallbackId}: signature-invalid, install anyway`)
       warn('pluginSignatureInvalid', { id: fallbackId })
     }
-    const result = register(resolved, loaded.plugin, { kind: 'local' }, { origin, signature })
+    const result = register(resolved, loaded.plugin, { kind: 'local' }, {
+      origin,
+      signature,
+      verdict: 'unknown',
+    })
     if (!result.ok) {
       return result
     }
@@ -685,6 +667,9 @@ export const installPluginEngine = (): PluginEngine => {
     if (entry.eec) {
       origin.eec = entry.eec
     }
+    if (entry.eec_anchored === true) {
+      origin.eecAnchored = true
+    }
     if (entry.sig) {
       origin.sig = entry.sig
     }
@@ -720,26 +705,31 @@ export const installPluginEngine = (): PluginEngine => {
     const code = entry.code ?? ''
     if (code === '') {
       // 没有代码就无法重建模块,只能等用户重新安装
-      const record = store.addFailed(entry.manifest, source, 'no-plugin-instance', { origin })
+      const record = store.addFailed(entry.manifest, source, 'no-plugin-instance', {
+        origin,
+        verdict: 'unknown',
+      })
       record.enabled = entry.enabled
       report('pluginRestoreFailed', { id, reason: pluginReasonText('no-plugin-instance') })
       return
     }
-    let signature: SignatureState = 'unverified'
     const material = decodeSignature({
       eec: entry.eec,
       sig: entry.sig,
       authorPub: entry.author_pub,
       authorSig: entry.author_sig,
     })
-    if (hasSignatureMaterial(material)) {
-      // 验签对象是存储的代码文本重建出的字节,与安装时验签的原始字节一致
-      signature = await verifyArtifact(new TextEncoder().encode(code), material)
-      if (signature === 'failed') {
-        // 校验不通过只提示,不阻断激活;记录标记为不可信,界面保留标识
-        origin.trusted = false
-        warn('pluginSignatureInvalid', { id })
-      }
+    const outcome = hasSignatureMaterial(material)
+      ? // 验签对象是存储的代码文本重建出的字节,与安装时验签的原始字节一致
+        await verifyArtifact(new TextEncoder().encode(code), material)
+      : { cms: null, author: null, state: 'unverified' as SignatureState }
+    const signature: SignatureState = outcome.state
+    // 旧记录没有 eec_anchored,按未锚定处理,来源结论为 unknown
+    const verdict = sourceVerdictOf(entry.eec_anchored === true, outcome.cms)
+    if (signature === 'failed') {
+      // 校验不通过只提示,不阻断激活;记录标记为不可信,界面保留标识
+      origin.trusted = false
+      warn('pluginSignatureInvalid', { id })
     }
     let loaded: LoadedPlugin
     try {
@@ -747,12 +737,20 @@ export const installPluginEngine = (): PluginEngine => {
     } catch (error) {
       const reason = describeError(error)
       // 原始错误随占位记录写入插件日志,界面用可读文案
-      const record = store.addFailed(entry.manifest, source, reason, { origin, signature })
+      const record = store.addFailed(entry.manifest, source, reason, {
+        origin,
+        signature,
+        verdict,
+      })
       record.enabled = entry.enabled
       report('pluginRestoreFailed', { id, reason: pluginReasonText(reason) })
       return
     }
-    const result = register(entry.manifest, loaded.plugin, source, { origin, signature })
+    const result = register(entry.manifest, loaded.plugin, source, {
+      origin,
+      signature,
+      verdict,
+    })
     const record = store.get(id)
     if (!result.ok || !record) {
       return
@@ -814,7 +812,7 @@ export const installPluginEngine = (): PluginEngine => {
       source: record.source,
       sourceType: record.origin?.sourceType ?? 'inner',
       ...(record.origin?.dataBase === undefined ? {} : { dataBase: record.origin.dataBase }),
-      signatureVerified: record.signature,
+      sourceVerdict: record.verdict,
       enabled: record.enabled,
       dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],
@@ -881,6 +879,7 @@ export type {
   SessionsCapability,
   SettingsCapability,
   SignatureState,
+  SourceVerdict,
   StorageCapability,
   UiCapability,
 } from './types.js'

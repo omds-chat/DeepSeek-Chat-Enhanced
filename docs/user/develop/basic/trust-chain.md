@@ -88,6 +88,20 @@ openssl verify -CAfile root_ca.crt eec.pem
 
 > OpenSSL 3.5 的 `openssl cms` 没有 `-CRLfile` 选项,启用吊销检查时要把根证书与 CRL 拼成同一个 `-CAfile` 证书库,再追加 `-crl_check`。`verify-web --crl <文件>` 已按这个方式实现。
 
+### 运行时验签的证书来源
+
+浏览器侧验签使用的证书只来自 online-data 信任清单: 市场按合集 id 在 `index.json` 里找到该合集,拉取清单登记的 `eec.pem` 并用内嵌根证书校验证书链,只有链校验通过的证书才会交给引擎做 CMS 验签。来源站点自己分发的 `<base>/eec.pem` 不作为验签依据,引擎也不会为验签去请求它。
+
+安装记录与启动恢复按同一口径给出三态结论:
+
+| 结论 | 含义 | 触发条件 |
+|:---:|:---:|:---:|
+| `confirmed` | 来源已确认 | 证书来自 online-data 信任清单,且 CMS 验签通过 |
+| `failed` | 校验未通过 | 证书来自清单,但 CMS 验签未通过 |
+| `unknown` | 无法确认来源 | 没有清单证书: 来源未登记、清单不可达,或信任判定为不可信 |
+
+安装记录用 `eec_anchored` 标记证书是否来自信任清单。旧记录没有该字段时按未锚定处理,来源结论为 `unknown`;只有锚定且验签通过的记录才算 `confirmed`。没有锚定证书时 CMS 验签直接跳过,不会退化为用来源自带的证书验签。
+
 ## 吊销
 
 根 CA 维护吊销列表(CRL)。被吊销的通常是泄露或轮换下来的 EEC。
@@ -177,7 +191,7 @@ pnpm run build:online-data -- --root-ca root_ca.crt --web-eec web-eec.pem --eec 
 
 ```
 <collection>/
-├── eec.pem                 # 终端签名证书,随 Pages 分发
+├── eec.pem                 # 终端签名证书,随 Pages 分发;浏览器插件验签不读它
 ├── meta.json
 ├── datalog.json
 ├── tags.json
@@ -258,6 +272,7 @@ dist/
 | 网页运行时提示证书链校验未通过 | online-data 缺少 `web/eec.pem`,或该证书不是当前根证书签发的 |
 | 市场提示「证书已被吊销」 | 该合集的 EEC 序列号已写进 `crl.pem`,需要签发新 EEC 并重新生成 CRL,`--revoke` 只列仍需吊销的序列号 |
 | 市场把整份清单判为不可信 | `crl.pem` 拉取失败、已过期、不是当前根证书签发的,或根证书 `keyUsage` 缺 `cRLSign` |
+| 已安装插件显示「来源未确认」 | 该来源未登记在 online-data 信任清单,或清单不可达、证书链校验未通过;来源自带的 `eec.pem` 不参与验签,只能等来源登记后重新安装 |
 | `init-root` 报不得写入仓库被追踪的路径 | 根私钥只能写到仓库外的目录或 git 忽略的临时目录 |
 
 ## 延伸阅读

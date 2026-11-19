@@ -222,9 +222,9 @@ export const en = {
   pluginSourceOuter: 'External',
   pluginSourceLocal: 'Local',
   pluginSourceHost: 'Host',
-  pluginSignatureVerified: 'Verified',
-  pluginSignatureUnverified: 'Unverified',
-  pluginSignatureFailed: 'Signature failed',
+  pluginVerdictConfirmed: 'Source confirmed',
+  pluginVerdictFailed: 'Source verification failed',
+  pluginVerdictUnknown: 'Source unconfirmed',
   pluginSignatureInvalid:
     'Plugin {id} failed signature verification; use it only if you accept the risk',
   pluginSignatureRevoked:
@@ -316,7 +316,6 @@ export const en = {
   pluginMarketTrustReasonMissing: 'the source certificate cannot be confirmed',
   pluginMarketTrustReasonChain: 'the source certificate did not verify',
   pluginMarketTrustReasonRevoked: 'the source certificate has been revoked',
-  pluginMarketTrustEecFromList: 'Source certificate verified by dsc',
   pluginMarketCountBadge: 'Download count',
   pluginEndorsedBadge: 'Maintained by dsc',
   pluginUpdateAvailable: 'Update available',

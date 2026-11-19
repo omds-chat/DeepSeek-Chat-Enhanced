@@ -635,10 +635,9 @@ export const createMarketClient = (
       authorPubUrl: paths.authorPubUrl,
       authorSigUrl: paths.authorSigUrl,
     }
+    // 与市场安装同一口径：只用清单证书，没有清单证书时计划里没有 eec
     if (runtime?.eec) {
       plan.eec = runtime.eec
-    } else {
-      plan.eecUrl = paths.eecUrl
     }
     return { plan, trustFailure: runtime?.trustFailure ?? null }
   }
@@ -747,11 +746,9 @@ export const createMarketClient = (
         authorPubUrl: joinUrl(runtime.baseUrl, 'plugins/' + plugin.author + '/author_pub.pem'),
         authorSigUrl: joinUrl(runtime.baseUrl, versionPath + 'plugin.js.author.sig'),
       }
-      // 来源列入信任清单时用清单里的证书验签，否则由引擎拉取来源自带的 eec.pem
+      // 只有清单里的证书进入安装计划；没有清单证书时计划里没有 eec，来源结论为 unknown
       if (runtime.eec !== null) {
         plan.eec = runtime.eec
-      } else {
-        plan.eecUrl = joinUrl(runtime.baseUrl, 'eec.pem')
       }
       if (plugin.manifest) {
         plan.manifest = plugin.manifest

@@ -3,7 +3,7 @@ import {
   bytesToBase64,
   verifyDetachedSignature,
 } from '../../services/integrity/ed25519.js'
-import type { SignatureState } from './types.js'
+import type { SignatureState, SourceVerdict } from './types.js'
 
 /** 拉取资源字节；网络失败与非 2xx 响应都返回 null */
 export const fetchArtifactBytes = async (url: string): Promise<Uint8Array<ArrayBuffer> | null> => {
@@ -41,6 +41,39 @@ export type SignatureMaterial = {
   authorPub: string
   /** 作者签名原始字节 */
   authorSig: Uint8Array | null
+}
+
+/** 签名材料的地址；字段与引擎的安装来源一致 */
+export type SignatureSource = {
+  /** 合集 EEC 证书 PEM；只能来自 online-data 信任清单 */
+  eec?: string
+  /** plugin.js.sig 地址；缺省为 <url>.sig */
+  sigUrl?: string
+  /** 作者公钥地址；缺省时不校验作者签名 */
+  authorPubUrl?: string
+  /** 作者签名地址；缺省为 <url>.author.sig */
+  authorSigUrl?: string
+}
+
+/**
+ * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。
+ * 合集证书只用调用方传入的 PEM，即来自 online-data 信任清单的那张，不从来源站点拉取；
+ * 没有传入时 CMS 验签直接跳过，由调用方记为无法确认来源。作者材料仍按地址拉取。
+ */
+export const loadSignatureMaterial = async (
+  url: string,
+  source?: SignatureSource
+): Promise<SignatureMaterial> => {
+  const eec = source?.eec ?? ''
+  const authorPubText = await fetchArtifactText(source?.authorPubUrl ?? '')
+  const authorPub = authorPubText ?? ''
+  const [sig, authorSig] = await Promise.all([
+    eec === '' ? Promise.resolve(null) : fetchArtifactBytes(source?.sigUrl ?? url + '.sig'),
+    authorPub === ''
+      ? Promise.resolve(null)
+      : fetchArtifactBytes(source?.authorSigUrl ?? url + '.author.sig'),
+  ])
+  return { eec, sig, authorPub, authorSig }
 }
 
 /** 签名材料的可持久化形式；字段名与安装记录一致 */
@@ -131,6 +164,16 @@ export const verifyAuthorSignature = async (
   authorPubPem: string
 ): Promise<boolean> => await verifyDetachedSignature(content, signature, authorPubPem)
 
+/** 验签明细；null 表示没有该项材料，未做校验 */
+export type VerifyOutcome = {
+  /** 合集 CMS 验签结论；没有清单证书或 CMS 签名时为 null */
+  cms: boolean | null
+  /** 作者裸签名结论；没有作者材料时为 null */
+  author: boolean | null
+  /** 汇总状态；任何一项不通过为 failed，完全没有材料为 unverified */
+  state: SignatureState
+}
+
 /**
  * 校验一份产物字节。
  * 合集 CMS 签名与作者裸签名各自有材料才校验，全部通过为 verified；
@@ -139,7 +182,7 @@ export const verifyAuthorSignature = async (
 export const verifyArtifact = async (
   content: Uint8Array<ArrayBuffer>,
   material: SignatureMaterial
-): Promise<SignatureState> => {
+): Promise<VerifyOutcome> => {
   const cms =
     material.eec !== '' && material.sig !== null
       ? { eec: material.eec, sig: material.sig }
@@ -149,13 +192,24 @@ export const verifyArtifact = async (
       ? { pub: material.authorPub, sig: material.authorSig }
       : null
   if (!cms && !author) {
-    return 'unverified'
+    return { cms: null, author: null, state: 'unverified' }
   }
   if (cms && !(await verifyCmsSignature(content, cms.sig, cms.eec))) {
-    return 'failed'
+    return { cms: false, author: null, state: 'failed' }
   }
   if (author && !(await verifyAuthorSignature(content, author.sig, author.pub))) {
-    return 'failed'
+    return { cms: cms ? true : null, author: false, state: 'failed' }
   }
-  return 'verified'
+  return { cms: cms ? true : null, author: author ? true : null, state: 'verified' }
+}
+
+/**
+ * 来源结论：只有证书锚定在 online-data 信任清单且 CMS 验签通过才算已确认；
+ * 证书锚定但验签未通过（含拿不到签名材料）为校验失败；没有锚定证书一律无法确认来源。
+ */
+export const sourceVerdictOf = (anchored: boolean, cms: boolean | null): SourceVerdict => {
+  if (!anchored) {
+    return 'unknown'
+  }
+  return cms === true ? 'confirmed' : 'failed'
 }

@@ -86,7 +86,8 @@ export type SourceRuntime = {
 
 /**
  * 安装计划；交给引擎的 installFromUrl。
- * eec 与 eecUrl 二选一：来源列入信任清单时直接用清单里的证书，否则由引擎拉取来源自带的 eec.pem。
+ * eec 只来自 online-data 信任清单；没有清单证书时计划里没有 eec，引擎跳过 CMS 验签并把来源结论记为 unknown，
+ * 来源站点自带的 eec.pem 不作为验签依据。
  */
 export type InstallPlan = {
   /** plugin.js 地址 */
@@ -97,10 +98,8 @@ export type InstallPlan = {
   pluginBase: string
   manifest?: PluginManifest
   sourceType: PluginSourceType
-  /** 合集 EEC 证书 PEM */
+  /** 合集 EEC 证书 PEM；只来自 online-data 信任清单 */
   eec?: string
-  /** 来源自带的 eec.pem 地址 */
-  eecUrl?: string
   /** plugin.js.sig 地址，CMS 分离签名 */
   sigUrl: string
   /** 作者公钥地址，作者裸签名为可选材料 */

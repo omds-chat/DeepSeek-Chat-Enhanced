@@ -11,6 +11,7 @@ import {
   type PluginSourceType,
   type PluginState,
   type SignatureState,
+  type SourceVerdict,
 } from './types.js'
 
 /** 单个插件的日志上限 */
@@ -31,8 +32,10 @@ export type PluginOrigin = {
   dataBase?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/ */
   pluginBase?: string
-  /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签 */
+  /** 合集 EEC 证书 PEM，只来自 online-data 信任清单，启动校验时用于 CMS 验签 */
   eec?: string
+  /** 证书来自 online-data 信任清单；缺省视为未锚定，来源结论为 unknown */
+  eecAnchored?: boolean
   /** plugin.js.sig 的 base64，启动校验时用于 CMS 验签 */
   sig?: string
   /** 作者公钥 PEM，离线包安装时写入 */
@@ -50,6 +53,7 @@ export type PluginOrigin = {
 export type RecordOptions = {
   origin?: PluginOrigin | null
   signature?: SignatureState
+  verdict?: SourceVerdict
 }
 
 /** 已安装插件的运行记录 */
@@ -61,8 +65,10 @@ export type PluginRecord = {
   source: PluginSource | null
   /** 存储元数据；宿主直接注册的插件为 null，不参与落盘 */
   origin: PluginOrigin | null
-  /** 签名校验状态 */
+  /** 签名校验状态；本地离线包的作者签名结论 */
   signature: SignatureState
+  /** 来源结论；安装与恢复时按锚定证书与 CMS 验签结果计算 */
+  verdict: SourceVerdict
   /** 用户期望的运行状态 */
   enabled: boolean
   state: PluginState
@@ -259,6 +265,7 @@ export const add = (
     source,
     origin: options.origin ?? null,
     signature: options.signature ?? 'unverified',
+    verdict: options.verdict ?? 'unknown',
     enabled: false,
     state: 'registered',
     contributions: new Map(),
@@ -282,6 +289,7 @@ export const addFailed = (
     source,
     origin: options.origin ?? null,
     signature: options.signature ?? 'unverified',
+    verdict: options.verdict ?? 'unknown',
     enabled: true,
     state: 'failed',
     error: reason,
