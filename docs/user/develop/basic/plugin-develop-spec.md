@@ -106,7 +106,7 @@ openssl pkeyutl -sign -rawin -inkey author_secret.pem -in meta.json -out meta.js
 | `meta.json.author.sig` | 作者对 `meta.json` 原始字节的 Ed25519 裸签名,随合集分发时使用 |
 | `author_pub.pem` | 作者公钥,交给合集放到 `plugins/<作者>/author_pub.pem` |
 
-作者签名是逐字节语义,签名后不得再改动被签名文件。合集签名 `plugin.js.sig` 与 `meta.json.sig` 由合集用 EEC 证书签发,作者不需要处理。安装与启动时签名校验失败只提示,不阻断;未提供签名时按未校验处理。
+作者签名是逐字节语义,签名后不得再改动被签名文件。合集签名 `plugin.js.sig` 由合集用 EEC 证书签发,作者不需要处理;`meta.json` 的完整性由合集的三层哈希清单覆盖。安装与启动时签名校验失败只提示,不阻断;未提供签名时按未校验处理。
 
 ## 错误处理
 

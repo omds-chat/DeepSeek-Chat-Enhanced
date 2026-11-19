@@ -3,6 +3,7 @@ import {
   bytesToBase64,
   verifyDetachedSignature,
 } from '../../services/integrity/ed25519.js'
+import { sha512Hex } from '../../services/integrity/manifest.js'
 import { getTrustCrl } from '../../services/trust/crl.js'
 import type {
   SignatureState,
@@ -60,6 +61,23 @@ export type SignatureSource = {
   authorPubUrl?: string
   /** 作者签名地址；缺省为 <url>.author.sig */
   authorSigUrl?: string
+  /** L2 清单登记的 author_pub.pem 哈希；给出时公钥字节必须与它一致才会用于验签 */
+  authorPubSha512?: string
+}
+
+/**
+ * 作者公钥字节是否与 L2 清单登记的哈希一致。
+ * 没有登记哈希时按一致处理，作者签名仍按原有规则校验。
+ */
+export const authorPubMatches = async (
+  bytes: Uint8Array,
+  expectedSha512: string
+): Promise<boolean> => {
+  if (expectedSha512 === '') {
+    return true
+  }
+  const digest = await sha512Hex(bytes)
+  return digest !== null && digest === expectedSha512
 }
 
 /**
@@ -73,8 +91,7 @@ export const loadSignatureMaterial = async (
   source?: SignatureSource
 ): Promise<SignatureMaterial> => {
   const eec = await resolveEec(source)
-  const authorPubText = await fetchArtifactText(source?.authorPubUrl ?? '')
-  const authorPub = authorPubText ?? ''
+  const authorPub = await resolveAuthorPub(source)
   const [sig, authorSig] = await Promise.all([
     eec === '' ? Promise.resolve(null) : fetchArtifactBytes(source?.sigUrl ?? url + '.sig'),
     authorPub === ''
@@ -82,6 +99,22 @@ export const loadSignatureMaterial = async (
       : fetchArtifactBytes(source?.authorSigUrl ?? url + '.author.sig'),
   ])
   return { eec, sig, authorPub, authorSig }
+}
+
+/**
+ * 取作者公钥。
+ * L2 清单登记了哈希时，字节必须与哈希一致才会用于作者签名验签；
+ * 不一致时返回空串，作者签名按未校验处理，产物本身的 CMS 验签不受影响。
+ */
+const resolveAuthorPub = async (source?: SignatureSource): Promise<string> => {
+  const bytes = await fetchArtifactBytes(source?.authorPubUrl ?? '')
+  if (bytes === null) {
+    return ''
+  }
+  if (!(await authorPubMatches(bytes, source?.authorPubSha512 ?? ''))) {
+    return ''
+  }
+  return new TextDecoder().decode(bytes)
 }
 
 /** 取验签用的合集证书：清单登记的那张优先，没有登记时取来源自带的 eec.pem */

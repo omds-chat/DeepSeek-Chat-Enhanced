@@ -227,6 +227,12 @@ export type PluginStateView = {
   sourceType: PluginSourceType
   /** 在线插件的版本目录地址，来自安装记录；旧记录没有该字段 */
   dataBase?: string
+  /**
+   * 目录数据是否已按三层清单校验通过。
+   * 与 sourceVerdict 相互独立：目录未校验不影响产物结论，产物仍由 plugin.js.sig 验证；
+   * 旧记录与本地安装没有该字段。
+   */
+  catalogVerified?: boolean
   /** 来源结论；local 表示本地安装,不参与来源判定 */
   sourceVerdict: SourceVerdict
   /** 来源结论的原因；只有 failed 有值 */

@@ -221,6 +221,10 @@ export const zh = {
   pluginVerdictLocal: '本地安装',
   pluginSignatureInvalid: '插件 {id} 签名校验未通过，请自行判断是否继续使用',
   pluginSignatureRevoked: '插件 {id} 的签名证书已被吊销，请自行判断是否继续使用',
+  pluginCatalogVerified: '目录数据已校验',
+  pluginCatalogUnverified: '目录数据未校验',
+  pluginManifestRevisionRegressed:
+    '插件 {id} 的 {layer} 清单 revision 由 {seen} 回退到 {revision}，请留意来源是否被替换',
   pluginActionEnable: '启用',
   pluginActionDisable: '停用',
   pluginActionUninstall: '卸载',
@@ -298,6 +302,10 @@ export const zh = {
   pluginMarketTrustUnverified: '未登记',
   pluginMarketTrustUntrustedHint: '来源信任校验未通过（{reason}），仍可安装，请自行判断是否继续使用',
   pluginMarketNotListed: '未在官方清单登记',
+  pluginMarketCatalogVerified: '目录数据已校验',
+  pluginMarketCatalogUnverified: '目录数据未校验',
+  pluginMarketRevisionRegressed:
+    '来源清单 revision 回退：{layer} {path} 由 {seen} 变为 {revision}，请留意来源是否被替换',
   pluginMarketTrustReasonMissing: '无法确认该来源的证书',
   pluginMarketTrustReasonChain: '来源证书校验未通过',
   pluginMarketTrustReasonRevoked: '来源证书已被吊销',

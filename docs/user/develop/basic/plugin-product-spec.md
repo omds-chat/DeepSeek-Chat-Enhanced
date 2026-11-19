@@ -97,7 +97,8 @@
 
 | 签名 | 签发方 | 随产物分发的文件 | 验签材料 |
 |:---:|:---:|:---:|:---:|
-| 合集 CMS 分离签名 | 合集 EEC 证书 | `plugin.js.sig`、`meta.json.sig` | 清单已登记时优先用清单证书,未登记时取来源根目录的 `eec.pem`;两种证书都要先过本机证书链校验 |
+| 合集 CMS 分离签名 | 合集 EEC 证书 | `plugin.js.sig` | 清单已登记时优先用清单证书,未登记时取来源根目录的 `eec.pem`;两种证书都要先过本机证书链校验 |
+| 三层清单签名 | 合集 EEC 证书 | 每层的 `manifest.json.sig` | 覆盖该层目录数据的哈希,不覆盖 `plugin.js`;验签口径与产物签名一致 |
 | 作者裸签名 | 插件作者 | `plugin.js.author.sig`、`meta.json.author.sig` | 合集内的 `plugins/<作者>/author_pub.pem` |
 
 合集签名为逐字节语义,签名对象是 `plugin.js` 的原始字节,签名者是该来源的 EEC 证书;作者签名为 Ed25519 裸签名,同样直接对原始字节签名。安装与启动时两种材料都有则须同时通过,只有一种则只校验该种,都没有按未校验处理。校验失败只提示,不阻断安装与启动。
@@ -115,6 +116,19 @@
 
 链校验失败与证书吊销是确定的负面结论,按 `failed` 处理并区分原因文案;安装记录用 `eec_anchored` 标记证书链是否已在本机校验通过,用 `source_trust`、`trust_failure` 保存信任清单判定。旧记录按未校验处理,启动恢复时重新做链校验并重写标记。
 
+### 目录数据的三层校验
+
+合集目录数据按三层哈希清单分发,清单格式、签名与校验顺序见 [信任链与 PKI 签名](trust-chain.md)。引擎只消费 L3 清单:
+
+| 环节 | 做法 |
+|:---:|:---:|
+| 安装时 | 插件市场把 L3 清单的校验结论随安装来源传入;拿到且校验通过时,安装记录记 `meta_verified`,否则记为未校验 |
+| 作者公钥 | 市场把 L2 清单登记的 `author_pub.pem` 哈希一并传入;引擎按该哈希校验拉到的公钥字节,不一致时不采用该公钥,作者签名按未校验处理 |
+| 产物 | `plugin.js` 仍只用 `plugin.js.sig` 验签,不依赖任何清单 |
+| revision | 安装记录保存各层 `revision`;同一插件重装时若某层 `revision` 小于记录值,只给提示,不阻断安装 |
+
+目录数据是否已校验是独立结论,不并入来源结论:来源结论仍只有 `confirmed`、`failed`、`unknown`、`local` 四态,由证书链与 CMS 验签决定;目录数据未校验不影响产物验签,也不改变来源结论。
+
 ## 本地离线包
 
 本地插件由用户上传,面板一次只接受一个文件,扩展名为 `.zip` 或 `.tgz`。包内产物形态:
@@ -126,7 +140,7 @@
 
 `meta.json` 遵循运行时 meta schema,引擎只做最小校验:`name`、`version`、`author` 非空,`version` 为三段数字。`meta.json` 里的 `capabilities` 用于推导安装清单(与插件市场同一 id 规则);缺该字段时使用产物导出的 `manifest`,两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
-签名规则:包内同时提供 `plugin.js.author.sig` 与 `author_pub.pem` 时按约定校验作者对 `plugin.js` 的裸公钥分离签名,校验不通过只提示,不拒绝安装,记录标记为校验失败;包内没有签名材料时同样允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。合集签名 `plugin.js.sig` 与 `meta.json.sig` 属于合集分发产物,不在离线包内校验。签名约定见 [信任链与 PKI 签名](trust-chain.md) 。
+签名规则:包内同时提供 `plugin.js.author.sig` 与 `author_pub.pem` 时按约定校验作者对 `plugin.js` 的裸公钥分离签名,校验不通过只提示,不拒绝安装,记录标记为校验失败;包内没有签名材料时同样允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。合集签名 `plugin.js.sig` 与三层哈希清单属于合集分发产物,不在离线包内校验。签名约定见 [信任链与 PKI 签名](trust-chain.md) 。
 
 单个插件的 `plugin.js` 上限 1 MB,超出即拒绝安装,原因为 `package-too-large`:本地插件的代码文本要存进 IndexedDB,异常大的包会挤占存储配额,而本地插件没有外部来源可回退。
 
@@ -150,6 +164,9 @@
 | `source_url` | 在线插件的 `plugin.js` 地址,只用于检查更新;`local` 来源留空 |
 | `data_base` | 该版本目录地址,形如 `<base>/plugins/<作者>/<插件>/<版本>/`,检查更新时直接请求 |
 | `plugin_base` | 插件目录地址,形如 `<base>/plugins/<作者>/<插件>/`,用于取 `versions.json` 与 `author_pub.pem` |
+| `catalog_verified` | 合集根目录数据是否已按 L1 清单校验通过;旧记录没有该字段 |
+| `meta_verified` | 该版本是否已按 L3 清单校验通过;旧记录没有该字段 |
+| `manifest_revisions` | 各层清单 `revision`,形如 `{ "l1": 3, "l2": 2, "l3": 5 }`;重装时用于回退提示 |
 | `eec` | 合集 EEC 证书 PEM,启动校验时用于 CMS 验签 |
 | `sig` | `plugin.js.sig` 的 base64 |
 | `author_pub` | 作者公钥 PEM,启动校验时用于作者裸签名验签 |
@@ -180,6 +197,9 @@
 | 离线包缺少 `meta.json` 或 `plugin.js` | 预检拒绝,原因 `missing-meta` 或 `missing-plugin` |
 | 离线包 `meta.json` 不合规 | 预检拒绝,原因 `invalid-meta` |
 | 离线包作者签名校验未通过 | 不拒绝安装,记录标记为 `failed` 并提示 |
+| 清单缺失、验签失败或哈希不一致 | 不拒绝安装,目录数据结论降级为未校验,产物仍按 `plugin.js.sig` 验证 |
+| `author_pub.pem` 与 L2 清单登记的哈希不一致 | 不采用该公钥,作者签名按未校验处理,不影响合集 CMS 验签 |
+| 某层清单 revision 小于安装记录里的值 | 只提示,不拒绝安装 |
 | 离线包 `plugin.js` 超过 1 MB | 预检拒绝,原因 `package-too-large` |
 | 激活抛错或超时 | 插件标记 `failed`,引擎与其他插件继续运行 |
 | 未授予的能力被调用 | 抛 `PluginCapabilityError`,并提示 `pluginCapabilityDenied` |

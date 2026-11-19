@@ -326,6 +326,11 @@ export const InstalledPlugins = ({
                 {plugin.sourceVerdict === 'confirmed' && isUnlistedTrust(plugin.sourceTrust) ? (
                   <span className={styles.caption}>{t('pluginMarketNotListed')}</span>
                 ) : null}
+                {plugin.catalogVerified === undefined ? null : (
+                  <span className={styles.caption}>
+                    {t(plugin.catalogVerified ? 'pluginCatalogVerified' : 'pluginCatalogUnverified')}
+                  </span>
+                )}
                 {plugin.error ? (
                   <span className={styles.errorText}>{pluginReasonText(plugin.error)}</span>
                 ) : null}

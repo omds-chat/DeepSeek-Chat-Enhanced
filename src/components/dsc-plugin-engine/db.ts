@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { APP_NAME } from '../../brand.js'
+import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { readManifest } from './registry.js'
 import { clearLegacyInstalled, readLegacyInstalled, type LegacyPlugin } from './storage.js'
 import type {
@@ -31,6 +32,12 @@ export type StoredPluginRecord = {
   data_base?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/ */
   plugin_base?: string
+  /** 合集根目录数据是否已按 L1 清单校验通过；旧记录没有该字段 */
+  catalog_verified?: boolean
+  /** 该版本 meta.json 是否已按 L3 清单校验通过；旧记录没有该字段 */
+  meta_verified?: boolean
+  /** 各层清单 revision；旧记录没有该字段 */
+  manifest_revisions?: ManifestRevisions
   /** 合集 EEC 证书 PEM */
   eec?: string
   /** 证书来自 online-data 信任清单；旧记录没有该字段，按未锚定处理 */
@@ -91,6 +98,24 @@ const readTrustFailure = (value: unknown): SourceTrustFailure | undefined =>
 const readOptionalText = (value: unknown): string | undefined =>
   typeof value === 'string' && value !== '' ? value : undefined
 
+/** 各层 revision 的合法键 */
+const REVISION_LAYERS = ['l1', 'l2', 'l3'] as const
+
+/** 读取各层 revision；非法值丢弃，一项都读不出时返回 undefined */
+const readRevisions = (value: unknown): ManifestRevisions | undefined => {
+  if (!isRecord(value)) {
+    return undefined
+  }
+  const revisions: ManifestRevisions = {}
+  for (const layer of REVISION_LAYERS) {
+    const item = value[layer]
+    if (typeof item === 'number' && Number.isInteger(item) && item > 0) {
+      revisions[layer] = item
+    }
+  }
+  return revisions
+}
+
 /** 收敛一条存储记录；字段不合法时返回 null，由调用方丢弃该条 */
 const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   if (!isRecord(value)) {
@@ -122,6 +147,16 @@ const readStoredRecord = (value: unknown): StoredPluginRecord | null => {
   const pluginBase = readOptionalText(value.plugin_base)
   if (pluginBase) {
     record.plugin_base = pluginBase
+  }
+  if (value.catalog_verified === true) {
+    record.catalog_verified = true
+  }
+  if (value.meta_verified === true) {
+    record.meta_verified = true
+  }
+  const revisions = readRevisions(value.manifest_revisions)
+  if (revisions !== undefined) {
+    record.manifest_revisions = revisions
   }
   const eec = readOptionalText(value.eec)
   if (eec) {

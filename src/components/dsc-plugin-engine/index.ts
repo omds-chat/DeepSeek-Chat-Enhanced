@@ -1,5 +1,6 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
+import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { showToast } from '../base/toastState.js'
 import {
   CORE_VERSION,
@@ -73,6 +74,12 @@ export type InstallSource = SignatureSource & {
   dataBase?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/；缺省由 dataBase 推导 */
   pluginBase?: string
+  /** 合集根目录数据是否已按 L1 清单校验通过；缺省按未校验处理 */
+  catalogVerified?: boolean
+  /** 该版本是否已按 L3 清单校验通过；缺省按未校验处理 */
+  metaVerified?: boolean
+  /** 各层清单 revision；写入安装记录，重装时用于回退提示 */
+  revisions?: ManifestRevisions
   /** 来源信任判定；缺省按未登记处理 */
   trust?: SourceTrustState
   /** 信任清单给出的失败原因；revoked 表示合集 EEC 证书已被吊销 */
@@ -217,6 +224,15 @@ export const installPluginEngine = (): PluginEngine => {
     }
     if (origin.pluginBase) {
       stored.plugin_base = origin.pluginBase
+    }
+    if (origin.catalogVerified) {
+      stored.catalog_verified = true
+    }
+    if (origin.metaVerified) {
+      stored.meta_verified = true
+    }
+    if (origin.revisions) {
+      stored.manifest_revisions = origin.revisions
     }
     if (origin.eec) {
       stored.eec = origin.eec
@@ -431,6 +447,32 @@ export const installPluginEngine = (): PluginEngine => {
   const deactivate = (id: string): Promise<boolean> => serialize(id, () => deactivateNow(id))
   const unload = (id: string): Promise<UnloadResult> => serialize(id, () => unloadNow(id))
 
+  /** 各层 revision 的键；与三层清单一一对应 */
+  const REVISION_LAYERS = ['l1', 'l2', 'l3'] as const
+
+  /**
+   * 安装时比对清单 revision：某层小于本地记录值时只提示，不阻断安装。
+   * 本地记录值取同一插件的上一条安装记录，没有记录时不比对。
+   */
+  const warnRevisionRegressions = (id: string, incoming?: ManifestRevisions): void => {
+    if (incoming === undefined) {
+      return
+    }
+    const previous = store.get(id)?.origin?.revisions
+    if (previous === undefined) {
+      return
+    }
+    for (const layer of REVISION_LAYERS) {
+      const before = previous[layer]
+      const now = incoming[layer]
+      if (before === undefined || now === undefined || now >= before) {
+        continue
+      }
+      pushEngineLog('install ' + id + ': ' + layer + ' revision ' + String(now) + ' < ' + String(before))
+      warn('pluginManifestRevisionRegressed', { id, layer, seen: before, revision: now })
+    }
+  }
+
   /**
    * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，
    * 两者都没有则按清单非法拒绝。安装阶段下载产物字节并保存代码文本，
@@ -531,6 +573,11 @@ export const installPluginEngine = (): PluginEngine => {
       eecAnchored: outcome.chain === 'ok',
       ...(source?.trust === undefined ? {} : { sourceTrust: source.trust }),
       ...(source?.trustFailure === undefined ? {} : { trustFailure: source.trustFailure }),
+      ...(source?.catalogVerified === undefined
+        ? {}
+        : { catalogVerified: source.catalogVerified }),
+      ...(source?.metaVerified === undefined ? {} : { metaVerified: source.metaVerified }),
+      ...(source?.revisions === undefined ? {} : { revisions: source.revisions }),
       sourceType,
       sourceUrl: url,
       dataBase,
@@ -539,6 +586,8 @@ export const installPluginEngine = (): PluginEngine => {
       trusted: source?.trustFailure !== 'revoked',
       code: codeText,
     }
+    // 目录数据是否已校验只写进安装记录，不参与来源结论；revision 回退只提示
+    warnRevisionRegressions(resolved.id, source?.revisions)
     const result = register(resolved, loaded.plugin, { kind: 'url', url }, {
       origin,
       signature,
@@ -693,6 +742,15 @@ export const installPluginEngine = (): PluginEngine => {
     const pluginBase = entry.plugin_base ?? (dataBase ? derivePluginBase(dataBase) : undefined)
     if (pluginBase) {
       origin.pluginBase = pluginBase
+    }
+    if (entry.catalog_verified === true) {
+      origin.catalogVerified = true
+    }
+    if (entry.meta_verified === true) {
+      origin.metaVerified = true
+    }
+    if (entry.manifest_revisions) {
+      origin.revisions = entry.manifest_revisions
     }
     if (entry.eec) {
       origin.eec = entry.eec
@@ -864,6 +922,12 @@ export const installPluginEngine = (): PluginEngine => {
       source: record.source,
       sourceType: record.origin?.sourceType ?? 'inner',
       ...(record.origin?.dataBase === undefined ? {} : { dataBase: record.origin.dataBase }),
+      ...(record.origin?.catalogVerified === undefined && record.origin?.metaVerified === undefined
+        ? {}
+        : {
+            catalogVerified:
+              record.origin?.catalogVerified === true && record.origin?.metaVerified === true,
+          }),
       sourceVerdict: record.verdict,
       sourceVerdictReason: record.verdictReason,
       ...(record.origin?.sourceTrust === undefined

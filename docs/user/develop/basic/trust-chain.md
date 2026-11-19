@@ -60,6 +60,8 @@ openssl cms -sign -binary -in <文件> -out <文件>.sig \
 
 `-binary` 表示按原始字节签名,不做换行规范化,与作者签名的逐字节语义一致;`-nocerts` 表示签名里不带证书,验证方从分发结构里取 `eec.pem`。网页产物对 `dist/` 下的 `.html`、`.js`、`.css` 逐个签名,由 `sign-web` 子命令完成,同时写出按路径排序的 `web_files.json` 清单并对其单独签名,最后把 `eec.pem` 复制到产物目录供校验方取用。签名加 `-outform DER` 输出裸 CMS,浏览器端可直接解析。
 
+插件合集的目录数据不再逐文件签名,改为每层一份哈希清单并只对清单签名,插件产物 `plugin.js` 仍逐版本单独签名,见下文「合集目录: 三层哈希清单」。
+
 ### 作者: 裸公钥分离签名
 
 ```
@@ -70,9 +72,58 @@ openssl pkeyutl -sign -rawin -inkey author_secret.pem -in <文件> -out <文件>
 
 作者公钥随合集分发到 `plugins/<作者>/author_pub.pem`,签名文件与合集签名并存。
 
+### 合集目录: 三层哈希清单
+
+合集的分发结构分三层,每层各有一份 `manifest.json` 与一份 `manifest.json.sig`,层与层之间互不引用:
+
+| 层 | 位置 | 覆盖的文件(相对该层目录) |
+|:---:|:---:|:---:|
+| L1 | 合集根 | `meta.json`、`datalog.json`、`tags.json`、`plugins/author_manifest.json` |
+| L2 | `plugins/<作者>/` | `author_pub.pem`、`plugin_manifest.json` |
+| L3 | `plugins/<作者>/<插件>/` | `versions.json`、`<版本>/meta.json` |
+
+清单格式:
+
+```json
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "files": [{ "path": "datalog.json", "sha512": "<小写十六进制>" }]
+}
+```
+
+`path` 是相对该层目录的路径,`sha512` 是文件字节的 SHA-512 小写十六进制;`revision` 是正整数,内容每变一次就递增。签名与文件签名同一口径:
+
+```
+openssl cms -sign -binary -md sha512 -in manifest.json -out manifest.json.sig \
+  -signer eec.pem -inkey eec_secret.pem -nocerts -noattr -outform DER
+```
+
+L3 不覆盖 `plugin.js`:产物由每版本的 `plugin.js.sig` 独立签名,清单只管目录数据。原先的 `meta.json.sig` 已取消,该版本 `meta.json` 的完整性由 L3 清单覆盖。
+
+校验顺序固定为「先证书链、再 CMS 签名、最后结构」:EEC 证书链用内置根证书校验,不通过时不再发起 CMS 验签;签名通过后检查 `schemaVersion`、`revision` 为正整数、`path` 是层内相对路径、`sha512` 是 128 位小写十六进制。
+
+消费方(dsc 本体)的做法:
+
+| 环节 | 做法 |
+|:---:|:---:|
+| 目录数据 | 先取 L1 清单并验签,再取 `datalog.json` 与根 `meta.json` 并比对哈希 |
+| 插件详情与安装 | 先取 L3 清单并验签,再用它校验 `versions.json` 与该版本 `meta.json` |
+| 作者公钥 | 先取 L2 清单并验签,校验 `author_pub.pem` 后才用于作者签名验证 |
+| 产物 | 仍按 `plugin.js.sig` 验签,不依赖任何清单 |
+| 降级 | 清单缺失或验签失败时不阻断,结论降级为「目录数据未校验」,产物结论不受影响 |
+| revision 记忆 | 每层路径记住见过的最大 `revision`,本次小于记录值时只提示,不阻断 |
+
 ## 校验
 
 ```
+# 清单签名: 与文件签名同一口径,内容为 manifest.json 的字节
+openssl cms -verify -binary -inform DER -in manifest.json.sig -content manifest.json \
+  -CAfile root_ca.crt -certfile eec.pem
+
+# 文件哈希
+openssl dgst -sha512 -r <文件>
+
 # 合集签名: 根证书作为信任锚,EEC 证书作为候选签名者
 openssl cms -verify -binary -inform DER -in <文件>.sig -content <文件> \
   -CAfile root_ca.crt -certfile eec.pem
@@ -158,7 +209,8 @@ CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字�
 | 根 CA 轮换 | 所有 EEC 重签并重新分发根证书 | 信任锚变了,旧 EEC 全部失去信任 |
 | 新增合集 | 只需签发新 EEC 并更新 index.json | 其他合集不受影响 |
 | EEC 泄露或私钥丢失 | 签发新 EEC 并把旧 EEC 序列号写进 CRL | 旧签名仍能验通过,靠吊销让验证方拒绝 |
-| 只改 `meta.json`、`datalog.json` 等目录数据 | 视分发约定而定 | 这些文件本身也在签名范围内时同样要重签 |
+| 只改 `meta.json`、`datalog.json` 等目录数据 | 改哪层就重签哪层的清单,并把该层 `revision` 加一 | 清单登记的是文件字节的哈希,文件变了旧清单就必然不匹配 |
+| 只改 `plugin.js` | 重签 `plugin.js.sig` | 产物不在三层清单内,清单不必改动 |
 
 ## 已废弃的产物
 
@@ -169,6 +221,7 @@ CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字�
 | `plugin_sign.json` | 插件文件的 `.sig`(CMS 分离签名)与 `.author.sig`(作者裸公钥签名) |
 | `plugin_set_sign.json` | 合集根目录的 `eec.pem` 证书链,合集可信性由根 CA 签发的 EEC 证明 |
 | `web_sign.json` | 网页文件的 `.sig`(CMS 分离签名)与 `web_files.json` 清单 |
+| `meta.json.sig` | 三层哈希清单中的 L3 清单 |
 | Ed25519 + SHA-512 摘要的 JSON 签名结构 | 逐字节 CMS 分离签名与 `pkeyutl -rawin` 裸公钥签名 |
 
 ## 分发结构
@@ -216,23 +269,31 @@ pnpm run build:online-data -- --root-ca root_ca.crt --web-eec web-eec.pem --eec 
 
 ```
 <collection>/
-├── eec.pem                 # 终端签名证书,随 Pages 分发;清单未登记时浏览器插件取它验签
+├── eec.pem                     # 终端签名证书,随 Pages 分发;清单未登记时浏览器插件取它验签
 ├── meta.json
 ├── datalog.json
 ├── tags.json
+├── manifest.json               # L1 清单
+├── manifest.json.sig           # L1 清单的 CMS 签名
 └── plugins/
+    ├── author_manifest.json
     └── <作者>/
         ├── author_pub.pem        # 作者公钥(OpenSSL PEM)
         ├── plugin_manifest.json
+        ├── manifest.json         # L2 清单
+        ├── manifest.json.sig     # L2 清单的 CMS 签名
         └── <插件>/
             ├── versions.json
+            ├── manifest.json         # L3 清单
+            ├── manifest.json.sig     # L3 清单的 CMS 签名
             └── <x.y.z>/
                 ├── meta.json
-                ├── meta.json.sig        # 合集 CMS 签名
                 ├── plugin.js
-                ├── plugin.js.sig        # 合集 CMS 签名
-                └── plugin.js.author.sig # 作者裸公钥签名(可选)
+                ├── plugin.js.sig         # 合集 CMS 签名
+                └── plugin.js.author.sig  # 作者裸公钥签名(可选)
 ```
+
+三份清单各自只覆盖本层目录内的文件,不引用其他层的清单;`plugin.js` 不在任何清单内,由同目录的 `plugin.js.sig` 单独签名。
 
 ### 插件模板产物
 
@@ -299,6 +360,8 @@ dist/
 | 市场把整份清单判为不可信 | `crl.pem` 拉取失败、已过期、不是当前根证书签发的,或根证书 `keyUsage` 缺 `cRLSign` |
 | 已安装插件显示「来源证书校验未通过」 | 来源提供的 `eec.pem` 不是由内置根证书签发,或已过期、已被吊销;需要来源换发证书 |
 | 已安装插件显示「来源已确认」并附「未在官方清单登记」 | 证书链与验签都已通过,只是该来源未在 online-data 清单登记,属正常状态 |
+| 市场显示「目录数据未校验」但插件仍可安装 | L1 或 L3 清单缺失、验签失败、哈希不一致,属预期的降级;产物仍由 `plugin.js.sig` 单独验证 |
+| 市场提示某层清单 revision 回退 | 该层清单的 `revision` 小于本机记录值,来源可能被回滚或替换;只提示,不阻断 |
 | `init-root` 报不得写入仓库被追踪的路径 | 根私钥只能写到仓库外的目录或 git 忽略的临时目录 |
 
 ## 延伸阅读

@@ -50,11 +50,26 @@ dsc-market/
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
 2. 在 online-data 的 `index.json` 里按来源 id 与名称查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用内置根证书校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未登记。这一步只给出「是否被官方认可」的展示结论,来源结论由引擎按本机链校验与验签给出。
-3. 取 `<base_url>/datalog.json` 得到插件目录,每条包含 `plugin_name`、`author`、`tag`。
-4. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/versions.json` 得到 `latest` 与版本列表,再取 `<base_url>/plugins/<author>/<plugin>/<latest>/meta.json` 作为展示信息。
-5. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `datalog.json` 反查。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrl` 即来源自带的 `<base_url>/eec.pem`;引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
+3. 取 `<base_url>/manifest.json` 与 `manifest.json.sig`,按 L1 清单验签,再用它校验根 `meta.json` 与 `datalog.json` 的哈希。
+4. 取 `<base_url>/datalog.json` 得到插件目录,每条包含 `plugin_name`、`author`、`tag`。
+5. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/manifest.json` 与签名,按 L3 清单验签,再用它校验 `versions.json` 与该版本 `meta.json` 的哈希;同时取 `<base_url>/plugins/<author>/manifest.json` 按 L2 清单验签,取出 `author_pub.pem` 登记的哈希。拿到 `versions.json` 的 `latest` 后取该版本 `meta.json` 作为展示信息。
+6. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `datalog.json` 反查。三层清单的结论与各层 revision 随安装来源交给引擎。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrl` 即来源自带的 `<base_url>/eec.pem`;引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
 
 合集的可信性由「根 CA 签发的 EEC」证明,没有额外的合集信任签名(旧结构见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md))。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
+
+### 三层清单校验
+
+合集目录数据按三层哈希清单分发,清单格式、签名与校验顺序见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md);客户端实现是 `src/services/integrity/manifest.ts`。
+
+| 层 | 取用位置 | 校验对象 |
+|:---:|:---:|:---:|
+| L1 | `<base_url>/manifest.json` | 根 `meta.json`、`datalog.json` |
+| L2 | `<base_url>/plugins/<author>/manifest.json` | `author_pub.pem` 的哈希,交给引擎把关作者公钥 |
+| L3 | `<base_url>/plugins/<author>/<plugin>/manifest.json` | `versions.json` 与展示版本的 `meta.json` |
+
+`manifest.json.sig` 是 CMS 的 DER 二进制,按字节读取;目录数据文件仍经 `net` 能力按文本读取,哈希按还原后的 UTF-8 字节计算。清单缺失、验签失败或哈希不一致都不阻断:目录照常展示,该来源标记为「目录数据未校验」,该插件标记为未校验,产物仍由 `plugin.js.sig` 单独验证。
+
+每层路径记住见过的最大 `revision`,写在 `plugins:storage` 的 `manifest-revisions` 键下。本次拿到的 `revision` 小于记录值时,来源运行态多出一条 `revisionWarnings`,界面按提示展示,只警告不阻断。
 
 ## 信任状态
 
@@ -77,6 +92,8 @@ dsc-market/
 | `failed` | 校验未通过 | 证书链不通过(过期、非本根签发、被吊销),或拿不到证书、验签不通过 |
 | `unknown` | 无法确认来源 | 完全没有来源信息 |
 | `local` | 本地安装 | 用户上传的离线包,没有来源,不参与来源判定 |
+
+目录数据是否已校验是独立结论,用 `catalogVerified` 表示,不并入来源结论:来源运行态与安装计划各带一份,前者是 L1 结论,后者是 L1 与 L3 结论的合取。目录未校验时来源结论不变,产物仍按 `plugin.js.sig` 判定。
 
 安装计划同时给出两个证书来源: 清单已登记时带 `eec`(优先使用,省一次请求),任何在线来源都带 `eecUrl` 即 `<base_url>/eec.pem`。两种证书都必须由引擎先用内置根 CA 校验链,链不通过时结论为 `failed` 且不发起 CMS 验签,安装记录以 `eec_anchored` 记为未通过链校验。市场把运行态的 `trust` 与 `trustFailure` 一并交给引擎,但只用于界面展示来源是否被官方认可,不参与来源结论判定。
 
@@ -136,7 +153,7 @@ client?.addSource('自定义', ['https://example.com/plugins/'])
 client?.setBaseUrls('awesome-dsc-plugin', ['https://cdn.example.com/'])
 client?.moveSource('dsc-inner-plugin', -1)
 client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
-client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrl, sigUrl, authorPubUrl, authorSigUrl };eec 是清单证书(已登记时优先),eecUrl 是来源的 eec.pem
+client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrl, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrl 是来源的 eec.pem,revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 await client?.checkUpdates([{ id: 'demo', version: '1.0.0', sourceUrl: 'https://example.com/plugins/a/demo/1.0.0/plugin.js' }]) // 更新检查：Map<id, { status: 'outdated' | 'latest', latest }>
 client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trust, trustFailure }，地址结构不符时为 null
@@ -153,6 +170,9 @@ client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trust, t
 | 全部 `base_url` 失败 | 来源状态 `failed`,提示该来源所有地址都拉取失败 |
 | `datalog.json` 结构不符 | 目录为空并提示插件目录拉取失败 |
 | 单个插件 `versions.json` 或 `meta.json` 失败 | 该行标记失败原因,其余插件不受影响 |
+| L1 清单缺失、验签失败或哈希不一致 | 目录照常展示,该来源标记为「目录数据未校验」 |
+| L3 清单缺失、验签失败或哈希不一致 | 该插件标记为未校验,其余插件不受影响 |
+| 某层清单 revision 小于本地记录值 | 来源运行态追加一条回退提示,只警告不阻断 |
 | 结构不符的目录条目 | 跳过并计入 `skipped` |
 | 更新检查的 `versions.json` 未超过 5 分钟 | 复用缓存的最新版本号 |
 | 更新检查的请求超时或失败 | 该插件不显示任何更新标注 |

@@ -1,4 +1,5 @@
 import type { TranslationKey } from '../../i18n/index.js'
+import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import type { PluginManifest, PluginSourceType } from '../dsc-plugin-engine/types.js'
 
 /**
@@ -58,8 +59,40 @@ export type CatalogPlugin = {
   meta: RuntimeMeta | null
   /** 由 meta.json 推导的清单；缺 capabilities 时为 null，安装时交给产物自带的 manifest */
   manifest: PluginManifest | null
+  /** 该插件的 versions.json 与展示版本 meta.json 是否都通过 L3 清单校验 */
+  catalogVerified: boolean
+  /** 安装时原样交给引擎的目录结论 */
+  conclusions: CatalogConclusions
   /** 拉取失败或结构不符时的文案键 */
   error: TranslationKey | null
+}
+
+/**
+ * 目录数据校验结论。
+ * 来自三层哈希清单：L1 覆盖合集根目录数据，L2 覆盖作者目录，L3 覆盖插件版本目录。
+ * 清单缺失或验签失败时不阻断，一律按未校验处理，产物仍由 plugin.js.sig 独立验证。
+ */
+export type CatalogConclusions = {
+  /** 合集根 L1 清单验签通过，且本次消费的目录文件哈希一致 */
+  catalogVerified: boolean
+  /** 该版本的 L3 清单验签通过，且 versions.json 与该版本 meta.json 哈希一致 */
+  metaVerified: boolean
+  /** 各层清单 revision；缺哪层表示该层没有拿到可用清单 */
+  revisions: ManifestRevisions
+  /** L2 清单登记的 author_pub.pem 哈希；没拿到 L2 清单时缺省，引擎按未校验处理 */
+  authorPubSha512?: string
+}
+
+/** 清单 revision 回退的提示；只警告，不阻断 */
+export type RevisionWarning = {
+  /** 出问题的层：L1 合集根、L2 作者目录、L3 插件目录 */
+  layer: 'L1' | 'L2' | 'L3'
+  /** 该层相对来源根目录的路径；L1 为空串 */
+  path: string
+  /** 本地记录的 revision */
+  seen: number
+  /** 本次拿到的 revision */
+  revision: number
 }
 
 /** 来源运行态 */
@@ -79,6 +112,10 @@ export type SourceRuntime = {
   chainVerified: boolean
   plugins: CatalogPlugin[]
   fetchedAt: number | null
+  /** 合集根目录数据是否已按 L1 清单校验通过 */
+  catalogVerified: boolean
+  /** 各层清单 revision 回退的提示；只警告，不阻断 */
+  revisionWarnings: RevisionWarning[]
   /** 结构不符被跳过的插件数 */
   skipped: number
   error: TranslationKey | null
@@ -89,7 +126,7 @@ export type SourceRuntime = {
  * eec 是信任清单登记的合集证书，登记了就用它，省一次请求；eecUrl 是来源自带的 <base>/eec.pem。
  * 两种证书都必须由引擎用内置根 CA 通过证书链校验才会用于验签，链不通过时来源结论为 failed。
  */
-export type InstallPlan = {
+export type InstallPlan = CatalogConclusions & {
   /** plugin.js 地址 */
   url: string
   /** 该版本目录的地址,安装时入库,后续直接按它请求 versions.json、meta.json */

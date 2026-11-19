@@ -232,6 +232,10 @@ export const en = {
     'Plugin {id} failed signature verification; use it only if you accept the risk',
   pluginSignatureRevoked:
     'The signing certificate of plugin {id} has been revoked; use it only if you accept the risk',
+  pluginCatalogVerified: 'Catalog verified',
+  pluginCatalogUnverified: 'Catalog unverified',
+  pluginManifestRevisionRegressed:
+    'The {layer} manifest revision of plugin {id} went back from {seen} to {revision}; check whether the source was replaced',
   pluginActionEnable: 'Enable',
   pluginActionDisable: 'Disable',
   pluginActionUninstall: 'Uninstall',
@@ -315,6 +319,10 @@ export const en = {
   pluginMarketTrustUntrustedHint:
     'Source trust verification failed ({reason}); you can still install, but decide for yourself whether to continue',
   pluginMarketNotListed: 'Not registered in the official list',
+  pluginMarketCatalogVerified: 'Catalog verified',
+  pluginMarketCatalogUnverified: 'Catalog unverified',
+  pluginMarketRevisionRegressed:
+    'Source manifest revision went back: {layer} {path} from {seen} to {revision}; check whether the source was replaced',
   pluginMarketTrustReasonMissing: 'the source certificate cannot be confirmed',
   pluginMarketTrustReasonChain: 'the source certificate did not verify',
   pluginMarketTrustReasonRevoked: 'the source certificate has been revoked',

@@ -298,6 +298,11 @@ export const MarketPlugins = ({
         sigUrl: plan.sigUrl,
         authorPubUrl: plan.authorPubUrl,
         authorSigUrl: plan.authorSigUrl,
+        // 三层清单的结论一并交给引擎：目录数据是否已校验与来源结论相互独立
+        catalogVerified: plan.catalogVerified,
+        metaVerified: plan.metaVerified,
+        revisions: plan.revisions,
+        ...(plan.authorPubSha512 === undefined ? {} : { authorPubSha512: plan.authorPubSha512 }),
         ...(runtime === null ? {} : { trust: runtime.trust }),
         ...(trustFailure === null ? {} : { trustFailure }),
       })
@@ -486,6 +491,25 @@ export const MarketPlugins = ({
                 {runtime.error !== null ? (
                   <span className={styles.caption}>{t(runtime.error)}</span>
                 ) : null}
+                {runtime.state === 'ready' ? (
+                  <span className={styles.caption}>
+                    {t(
+                      runtime.catalogVerified
+                        ? 'pluginMarketCatalogVerified'
+                        : 'pluginMarketCatalogUnverified'
+                    )}
+                  </span>
+                ) : null}
+                {runtime.revisionWarnings.map((warning) => (
+                  <span key={warning.layer + '|' + warning.path} className={styles.caption}>
+                    {t('pluginMarketRevisionRegressed', {
+                      layer: warning.layer,
+                      path: warning.path === '' ? '/' : warning.path,
+                      seen: warning.seen,
+                      revision: warning.revision,
+                    })}
+                  </span>
+                ))}
               </div>
             </div>
             {runtime.trust === 'untrusted' ? (
@@ -543,6 +567,11 @@ export const MarketPlugins = ({
                         <span className={styles.caption}>{plugin.author}</span>
                         {runtime.trust === 'endorsed' ? (
                           <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
+                        ) : null}
+                        {runtime.catalogVerified && !plugin.catalogVerified && !unusable ? (
+                          <span className={styles.caption}>
+                            {t('pluginMarketCatalogUnverified')}
+                          </span>
                         ) : null}
                       </div>
                       <div

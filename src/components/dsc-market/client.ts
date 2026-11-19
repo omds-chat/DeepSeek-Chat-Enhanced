@@ -1,4 +1,14 @@
 import type { TranslationKey } from '../../i18n/index.js'
+import {
+  createRevisionMemory,
+  fetchManifest,
+  hashMatches,
+  manifestLayerKey,
+  verifyManifest,
+  type Manifest,
+  type ManifestReader,
+  type RevisionMemory,
+} from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/types.js'
 import type {
   NetCapability,
@@ -19,11 +29,13 @@ import {
   type InstalledLocation,
 } from './updates.js'
 import type {
+  CatalogConclusions,
   CatalogPlugin,
   InstallPlan,
   LocalizedText,
   MarketSource,
   ReinstallPlan,
+  RevisionWarning,
   RuntimeMeta,
   SourceMeta,
   SourceRuntime,
@@ -43,6 +55,16 @@ const CONCURRENCY = 4
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
 /** 路径段：作者名、插件名与版本号都要能安全拼进地址 */
 const SEGMENT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+/** 三层清单的 revision 记忆在插件存储里的键 */
+const REVISION_KEY = 'manifest-revisions'
+/** 清单与签名的请求上限（毫秒）；按字节取，与目录数据的 1 秒超时分开 */
+const MANIFEST_TIMEOUT = 5000
+
+/** 构建时注入的根证书 PEM；未注入时为空串 */
+const embeddedRootCa = (): string => (typeof __ROOT_CA_PEM__ === 'string' ? __ROOT_CA_PEM__ : '')
+
+/** 把文本还原成字节；目录文件按 UTF-8 文本分发，哈希按还原后的字节计算 */
+const textBytes = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text)
 
 /** 对外查询与操作接口 */
 export type MarketClient = {
@@ -77,6 +99,8 @@ type ResolveOutcome = {
   reachable: boolean
   baseUrl: string | null
   meta: SourceMeta | null
+  /** 根 meta.json 的原文；L1 清单校验要用它的字节 */
+  metaText: string | null
   trust: SourceTrust
   trustFailure: TrustFailure | null
   /** 来自 online-data 信任清单的合集 EEC 证书 PEM；未列入清单时为 null */
@@ -322,6 +346,8 @@ const emptyRuntime = (id: string): SourceRuntime => ({
   chainVerified: false,
   plugins: [],
   fetchedAt: null,
+  catalogVerified: false,
+  revisionWarnings: [],
   skipped: 0,
   error: null,
 })
@@ -341,23 +367,168 @@ const resolveSource = async (net: NetCapability, source: MarketSource): Promise<
     if (!meta) {
       continue
     }
-    return { reachable: true, baseUrl, meta, ...outcome }
+    return { reachable: true, baseUrl, meta, metaText, ...outcome }
   }
-  return { reachable: false, baseUrl: null, meta: null, ...outcome }
+  return { reachable: false, baseUrl: null, meta: null, metaText: null, ...outcome }
 }
 
-/** 拉取单个插件的版本与展示信息 */
-const loadPlugin = async (
+/** 一层清单的校验结论；verified 为 false 时 manifest 为 null */
+type LayerCheck = {
+  verified: boolean
+  manifest: Manifest | null
+  revision: number | null
+}
+
+/** 一次目录拉取内共享的清单校验上下文 */
+type LayerContext = {
+  net: NetCapability
+  /** 来源根目录，以斜杠结尾 */
+  baseUrl: string
+  /** 合集 EEC 证书 PEM；信任清单已登记时优先 */
+  eec: string
+  /** 构建时注入的根证书 PEM；为空时所有清单都按未校验处理 */
+  rootCa: string
+  memory: RevisionMemory
+  /** 同一层只取一次 */
+  layers: Map<string, Promise<LayerCheck>>
+  /** 回退提示按层去重 */
+  warnings: Map<string, RevisionWarning>
+  /** 合集根目录数据是否已按 L1 清单校验通过 */
+  catalogVerified: boolean
+  /** L1 清单的 revision；没有拿到 L1 清单时为 null */
+  l1Revision: number | null
+}
+
+/** 层路径转成层号：合集根为 L1，作者目录为 L2，插件目录为 L3 */
+const layerOf = (layerPath: string): RevisionWarning['layer'] => {
+  if (layerPath === '') {
+    return 'L1'
+  }
+  const depth = layerPath.split('/').filter((segment) => segment !== '').length
+  return depth <= 2 ? 'L2' : 'L3'
+}
+
+/**
+ * 取清单与签名的字节。
+ * manifest.json.sig 是 CMS 的 DER 二进制，经 net 能力按文本读会把签名解坏，
+ * 因此清单按字节取；目录数据文件仍走 net 能力，地址判定与超时口径不变。
+ */
+const manifestReader: ManifestReader = async (url) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), MANIFEST_TIMEOUT)
+  try {
+    const response = await fetch(url, { cache: 'no-store', signal: controller.signal })
+    return response.ok ? new Uint8Array(await response.arrayBuffer()) : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
+ * 取并校验一层清单。
+ * 没有根证书或合集证书、清单缺失、结构不符、验签失败都按未校验处理，不抛错；
+ * 校验通过时把 revision 写进记忆，回退只记提示，不阻断浏览与安装。
+ */
+const loadLayer = (context: LayerContext, layerPath: string): Promise<LayerCheck> => {
+  const key = manifestLayerKey(context.baseUrl, layerPath)
+  const cached = context.layers.get(key)
+  if (cached !== undefined) {
+    return cached
+  }
+  const task = (async (): Promise<LayerCheck> => {
+    const unverified: LayerCheck = { verified: false, manifest: null, revision: null }
+    if (context.rootCa === '' || context.eec === '') {
+      return unverified
+    }
+    const fetched = await fetchManifest(context.baseUrl, layerPath, manifestReader)
+    if (fetched.manifest === null || fetched.signature === null) {
+      return unverified
+    }
+    const verdict = await verifyManifest(
+      fetched.manifest,
+      fetched.signature,
+      context.eec,
+      context.rootCa
+    )
+    if (!verdict.ok) {
+      return unverified
+    }
+    const revision = fetched.manifest.revision
+    const check = context.memory.record(key, revision)
+    if (check.regressed && check.seen !== null) {
+      context.warnings.set(key, {
+        layer: layerOf(layerPath),
+        path: layerPath,
+        seen: check.seen,
+        revision,
+      })
+    }
+    return { verified: true, manifest: fetched.manifest, revision }
+  })()
+  context.layers.set(key, task)
+  return task
+}
+
+/** 比对一层清单登记的某个文件；清单未取到或文件未取到都按不一致处理 */
+const fileMatches = async (
+  check: LayerCheck,
+  filePath: string,
+  text: string | null
+): Promise<boolean> => {
+  if (check.manifest === null || text === null) {
+    return false
+  }
+  return await hashMatches(check.manifest, filePath, textBytes(text))
+}
+
+/** 把已取到的各层 revision 收敛成安装记录要保存的结构 */
+const revisionsOf = (
+  l1: number | null,
+  l2: number | null,
+  l3: number | null
+): CatalogConclusions['revisions'] => ({
+  ...(l1 === null ? {} : { l1 }),
+  ...(l2 === null ? {} : { l2 }),
+  ...(l3 === null ? {} : { l3 }),
+})
+
+/** 合集证书：信任清单已登记时优先用它，否则取来源自带的 eec.pem */
+const resolveCollectionEec = async (
   net: NetCapability,
   baseUrl: string,
+  listed: string | null
+): Promise<string> => {
+  if (listed !== null && listed !== '') {
+    return listed
+  }
+  return (await requestText(net, joinUrl(baseUrl, 'eec.pem'))) ?? ''
+}
+
+/**
+ * 拉取单个插件的版本与展示信息。
+ * 先用 L3 清单校验 versions.json 与展示版本的 meta.json，再用 L2 清单取作者公钥的哈希；
+ * 清单缺失或验签失败时降级为未校验，目录照常展示。
+ */
+const loadPlugin = async (
+  context: LayerContext,
   entry: CatalogEntry
 ): Promise<CatalogPlugin | null> => {
   if (!isSegment(entry.name) || !isSegment(entry.author)) {
     return null
   }
-  const basePath = 'plugins/' + entry.author + '/' + entry.name + '/'
-  const versionsText = await requestText(net, joinUrl(baseUrl, basePath + 'versions.json'))
+  const authorPath = 'plugins/' + entry.author + '/'
+  const basePath = authorPath + entry.name + '/'
+  const [l2, l3] = await Promise.all([
+    loadLayer(context, authorPath),
+    loadLayer(context, basePath),
+  ])
+  const authorPubSha512 = l2.manifest?.files.find((file) => file.path === 'author_pub.pem')?.sha512
+  const versionsText = await requestText(context.net, joinUrl(context.baseUrl, basePath + 'versions.json'))
   const versionList = versionsText === null ? null : parseVersions(versionsText)
+  const versionsOk = await fileMatches(l3, 'versions.json', versionsText)
+  const authorPub = authorPubSha512 === undefined ? {} : { authorPubSha512 }
   if (!versionList) {
     return {
       key: entry.author + '/' + entry.name,
@@ -368,12 +539,26 @@ const loadPlugin = async (
       versions: [],
       meta: null,
       manifest: null,
+      catalogVerified: false,
+      conclusions: {
+        catalogVerified: false,
+        metaVerified: false,
+        revisions: revisionsOf(context.l1Revision, l2.revision, l3.revision),
+        ...authorPub,
+      },
       error: 'pluginMarketVersionFailed',
     }
   }
   const detailPath = basePath + versionList.latest + '/'
-  const metaText = await requestText(net, joinUrl(baseUrl, detailPath + 'meta.json'))
+  const metaText = await requestText(context.net, joinUrl(context.baseUrl, detailPath + 'meta.json'))
   const parsedMeta = metaText === null ? null : parseRuntimeMeta(metaText)
+  const metaOk = await fileMatches(l3, versionList.latest + '/meta.json', metaText)
+  const conclusions: CatalogConclusions = {
+    catalogVerified: context.catalogVerified,
+    metaVerified: l3.verified && versionsOk && metaOk,
+    revisions: revisionsOf(context.l1Revision, l2.revision, l3.revision),
+    ...authorPub,
+  }
   return {
     key: entry.author + '/' + entry.name,
     name: entry.name,
@@ -383,14 +568,15 @@ const loadPlugin = async (
     versions: versionList.versions,
     meta: parsedMeta?.meta ?? null,
     manifest: parsedMeta?.manifest ?? null,
+    catalogVerified: conclusions.catalogVerified && conclusions.metaVerified,
+    conclusions,
     error: parsedMeta === null ? 'pluginMarketMetaFailed' : null,
   }
 }
 
 /** 拉取整个目录；并发受限，顺序在结果里统一排序 */
 const loadCatalog = async (
-  net: NetCapability,
-  baseUrl: string,
+  context: LayerContext,
   entries: CatalogEntry[]
 ): Promise<{ plugins: CatalogPlugin[]; skipped: number }> => {
   const plugins: CatalogPlugin[] = []
@@ -400,7 +586,7 @@ const loadCatalog = async (
     while (cursor < entries.length) {
       const entry = entries[cursor]
       cursor += 1
-      const plugin = await loadPlugin(net, baseUrl, entry)
+      const plugin = await loadPlugin(context, entry)
       if (plugin) {
         plugins.push(plugin)
       } else {
@@ -442,6 +628,26 @@ export const createMarketClient = (
   const inflight = new Map<string, Promise<SourceRuntime | null>>()
   const listeners = new Set<() => void>()
   const reporter = createDownloadReporter(net)
+  /** 各层清单 revision 记忆：按层目录地址记录见过的最大 revision，只用于回退提示 */
+  const revisionMemory = createRevisionMemory({
+    read: () => {
+      const value = storage.get(REVISION_KEY)
+      const map: Record<string, number> = {}
+      if (isRecord(value)) {
+        for (const [key, item] of Object.entries(value)) {
+          if (typeof item === 'number') {
+            map[key] = item
+          }
+        }
+      }
+      return map
+    },
+    write: (value) => {
+      storage.set(REVISION_KEY, value)
+    },
+  })
+  /** 插件目录到目录结论的缓存；重新安装计划直接取用 */
+  const conclusionsCache = new Map<string, CatalogConclusions>()
 
   const emit = () => {
     stateVersion += 1
@@ -462,6 +668,26 @@ export const createMarketClient = (
     writeSources(storage, sourceList)
   }
 
+  /** 把 revision 回退提示挂到同址来源的运行态上；只提示，不改变来源结论 */
+  const recordRevisionWarnings = (
+    baseUrl: string,
+    warnings: Iterable<RevisionWarning>
+  ): void => {
+    const owner = sourceList.find((source) =>
+      source.baseUrls.some((base) => baseUrl.startsWith(base))
+    )
+    const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
+    if (runtime === null) {
+      return
+    }
+    const known = new Set(runtime.revisionWarnings.map((item) => item.layer + '|' + item.path))
+    const added = [...warnings].filter((item) => !known.has(item.layer + '|' + item.path))
+    if (added.length === 0) {
+      return
+    }
+    putRuntime({ ...runtime, revisionWarnings: [...runtime.revisionWarnings, ...added] })
+  }
+
   const runRefresh = async (source: MarketSource): Promise<SourceRuntime> => {
     putRuntime({ ...runtimeOf(source.id), state: 'loading', error: null })
     const outcome = await resolveSource(net, source)
@@ -478,11 +704,32 @@ export const createMarketClient = (
         chainVerified: outcome.chainVerified,
         plugins: [],
         fetchedAt: null,
+        catalogVerified: false,
+        revisionWarnings: [],
         skipped: 0,
         error: 'pluginMarketSourceFailed',
       })
     }
-    const datalogText = await requestText(net, joinUrl(outcome.baseUrl, 'datalog.json'))
+    const baseUrl = outcome.baseUrl
+    const eec = await resolveCollectionEec(net, baseUrl, outcome.eec)
+    const context: LayerContext = {
+      net,
+      baseUrl,
+      eec,
+      rootCa: embeddedRootCa(),
+      memory: revisionMemory,
+      layers: new Map(),
+      warnings: new Map(),
+      catalogVerified: false,
+      l1Revision: null,
+    }
+    // 先取 L1 清单并验签，再用它校验本次要消费的目录文件；清单缺失或验签失败只降级为未校验
+    const l1 = await loadLayer(context, '')
+    context.l1Revision = l1.revision
+    const metaOk = await fileMatches(l1, 'meta.json', outcome.metaText)
+    const datalogText = await requestText(net, joinUrl(baseUrl, 'datalog.json'))
+    const datalogOk = await fileMatches(l1, 'datalog.json', datalogText)
+    context.catalogVerified = l1.verified && metaOk && datalogOk
     let plugins: CatalogPlugin[] = []
     let skipped = 0
     let error: TranslationKey | null = null
@@ -493,15 +740,21 @@ export const createMarketClient = (
       if (!datalog) {
         error = 'pluginMarketCatalogFailed'
       } else {
-        const loaded = await loadCatalog(net, outcome.baseUrl, datalog.entries)
+        const loaded = await loadCatalog(context, datalog.entries)
         plugins = loaded.plugins
         skipped = datalog.skipped + loaded.skipped
       }
     }
+    for (const plugin of plugins) {
+      conclusionsCache.set(
+        joinUrl(baseUrl, 'plugins/' + plugin.author + '/' + plugin.name + '/'),
+        plugin.conclusions
+      )
+    }
     return putRuntime({
       id: source.id,
       state: 'ready',
-      baseUrl: outcome.baseUrl,
+      baseUrl,
       trust: outcome.trust,
       trustFailure: outcome.trustFailure,
       meta: outcome.meta,
@@ -510,6 +763,8 @@ export const createMarketClient = (
       chainVerified: outcome.chainVerified,
       plugins,
       fetchedAt: Date.now(),
+      catalogVerified: context.catalogVerified,
+      revisionWarnings: [...context.warnings.values()],
       skipped,
       error,
     })
@@ -557,17 +812,49 @@ export const createMarketClient = (
   /** 更新检查的 versions.json 缓存；按插件目录缓存，避免同一插件的多次检查重复请求 */
   const updateCache = new Map<string, { latest: string; at: number }>()
 
-  /** 取插件目录下的最新版本号；失败或结构不符返回 null，由调用方按无法判断处理 */
+  /**
+   * 取插件目录下的最新版本号；失败或结构不符返回 null，由调用方按无法判断处理。
+   * 检查更新同样先取 L3 清单并验签，用它校验 versions.json；清单缺失时降级为未校验，
+   * revision 回退只给提示，不改变更新判定。
+   */
   const latestOf = async (location: InstalledLocation): Promise<string | null> => {
     const key = location.pluginDir
     const cached = updateCache.get(key)
     if (cached && Date.now() - cached.at < CACHE_TTL) {
       return cached.latest
     }
+    const owner = sourceList.find((source) =>
+      source.baseUrls.some((baseUrl) => key.startsWith(baseUrl))
+    )
+    const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
+    const eec = await resolveCollectionEec(net, location.root, runtime?.eec ?? null)
+    const context: LayerContext = {
+      net,
+      baseUrl: location.root,
+      eec,
+      rootCa: embeddedRootCa(),
+      memory: revisionMemory,
+      layers: new Map(),
+      warnings: new Map(),
+      catalogVerified: runtime?.catalogVerified ?? false,
+      l1Revision: null,
+    }
+    const layerPath = location.pluginDir.startsWith(location.root)
+      ? location.pluginDir.slice(location.root.length)
+      : ''
+    const l3 = layerPath === '' ? null : await loadLayer(context, layerPath)
     const text = await requestText(net, versionsUrlOf(location))
     const list = text === null ? null : parseVersions(text)
+    recordRevisionWarnings(location.root, context.warnings.values())
     if (!list) {
       return null
+    }
+    if (l3 !== null) {
+      conclusionsCache.set(location.pluginDir, {
+        catalogVerified: context.catalogVerified,
+        metaVerified: l3.verified && (await fileMatches(l3, 'versions.json', text)),
+        revisions: revisionsOf(null, null, l3.revision),
+      })
     }
     updateCache.set(key, { latest: list.latest, at: Date.now() })
     return list.latest
@@ -626,6 +913,8 @@ export const createMarketClient = (
       source.baseUrls.some((baseUrl) => location.pluginDir.startsWith(baseUrl))
     )
     const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
+    // 目录结论来自本次拉取时的三层清单；没有缓存时按未校验处理
+    const conclusions = conclusionsCache.get(location.pluginDir)
     const plan: InstallPlan = {
       url: paths.url,
       dataBase: versionDir,
@@ -636,6 +925,7 @@ export const createMarketClient = (
       authorSigUrl: paths.authorSigUrl,
       // 来源根目录下的合集证书；清单未登记时由引擎取它并先做链校验
       eecUrl: joinUrl(location.root, 'eec.pem'),
+      ...(conclusions ?? { catalogVerified: false, metaVerified: false, revisions: {} }),
     }
     // 与市场安装同一口径：清单已登记时优先用清单证书，两种证书都要过链校验
     if (runtime?.eec) {
@@ -741,7 +1031,9 @@ export const createMarketClient = (
       }
       const pluginPath = 'plugins/' + plugin.author + '/' + plugin.name + '/'
       const versionPath = pluginPath + plugin.latest + '/'
+      // 目录结论原样交给引擎：L1 覆盖目录数据，L3 覆盖该版本 meta.json，L2 给出作者公钥哈希
       const plan: InstallPlan = {
+        ...plugin.conclusions,
         url: joinUrl(runtime.baseUrl, versionPath + 'plugin.js'),
         // 数据基址随安装交给引擎入库,后续检查更新直接请求,不必再从 datalog.json 反查
         dataBase: joinUrl(runtime.baseUrl, versionPath),

@@ -1,3 +1,4 @@
+import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
 import {
   CONTRIBUTION_POINTS,
@@ -49,6 +50,12 @@ export type PluginOrigin = {
   authorPub?: string
   /** 作者签名的 base64 */
   authorSig?: string
+  /** 合集根目录数据是否已按 L1 清单校验通过 */
+  catalogVerified?: boolean
+  /** 该版本 meta.json 是否已按 L3 清单校验通过 */
+  metaVerified?: boolean
+  /** 各层清单 revision；重装时用于回退提示 */
+  revisions?: ManifestRevisions
   /** 插件代码文本；在线与本地插件都保存,恢复时靠它重建模块 */
   code?: string
   installedAt: number

@@ -14,7 +14,7 @@ dsc-plugin-engine/
 ├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
 ├── localPackage.ts # 本地离线包解析与校验：zip、tgz、meta.json、签名
-├── signature.ts    # 产物签名校验：合集 CMS 分离验签与作者裸签名
+├── signature.ts    # 产物签名校验：合集 CMS 分离验签与作者裸签名,作者公钥按 L2 清单哈希把关
 ├── builtin.ts      # 内置插件清单与工厂
 └── README.md       # 机制说明与 dsh 映射表
 ```
@@ -37,6 +37,8 @@ dsc-plugin-engine/
 清单可以随产物一起导出：`export const manifest = {...}`,也可以挂在 `default` 导出对象上,模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`;两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
 `installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型、来源信任判定与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一,缺省按 `outer` 处理;`trust` 与 `trustFailure` 是插件市场给出的信任清单判定,只用于界面展示来源是否被官方认可,不参与来源结论。签名材料共五项：`eec` 是信任清单登记的合集 EEC 证书 PEM,`eecUrl` 是来源自带的 `<base>/eec.pem` 地址,两者都有时优先用 `eec`,省一次请求;拿到证书后先用内置根 CA 校验证书链,通过才做合集 CMS 分离验签,链不通过时结论为 `failed` 且不发起 CMS 验签。`sigUrl` 是 `plugin.js.sig` 地址(缺省为 `<url>.sig`);`authorPubUrl` 与 `authorSigUrl` 是作者公钥与作者签名地址(后者缺省为 `<url>.author.sig`),两者齐全时做作者裸签名验签。安装阶段先校验产物签名,不通过只提示用户,仍照常安装,签名状态标记为 `failed`。
+
+`source` 还可携带目录数据的三层清单结论：`catalogVerified` 是 L1 清单的结论,`metaVerified` 是该版本 L3 清单的结论,`revisions` 是各层 `revision`,`authorPubSha512` 是 L2 清单登记的 `author_pub.pem` 哈希。前三项只写进安装记录,不参与来源结论;`authorPubSha512` 用于把关作者公钥:引擎拉到的公钥字节与该哈希不一致时不采用该公钥,作者签名按未校验处理,合集 CMS 验签不受影响。
 
 `source` 还可携带两个目录地址：`dataBase` 是该版本目录(`<base>/plugins/<作者>/<插件>/<版本>/`),`pluginBase` 是插件目录(`<base>/plugins/<作者>/<插件>/`)。两者缺省时由 `url` 推导:`deriveDataBase` 去掉最后一段文件名,`derivePluginBase` 再去掉版本号。安装时两个地址一并写入安装记录,后续检查更新直接按 `dataBase` 请求 `versions.json` 与 `meta.json`,不再从来源根目录的 `datalog.json` 反查。
 
@@ -102,6 +104,9 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 | `sig` | `plugin.js.sig` 的 base64(DER 字节) | 版本目录下的 `plugin.js.sig` |
 | `author_pub` | 作者公钥 PEM,作者裸签名验签用 | 在线插件取 `plugins/<作者>/author_pub.pem`,离线包取包内 `author_pub.pem` |
 | `author_sig` | 作者签名的 base64(原始 64 字节) | `plugin.js.author.sig` |
+| `catalog_verified` | 合集根目录数据是否已按 L1 清单校验通过 | 安装时由插件市场传入;旧记录没有该字段 |
+| `meta_verified` | 该版本是否已按 L3 清单校验通过 | 安装时由插件市场传入;旧记录没有该字段 |
+| `manifest_revisions` | 各层清单 `revision` | 安装时由插件市场传入,重装时用于回退提示 |
 
 缺失某个字段表示这条记录没有对应的签名材料,启动校验按未校验处理。旧版的 `pub` 与 `sign` 字段(JSON 信任签名方案)不再读取,升级后已安装插件显示为未校验,重新安装即可拿到新字段。
 
@@ -136,8 +141,9 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 | 签名 | 签发方 | 材料 | 验签入口 |
 |:---:|:---:|:---:|:---:|
-| 合集 CMS 分离签名 | 合集 EEC 证书 | `plugin.js.sig`、`meta.json.sig` | `src/services/integrity/cms.ts` 的 `verifyDetachedCms` |
+| 合集 CMS 分离签名 | 合集 EEC 证书 | `plugin.js.sig` | `src/services/integrity/cms.ts` 的 `verifyDetachedCms` |
 | 作者裸签名 | 插件作者 | `plugin.js.author.sig`、`author_pub.pem` | `src/services/integrity/ed25519.ts` 的 `verifyDetachedSignature` |
+| 三层清单签名 | 合集 EEC 证书 | 每层的 `manifest.json.sig` | `src/services/integrity/manifest.ts` 的 `verifyManifest`,由插件市场调用 |
 
 CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名者为该来源的 EEC 证书;作者签名是 Ed25519 裸签名,同样直接对原始字节验签,不做摘要预处理。`verifyDetachedCms` 要求同时传入签名者证书与根证书,函数内部先用根证书校验证书链,未通过直接返回 false,未校验链的证书不会进入验签。`signature.ts` 负责把两种签名收拢成一个 `verified`、`failed`、`unverified` 结论:合集证书先过链校验,链不通过时不发起 CMS 验签;两种材料都有时须同时通过,只有一种材料时只校验该种,都没有时为 `unverified`。证书链与 CMS 校验模块按需动态加载,未启用签名校验的构建不会把 `pkijs` 带进首屏代码。
 
@@ -149,6 +155,8 @@ CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名�
 | `failed` | 校验未通过 | 证书链不通过(过期、非本根签发、被吊销),或拿不到证书、验签不通过 |
 | `unknown` | 无法确认来源 | 完全没有来源信息 |
 | `local` | 本地安装 | 用户上传的离线包,没有来源,不参与来源判定 |
+
+目录数据的三层清单与产物签名相互独立：`plugin.js` 只按 `plugin.js.sig` 验签,清单缺失或验签失败只让「目录数据是否已校验」为否,不改变产物结论,也不改变来源结论。安装记录另存 `catalog_verified`、`meta_verified` 与 `manifest_revisions`,界面按 `catalogVerified` 展示「目录数据已校验」或「目录数据未校验」;同一插件重装时若某层 `revision` 小于记录值,引擎日志记一条并给一次提示,不阻断安装。
 
 验签证书优先取信任清单登记的那张,清单未登记时取来源自带的 `eec.pem`;两条路径都必须先用内置根 CA 校验证书链,链不通过时结论为 `failed`(原因 `chain` 或 `revoked`),不会发起 CMS 验签,引擎日志记一条 `certificate chain ..., cms skipped`。拿不到证书或验签不通过同样记为 `failed`(原因 `other`),只有完全没有来源信息才是 `unknown`。安装记录用 `eec_anchored` 标记证书链是否已在本机校验通过,用 `source_trust`、`trust_failure` 保存信任清单判定;启动恢复按存储的证书重新做链校验并重写标记,只有链通过且验签通过的记录才算 `confirmed`。信任清单的结论只用于界面展示,未登记时在「来源已确认」旁补一条「未在官方清单登记」的中性标注。
 
