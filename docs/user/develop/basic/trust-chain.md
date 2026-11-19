@@ -80,7 +80,7 @@ openssl pkeyutl -sign -rawin -inkey author_secret.pem -in <文件> -out <文件>
 
 | 层 | 位置 | 覆盖的文件(相对该层目录) |
 |:---:|:---:|:---:|
-| L1 | 合集根 | `meta.json`、`datalog.json`、`tags.json`、`plugins/author_manifest.json` |
+| L1 | 合集根 | `meta.json`、`plugins.json`、`tags.json`、`plugins/author_manifest.json` |
 | L2 | `plugins/<作者>/` | `author_pub.pem`、`plugin_manifest.json` |
 | L3 | `plugins/<作者>/<插件>/` | `versions.json`、`<版本>/meta.json` |
 
@@ -90,7 +90,7 @@ openssl pkeyutl -sign -rawin -inkey author_secret.pem -in <文件> -out <文件>
 {
   "schemaVersion": 1,
   "revision": 1,
-  "files": [{ "path": "datalog.json", "sha512": "<小写十六进制>" }]
+  "files": [{ "path": "plugins.json", "sha512": "<小写十六进制>" }]
 }
 ```
 
@@ -109,7 +109,7 @@ L3 不覆盖 `plugin.js`:产物由每版本的 `plugin.js.sig` 独立签名,清�
 
 | 环节 | 做法 |
 |:---:|:---:|
-| 目录数据 | 先取 L1 清单并验签,再取 `datalog.json` 与根 `meta.json` 并比对哈希 |
+| 目录数据 | 先取 L1 清单并验签,再取插件目录索引 `plugins.json` 与根 `meta.json` 并比对哈希 |
 | 插件详情与安装 | 先取 L3 清单并验签,再用它校验 `versions.json` 与该版本 `meta.json` |
 | 作者公钥 | 先取 L2 清单并验签,校验 `author_pub.pem` 后才用于作者签名验证 |
 | 产物 | 仍按 `plugin.js.sig` 验签,不依赖任何清单 |
@@ -243,7 +243,7 @@ CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字�
 | 根 CA 轮换 | 所有 EEC 重签并重新分发根证书 | 信任锚变了,旧 EEC 全部失去信任 |
 | 新增合集 | 只需签发新 EEC 并更新 index.json | 其他合集不受影响 |
 | EEC 泄露或私钥丢失 | 签发新 EEC 并把旧 EEC 序列号写进 CRL | 旧签名仍能验通过,靠吊销让验证方拒绝 |
-| 只改 `meta.json`、`datalog.json` 等目录数据 | 改哪层就重签哪层的清单,并把该层 `revision` 加一 | 清单登记的是文件字节的哈希,文件变了旧清单就必然不匹配 |
+| 只改 `meta.json`、`plugins.json` 等目录数据 | 改哪层就重签哪层的清单,并把该层 `revision` 加一 | 清单登记的是文件字节的哈希,文件变了旧清单就必然不匹配 |
 | 只改 `plugin.js` | 重签 `plugin.js.sig` | 产物不在三层清单内,清单不必改动 |
 
 ## 已废弃的产物
@@ -310,7 +310,7 @@ online-data/
 │   └── <合集 id>-eec.crt       # 终端签名证书,随 Pages 分发;来源证书的规范路径
 ├── eec.pem                     # 旧布局,仅作兼容兜底;sign-web 不再生成,已迁移的来源不再提供
 ├── meta.json
-├── datalog.json
+├── plugins.json
 ├── tags.json
 ├── manifest.json               # L1 清单
 ├── manifest.json.sig           # L1 清单的 CMS 签名

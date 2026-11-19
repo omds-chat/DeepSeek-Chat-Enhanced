@@ -316,7 +316,7 @@ export const en = {
     'At least one valid URL is required; URLs must start with https://, or use http://localhost, http://127.0.0.1 or http://[::1] for local debugging',
   pluginMarketSourceFailed: 'Every URL of this source failed',
   pluginMarketNoSource: 'No source available yet',
-  pluginMarketCatalogFailed: 'The plugin catalog could not be fetched',
+  pluginMarketCatalogFailed: 'The plugin index could not be fetched',
   pluginMarketVersionFailed: 'The version list could not be fetched',
   pluginMarketMetaFailed: 'The plugin metadata could not be fetched',
   pluginMarketTrustTrusted: 'Trusted',

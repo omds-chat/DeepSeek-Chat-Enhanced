@@ -51,10 +51,10 @@ dsc-market/
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
 2. 在 online-data 的 `index.json` 里按来源 id 与名称查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用内置根证书校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未登记。这一步只给出「是否被官方认可」的展示结论,来源结论由引擎按本机链校验与验签给出。
-3. 取 `<base_url>/manifest.json` 与 `manifest.json.sig`,按 L1 清单验签,再用它校验根 `meta.json` 与 `datalog.json` 的哈希。
-4. 取 `<base_url>/datalog.json` 得到插件目录,每条包含 `plugin_name`、`author`、`tag`。
+3. 取 `<base_url>/manifest.json` 与 `manifest.json.sig`,按 L1 清单验签,再用它校验根 `meta.json` 与 `plugins.json` 的哈希。
+4. 取 `<base_url>/plugins.json` 得到插件目录索引,每条包含 `plugin_name`、`author`、`tag`。
 5. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/manifest.json` 与签名,按 L3 清单验签,再用它校验 `versions.json` 与该版本 `meta.json` 的哈希;同时取 `<base_url>/plugins/<author>/manifest.json` 按 L2 清单验签,取出 `author_pub.pem` 登记的哈希。拿到 `versions.json` 的 `latest` 后取该版本 `meta.json` 作为展示信息。
-6. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `datalog.json` 反查。三层清单的结论与各层 revision 随安装来源交给引擎。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrls` 即来源自带的地址列表,按顺序为 `<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`;引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
+6. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `plugins.json` 反查。三层清单的结论与各层 revision 随安装来源交给引擎。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrls` 即来源自带的地址列表,按顺序为 `<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`;引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
 
 合集的可信性由「根 CA 签发的 EEC」证明,没有额外的合集信任签名(旧结构见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md))。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
 
@@ -64,7 +64,7 @@ dsc-market/
 
 | 层 | 取用位置 | 校验对象 |
 |:---:|:---:|:---:|
-| L1 | `<base_url>/manifest.json` | 根 `meta.json`、`datalog.json` |
+| L1 | `<base_url>/manifest.json` | 根 `meta.json`、`plugins.json` |
 | L2 | `<base_url>/plugins/<author>/manifest.json` | `author_pub.pem` 的哈希,交给引擎把关作者公钥 |
 | L3 | `<base_url>/plugins/<author>/<plugin>/manifest.json` | `versions.json` 与展示版本的 `meta.json` |
 
@@ -193,7 +193,7 @@ await client?.checkRemoved('https://example.com/plugins/a/demo/1.0.0/plugin.js')
 | 目录已拉取且未超过 5 分钟 | 直接返回内存结果,不发起请求 |
 | 某个 `base_url` 超时或失败 | 切下一个 `base_url` |
 | 全部 `base_url` 失败 | 来源状态 `failed`,提示该来源所有地址都拉取失败 |
-| `datalog.json` 结构不符 | 目录为空并提示插件目录拉取失败 |
+| `plugins.json` 结构不符 | 目录为空并提示插件目录索引拉取失败 |
 | 单个插件 `versions.json` 或 `meta.json` 失败 | 该行标记失败原因,其余插件不受影响 |
 | L1 清单缺失、验签失败或哈希不一致 | 目录照常展示,该来源标记为「目录数据未校验」 |
 | L3 清单缺失、验签失败或哈希不一致 | 该插件标记为未校验,其余插件不受影响 |

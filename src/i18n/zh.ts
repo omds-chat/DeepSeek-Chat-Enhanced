@@ -298,7 +298,7 @@ export const zh = {
     '至少需要一个有效地址；地址需以 https:// 开头，本机地址可用 http://localhost、http://127.0.0.1 或 http://[::1]',
   pluginMarketSourceFailed: '该来源的所有地址都拉取失败',
   pluginMarketNoSource: '还没有可用的来源',
-  pluginMarketCatalogFailed: '插件目录拉取失败',
+  pluginMarketCatalogFailed: '插件目录索引拉取失败',
   pluginMarketVersionFailed: '版本列表拉取失败',
   pluginMarketMetaFailed: '插件信息拉取失败',
   pluginMarketTrustTrusted: '可信',

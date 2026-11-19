@@ -190,8 +190,8 @@ const isApiUrl = (value: string): boolean => {
   )
 }
 
-/** 解析 datalog.json；不合格条目跳过并计数 */
-export const parseDatalog = (text: string): { entries: CatalogEntry[]; skipped: number } | null => {
+/** 解析插件目录索引 plugins.json；不合格条目跳过并计数 */
+export const parsePluginsIndex = (text: string): { entries: CatalogEntry[]; skipped: number } | null => {
   const parsed = parseJson(text)
   if (!Array.isArray(parsed)) {
     return null
@@ -738,22 +738,22 @@ export const createMarketClient = (
     const l1 = await loadLayer(context, '')
     context.l1Revision = l1.revision
     const metaOk = await fileMatches(l1, 'meta.json', outcome.metaText)
-    const datalogText = await requestText(net, joinUrl(baseUrl, 'datalog.json'))
-    const datalogOk = await fileMatches(l1, 'datalog.json', datalogText)
-    context.catalogVerified = l1.verified && metaOk && datalogOk
+    const pluginsText = await requestText(net, joinUrl(baseUrl, 'plugins.json'))
+    const pluginsOk = await fileMatches(l1, 'plugins.json', pluginsText)
+    context.catalogVerified = l1.verified && metaOk && pluginsOk
     let plugins: CatalogPlugin[] = []
     let skipped = 0
     let error: TranslationKey | null = null
-    if (datalogText === null) {
+    if (pluginsText === null) {
       error = 'pluginMarketCatalogFailed'
     } else {
-      const datalog = parseDatalog(datalogText)
-      if (!datalog) {
+      const index = parsePluginsIndex(pluginsText)
+      if (!index) {
         error = 'pluginMarketCatalogFailed'
       } else {
-        const loaded = await loadCatalog(context, datalog.entries)
+        const loaded = await loadCatalog(context, index.entries)
         plugins = loaded.plugins
-        skipped = datalog.skipped + loaded.skipped
+        skipped = index.skipped + loaded.skipped
       }
     }
     for (const plugin of plugins) {
@@ -1055,7 +1055,7 @@ export const createMarketClient = (
       const plan: InstallPlan = {
         ...plugin.conclusions,
         url: joinUrl(baseUrl, versionPath + 'plugin.js'),
-        // 数据基址随安装交给引擎入库,后续检查更新直接请求,不必再从 datalog.json 反查
+        // 数据基址随安装交给引擎入库,后续检查更新直接请求,不必再从 plugins.json 反查
         dataBase: joinUrl(baseUrl, versionPath),
         pluginBase: joinUrl(baseUrl, pluginPath),
         sourceType: sourceTypeOf(id),

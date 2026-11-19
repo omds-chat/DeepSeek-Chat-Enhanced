@@ -51,7 +51,7 @@ export const dscMarketPlugin: DscPlugin = {
   },
 }
 
-export { parseDatalog, parseRuntimeMeta, parseSourceMeta, parseVersions, toPluginId } from './client.js'
+export { parsePluginsIndex, parseRuntimeMeta, parseSourceMeta, parseVersions, toPluginId } from './client.js'
 export { compareVersions, deriveDataBase, readRecordDataBase, updateStatusOf } from './updates.js'
 export type { MarketClient } from './client.js'
 export type { RemovedEntry, RemovedVerdict } from './removed.js'
