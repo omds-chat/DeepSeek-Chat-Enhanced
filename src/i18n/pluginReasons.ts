@@ -17,6 +17,7 @@ const REASONS: Record<string, ReasonSpec> = {
   'missing-dependency': { key: 'pluginReasonMissingDependency', param: 'id' },
   'depended-on': { key: 'pluginReasonDependedOn', param: 'id' },
   'load-failed': { key: 'pluginReasonLoadFailed' },
+  'artifact-unreachable': { key: 'pluginReasonArtifactUnreachable' },
   'invalid-plugin': { key: 'pluginReasonInvalidPlugin' },
   'no-plugin-instance': { key: 'pluginReasonNoInstance' },
   'signature-invalid': { key: 'pluginReasonSignatureInvalid' },

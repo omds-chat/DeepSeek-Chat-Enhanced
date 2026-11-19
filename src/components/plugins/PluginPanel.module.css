@@ -304,6 +304,11 @@
   word-break: break-word;
 }
 
+/* 已移除插件的温馨提示：中性色，与错误文案区分 */
+.fieldNotice {
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* 离线包选择框只由「从本地安装」按钮触发，不占布局 */
 .fileInput {
   display: none;

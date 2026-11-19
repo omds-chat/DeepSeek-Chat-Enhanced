@@ -501,10 +501,10 @@ export const installPluginEngine = (): PluginEngine => {
     // 安装阶段必须拿到字节：既要保存代码文本供启动恢复，也要对原始字节验签
     const bytes = await fetchArtifactBytes(url)
     if (!bytes) {
-      // 字节没拿到时分不清网络问题与篡改，按加载失败处理，不误报签名无效
+      // 字节没拿到时分不清网络问题与篡改，按取件失败处理，不误报签名无效
       pushEngineLog(`install ${target} failed: artifact fetch failed`)
-      report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
-      return { ok: false, reason: 'load-failed', detail: 'artifact fetch failed' }
+      report('pluginInstallRejected', { id: target, reason: pluginReasonText('artifact-unreachable') })
+      return { ok: false, reason: 'artifact-unreachable', detail: 'artifact fetch failed' }
     }
     if (bytes.length > MAX_PLUGIN_CODE_BYTES) {
       pushEngineLog(`install ${target} rejected: code is ${String(bytes.length)} bytes`)

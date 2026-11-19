@@ -19,6 +19,7 @@ import type {
   StorageCapability,
 } from '../dsc-plugin-engine/types.js'
 import { createDownloadReporter } from './count.js'
+import { checkRemoved, type RemovedVerdict } from './removed.js'
 import { normalizeBaseUrls, readSources, writeSources } from './sources.js'
 import { resolveSourceTrust } from './trust.js'
 import {
@@ -88,6 +89,8 @@ export type MarketClient = {
   checkUpdates(targets: readonly UpdateTarget[]): Promise<UpdateReport>
   /** 生成重新安装到指定版本的计划；地址结构不符时返回 null */
   reinstallPlan(target: UpdateTarget, version: string): ReinstallPlan | null
+  /** 判定请求不到的产物地址是否指向已被来源移除的插件；清单全部不可达时为未判定 */
+  checkRemoved(url: string): Promise<RemovedVerdict>
 }
 
 /** 目录条目 */
@@ -1081,5 +1084,8 @@ export const createMarketClient = (
     },
     checkUpdates,
     reinstallPlan,
+    // 已移除插件判定只读各来源的清单，不写任何状态；来源配置变化后自动按新地址请求
+    checkRemoved: (url) =>
+      checkRemoved(net, sourceList.flatMap((source) => source.baseUrls), url),
   }
 }

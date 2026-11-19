@@ -3,13 +3,16 @@ import { useId, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
+import { useSettings } from '../../services/settings.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
 import { isPluginSourceAllowed } from '../dsc-plugin-engine/loader.js'
+import { market, type RemovedVerdict } from '../dsc-market/index.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
 import { IconRefreshOutline16 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
 import { InstalledPlugins } from './InstalledPlugins.js'
+import { judgeInstallFailure } from './installFailure.js'
 import { LocalInstall } from './LocalInstall.js'
 import { MarketPlugins } from './MarketPlugins.js'
 import { MobileHeader } from '../session/MobileHeader.js'
@@ -105,14 +108,31 @@ export const PluginPanel = () => {
   )
 }
 
+/**
+ * 取已移除插件判定。
+ * 市场未就绪或清单全部不可达时返回 null，调用方按未判定处理，不臆断。
+ */
+const removedVerdictOf = async (url: string): Promise<RemovedVerdict | null> => {
+  const client = market()
+  if (!client) {
+    return null
+  }
+  try {
+    return await client.checkRemoved(url)
+  } catch {
+    return null
+  }
+}
+
 /** 从地址安装：只输入产物地址，清单由产物自带的 manifest 导出提供 */
 const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
   const t = useTranslate()
+  const locale = useSettings((state) => state.locale)
   const [url, setUrl] = useState('')
   const [invalid, setInvalid] = useState(false)
   const [installing, setInstalling] = useState(false)
-  /** 安装失败原因，常驻在安装栏下方，直到用户改动地址或重新安装 */
-  const [failure, setFailure] = useState<string | null>(null)
+  /** 安装失败的提示，常驻在安装栏下方；notice 用于已移除插件的温馨提示 */
+  const [failure, setFailure] = useState<{ text: string; tone: 'error' | 'notice' } | null>(null)
 
   const submit = async () => {
     const target = url.trim()
@@ -134,7 +154,18 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
         showToast({ key: 'pluginInstallDone' })
         setUrl('')
       } else {
-        setFailure(pluginReasonText(result.reason, result.detail))
+        // 只有取不到产物时才看链接是否指向已被来源移除的插件，其余失败原因与清单无关
+        const verdict = await removedVerdictOf(target)
+        const tip = judgeInstallFailure({ result, verdict, locale })
+        if (tip.kind === 'undetermined') {
+          setFailure({ text: pluginReasonText(result.reason, result.detail), tone: 'error' })
+        } else {
+          showToast(tip.kind === 'removed' ? tip.message : { ...tip.message, type: 'error' })
+          setFailure({
+            text: t(tip.message.key, tip.message.params),
+            tone: tip.kind === 'removed' ? 'notice' : 'error',
+          })
+        }
       }
     } catch {
       showToast({
@@ -181,8 +212,11 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
       </div>
       {invalid ? <div className={styles.fieldError}>{t('pluginInstallUrlInvalid')}</div> : null}
       {!installing && failure !== null ? (
-        <div className={styles.fieldError} role="alert">
-          {failure}
+        <div
+          className={clsx(styles.fieldError, failure.tone === 'notice' && styles.fieldNotice)}
+          role={failure.tone === 'notice' ? 'status' : 'alert'}
+        >
+          {failure.text}
         </div>
       ) : null}
     </div>

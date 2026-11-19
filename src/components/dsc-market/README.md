@@ -11,6 +11,7 @@ dsc-market/
 ├── sources.ts  # 来源配置：默认值、地址校验、持久化
 ├── trust.ts    # 信任清单判定：是否被官方认可,不参与来源结论
 ├── updates.ts  # 版本更新检查：数据基址推导、版本比较、重装材料地址
+├── removed.ts  # 已移除插件清单：读取、前缀匹配与三态判定
 ├── count.ts    # 下载计数上报
 ├── types.ts    # 来源、目录条目与运行态类型
 └── README.md   # 机制说明
@@ -99,6 +100,29 @@ dsc-market/
 
 信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时从 `certs/dsce/root-ca/dsce-root-ca.crt` 注入。信任清单里的同名根证书(`certs/dsce/root-ca/dsce-root-ca.crt`)只用于比对,与内嵌根证书不一致时以构建内置的为准,并在控制台留一条提示。
 
+## 已移除插件清单
+
+合集站点可以发布一份已移除插件清单,位置固定为 `<base_url>/catalog/removed.json`,用于在用户直接粘贴产物链接安装失败时区分「曾经存在、后来移除」与「从未存在」:
+
+| 字段 | 说明 |
+|:---:|:---:|
+| `schemaVersion` | 清单结构版本,当前为 `1`;其它版本按不可读处理 |
+| `removed` | 条目数组 |
+| `removed[].name` | 插件名,用于提示里点名 |
+| `removed[].base_url` | 该插件原先分发的站点基址,允许同一插件登记多个地址 |
+| `removed[].removed_in` | 移除时的插件版本号 |
+| `removed[].note` | 可选说明,可写单语字符串或 `{"zh-CN":"…","en-US":"…"}` 双语对象 |
+
+判定方式:取所有已配置来源的全部 `base_url`,并发请求各自的清单,单个请求短超时(1 秒),请求失败与结构不符都静默跳过;把用户的产物链接与各条目的 `base_url` 做前缀匹配,两侧都先去掉查询与哈希并补齐基址尾部斜杠,多条命中时取最长基址。结论三态:
+
+| 结论 | 条件 | 界面表现 |
+|:---:|:---:|:---:|
+| 已移除 | 命中任一条目 | 提示该插件已不再受该来源支持,建议关注其他来源;不删除本地安装记录与插件数据 |
+| 不存在 | 至少一份清单可达但未命中 | 沿用「找不到这个插件」的提示 |
+| 未判定 | 清单全部不可达,或市场尚未就绪 | 沿用原有安装失败提示,不作判断 |
+
+只有「取不到产物」这一类失败才触发判定,签名校验不通过等其他失败原因不查询清单。判定全程只读:只发 GET 文本请求,不写来源配置、安装记录与插件数据。判定逻辑在 `removed.ts`,由客户端以 `checkRemoved()` 暴露,界面通过 `market()?.checkRemoved(url)` 取用。
+
 ## 版本更新检查
 
 已安装列表对每个来自在线来源的插件做一次版本比对：
@@ -157,9 +181,10 @@ client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manife
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 await client?.checkUpdates([{ id: 'demo', version: '1.0.0', sourceUrl: 'https://example.com/plugins/a/demo/1.0.0/plugin.js' }]) // 更新检查：Map<id, { status: 'outdated' | 'latest', latest }>
 client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trust, trustFailure }，地址结构不符时为 null
+await client?.checkRemoved('https://example.com/plugins/a/demo/1.0.0/plugin.js') // 已移除插件判定：removed | absent | undetermined
 ```
 
-`refresh`、`plan`、`countInstall` 之外的接口都是同步快照。界面用 `subscribe` 与 `version` 配合 `useSyncExternalStore` 订阅状态变化。
+异步接口是 `refresh`、`checkUpdates` 与 `checkRemoved`，其余都是同步快照。界面用 `subscribe` 与 `version` 配合 `useSyncExternalStore` 订阅状态变化。
 
 ## 缓存与失败处理
 

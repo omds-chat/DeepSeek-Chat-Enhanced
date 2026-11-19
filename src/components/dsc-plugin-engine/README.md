@@ -136,7 +136,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 ### 运行时加载与跨源
 
-`installFromUrl()` 先 `fetch` 产物字节,再按 UTF-8 文本存进安装记录,然后用 `loadPluginModuleFromCode()` 建 Blob URL 加载模块;安装阶段与启动阶段走同一条加载路径,启动阶段不再请求网络。`fetch` 跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`,缺失时字节拉不到,引擎按 `load-failed` 拒绝安装,原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机,不介入 CORS;`installFromUrl` 在拉取前用同一判定拒绝非 https 且非本机回环的地址。
+`installFromUrl()` 先 `fetch` 产物字节,再按 UTF-8 文本存进安装记录,然后用 `loadPluginModuleFromCode()` 建 Blob URL 加载模块;安装阶段与启动阶段走同一条加载路径,启动阶段不再请求网络。`fetch` 跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`,缺失时字节拉不到,引擎按 `artifact-unreachable` 拒绝安装,原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机,不介入 CORS;`installFromUrl` 在拉取前用同一判定拒绝非 https 且非本机回环的地址。
 
 ### 签名校验
 
@@ -167,7 +167,7 @@ CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名�
 - 本地安装:`inspectLocalPackage` 在预检阶段对包内 `plugin.js` 字节校验作者签名,不通过只标记 `failed` 并提示,仍可确认安装;包内没有签名材料时按 `unverified` 安装。合集签名不随离线包分发,离线包只认作者签名。
 - 启动阶段:`restore()` 对每条带签名材料的记录用存储的 `code` 重建字节并验签,不发起网络请求;代码缺失时按 `no-plugin-instance` 标记失败。
 - 校验不通过:仍然加载并激活该插件,记录标记为不可信(`trusted: false`)与 `failed`,提示用户「插件签名校验未通过,请自行判断是否继续使用」,记录保留在 `list()` 中供用户查看或卸载。
-- 安装阶段字节拉取失败:分不清网络问题与篡改,按 `load-failed` 拒绝安装,不标记不可信。
+- 安装阶段字节拉取失败:分不清网络问题与篡改,按 `artifact-unreachable` 拒绝安装,不标记不可信。
 - 安装阶段的拉取使用 `cache: 'no-store'`,避免命中旧缓存得出错误的通过结论。
 
 ### 本地安装与离线包

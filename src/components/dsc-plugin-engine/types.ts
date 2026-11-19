@@ -170,6 +170,8 @@ export type InstallRejection =
   | 'missing-dependency'
   | 'conflict'
   | 'load-failed'
+  /** 产物字节取不到：404、网络失败或被跨源策略拦住 */
+  | 'artifact-unreachable'
   | 'invalid-plugin'
   | 'signature-invalid'
   /** 扩展名不是 .zip 或 .tgz */

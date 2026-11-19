@@ -267,6 +267,8 @@ export const en = {
   pluginReasonDependedOn: 'Still required by an enabled plugin: {id}',
   pluginReasonLoadFailed:
     'The plugin artifact could not be loaded; check the URL and network, and allow CORS when hosted cross-origin',
+  pluginReasonArtifactUnreachable:
+    'The plugin artifact URL cannot be fetched; check the link or try again later',
   pluginReasonInvalidPlugin: 'The plugin artifact is not a valid plugin',
   pluginReasonNoInstance: 'The plugin instance is missing; reinstall the plugin',
   pluginReasonSignatureInvalid:
@@ -374,6 +376,11 @@ export const en = {
   pluginOperationBusy: 'Working',
   pluginInstalled: 'Plugin {id} installed',
   pluginInstallDone: 'Plugin installed',
+  pluginInstallNotFound: 'This plugin cannot be found; check the link',
+  pluginInstallRemovedNotice:
+    'Plugin {name} is no longer supported by that plugin source; please look for other sources',
+  pluginInstallRemovedNoticeWithNote:
+    'Plugin {name} is no longer supported by that plugin source; please look for other sources. {note}',
   pluginInstallFromLocal: 'Install from file',
   pluginLocalFileLabel: 'Offline package file',
   pluginLocalDialogTitle: 'Install plugin from file',
