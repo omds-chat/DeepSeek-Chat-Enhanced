@@ -361,7 +361,7 @@ dist/
 | `verify-web` 报证书链校验失败 | 目录内的 `eec.pem` 不是该根证书签发的,或换根后没有重新签发 |
 | `verify-web` 报某个文件 CMS 校验失败 | 该文件在签名后被改动过,或签名不是对当前字节生成的 |
 | `verify-web` 报 `certificate revoked` | EEC 已被 `gen-crl` 吊销 |
-| `build:online-data` 报 EEC 不是由该根证书签发 | 传入的 `eec.pem` 与 `--root-ca` 不配对 |
+| 生成的 `index.json` 里某个合集 `eec` 路径不对 | `certs/plugin-set/manifest.json` 的 `eec` 字段必须写成 `<合集 id>/<合集 id>-eec.crt` |
 | 网页运行时提示证书链校验未通过 | online-data 缺少 `certs/dsce/dsce-pages/dsce-pages-eec.crt`,或该证书不是当前根证书签发的 |
 | 市场提示「证书已被吊销」 | 该合集的 EEC 序列号已写进 `crl.pem`,需要签发新 EEC 并重新生成 CRL,`--revoke` 只列仍需吊销的序列号 |
 | 市场把整份清单判为不可信 | `crl.pem` 拉取失败、已过期、不是当前根证书签发的,或根证书 `keyUsage` 缺 `cRLSign` |
