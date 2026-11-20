@@ -190,15 +190,16 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 压缩包可解压 | `corrupt-package` |
 | 存在 `meta.json` | `missing-meta` |
 | 存在 `plugin.js` | `missing-plugin` |
-| `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | `invalid-meta` |
+| `plugin.js` 不超过 2 MB | `package-too-large` |
+| `meta.json` 可解码为合法 UTF-8 | `invalid-meta` |
+| `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字,`dependencies.dsc` 为单段版本范围 | `invalid-meta` |
 | `plugin.js` 是可还原的 UTF-8 文本 | `corrupt-package` |
 | 同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时,作者签名不通过 | 不拒绝,记录标记为 `failed` |
 | 只有作者签名或只有作者公钥 | 不拒绝,按 `unverified` 安装 |
-| `plugin.js` 不超过 2 MB | `package-too-large` |
 
-`meta.json` 的 `dependencies.dsc` 会被直接当作清单的 `engines` 使用,只接受单段表达式;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检按 `invalid-meta` 拒绝,原因说明指向该字段。
+`meta.json` 的 `dependencies.dsc` 会直接成为清单的 `engines`,预检与清单两侧共用 `versionRange.ts` 的单段表达式判定;失败原因的具体说明指向该字段。
 
-包内只有一半签名材料时按 `unverified` 安装,并在引擎日志里记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
+只有一半签名材料时,引擎日志会记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
 
 提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝。安装记录写入 `source_type: "local"`、留空 `source_url`、`data_base` 与 `plugin_base`,按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
 
