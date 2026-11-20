@@ -39,6 +39,8 @@ dsc-market/
 | `dsc-inner-plugin` | `https://omds-chat.github.io/dsc-inner-plugin/` |
 | `awesome-dsc-plugin` | `https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/`、`https://omds-chat.github.io/awesome-dsc-plugin/` |
 
+本地开发时来源地址可由 .env 覆盖,线上地址不变: 上表的 Pages 地址在 dev 下由 .env 的 `DSC_INNER_PLUGIN_PAGES_LINK`、`AWESOME_DSC_PLUGIN_PAGES_LINK` 注入值替代,注入为空或非法时仍用线上地址,地址判定与信任校验不分开发与线上。
+
 来源 id 与合集目录名一致,因此可以直接命中 online-data 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。来源类型仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
 
 内置来源不可删除,可以改 `base_url` 列表与顺序;用户还可以新增、删除、排序自定义来源。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。界面默认选中列表第一个来源。

@@ -14,6 +14,15 @@ declare const __ROOT_CA_PEM__: string
 /** 网页签名校验用的 EEC 证书（PEM），构建时从 certs/ds-chat-pages/ds-chat-pages-eec.crt 注入，离线时用它验签 */
 declare const __PAGES_EEC_PEM__: string
 
+/** 本地开发页面的地址，仅 dev 从 .env 的 DS_CHAT_PAGES_LINK 注入；production 为空串 */
+declare const __DS_CHAT_PAGES_LINK__: string
+
+/** 本地开发时 dsc-inner-plugin 来源的地址，仅 dev 从 .env 的 DSC_INNER_PLUGIN_PAGES_LINK 注入；为空串时用线上地址 */
+declare const __DSC_INNER_PLUGIN_PAGES_LINK__: string
+
+/** 本地开发时 awesome-dsc-plugin 来源的地址，仅 dev 从 .env 的 AWESOME_DSC_PLUGIN_PAGES_LINK 注入；为空串时用线上地址 */
+declare const __AWESOME_DSC_PLUGIN_PAGES_LINK__: string
+
 /** Prism 语言包通过副作用注册到全局 Prism */
 declare module 'prismjs/components/*' {}
 

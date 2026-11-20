@@ -7,40 +7,6 @@ export const KEY_SOURCES = 'market-sources'
 /** 允许走 http 的本机回环主机，与引擎的插件来源判定保持一致 */
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
 
-/**
- * 旧版内置来源 id 到合集目录名的映射。
- * 来源 id 现在与合集目录名一致，读取旧配置时按此表迁移，避免用户配置失效。
- */
-const LEGACY_IDS: Record<string, string> = {
-  awesome: 'awesome-dsc-plugin',
-  inner: 'dsc-inner-plugin',
-}
-
-/**
- * 内置来源。id 与合集目录名一致，便于直接命中 online-data 信任清单；
- * 列表顺序即来源优先级，dsc-inner-plugin 在前，awesome-dsc-plugin 在后。
- * 单个来源内的 base_url 也按顺序尝试：awesome-dsc-plugin 依次尝试 CDN 分发、raw 兜底与 Pages 兜底，
- * dsc-inner-plugin 只走 Pages。
- */
-export const DEFAULT_SOURCES: readonly MarketSource[] = [
-  {
-    id: 'dsc-inner-plugin',
-    name: 'dsc-inner-plugin',
-    builtin: true,
-    baseUrls: ['https://omds-chat.github.io/dsc-inner-plugin/'],
-  },
-  {
-    id: 'awesome-dsc-plugin',
-    name: 'awesome-dsc-plugin',
-    builtin: true,
-    baseUrls: [
-      'https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/',
-      'https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/',
-      'https://omds-chat.github.io/awesome-dsc-plugin/',
-    ],
-  },
-]
-
 /** 来源地址判定：https 任意主机，或 http 的本机回环地址 */
 export const isSourceUrl = (value: string): boolean => {
   let target: URL
@@ -67,6 +33,54 @@ export const normalizeBaseUrl = (value: string): string | null => {
   const href = target.href
   return href.endsWith('/') ? href : href + '/'
 }
+
+/** 构建时注入的本地来源地址：dev 由 .env 提供，production 恒为空串 */
+const injectedInnerPages = (): string =>
+  typeof __DSC_INNER_PLUGIN_PAGES_LINK__ === 'string' ? __DSC_INNER_PLUGIN_PAGES_LINK__ : ''
+
+const injectedAwesomePages = (): string =>
+  typeof __AWESOME_DSC_PLUGIN_PAGES_LINK__ === 'string' ? __AWESOME_DSC_PLUGIN_PAGES_LINK__ : ''
+
+/**
+ * 内置来源的 Pages 地址：注入的本地地址合法时优先使用，否则用线上地址。
+ * 注入值同样要过 isSourceUrl 判定，本地地址不享受任何例外。
+ */
+const pagesBaseUrl = (injected: string, online: string): string =>
+  normalizeBaseUrl(injected) ?? online
+
+/**
+ * 旧版内置来源 id 到合集目录名的映射。
+ * 来源 id 现在与合集目录名一致，读取旧配置时按此表迁移，避免用户配置失效。
+ */
+const LEGACY_IDS: Record<string, string> = {
+  awesome: 'awesome-dsc-plugin',
+  inner: 'dsc-inner-plugin',
+}
+
+/**
+ * 内置来源。id 与合集目录名一致，便于直接命中 online-data 信任清单；
+ * 列表顺序即来源优先级，dsc-inner-plugin 在前，awesome-dsc-plugin 在后。
+ * 单个来源内的 base_url 也按顺序尝试：awesome-dsc-plugin 依次尝试 CDN 分发、raw 兜底与 Pages 兜底，
+ * dsc-inner-plugin 只走 Pages。
+ */
+export const DEFAULT_SOURCES: readonly MarketSource[] = [
+  {
+    id: 'dsc-inner-plugin',
+    name: 'dsc-inner-plugin',
+    builtin: true,
+    baseUrls: [pagesBaseUrl(injectedInnerPages(), 'https://omds-chat.github.io/dsc-inner-plugin/')],
+  },
+  {
+    id: 'awesome-dsc-plugin',
+    name: 'awesome-dsc-plugin',
+    builtin: true,
+    baseUrls: [
+      'https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/',
+      'https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/',
+      pagesBaseUrl(injectedAwesomePages(), 'https://omds-chat.github.io/awesome-dsc-plugin/'),
+    ],
+  },
+]
 
 /** 规范化一组 base_url；丢弃非法项与重复项，保留顺序 */
 export const normalizeBaseUrls = (values: readonly string[]): string[] => {
