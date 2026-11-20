@@ -176,7 +176,7 @@ npm 包的要点:
 - `package.json` 的 `files` 需要包含 `dist`,否则产物不会进包。
 - `package/` 下的其他内容被忽略,只安装 `package/dist/` 下的文件。
 
-`meta.json` 是安装依据:引擎只校验 `name`、`version`、`author` 非空且版本号为三段数字;清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。`dependencies.dsc` 会被当作清单的 `engines` 使用,必须写成单段版本范围;写成组合范围时预检按 `invalid-meta` 拒绝,原因说明指向 `dependencies.dsc`。
+`meta.json` 是安装依据:预检先确认包内有 `meta.json` 与 `plugin.js`,再确认 `plugin.js` 不超过 2 MB,然后把 `meta.json` 按 UTF-8 解码并解析。`meta.json` 不是合法 UTF-8 时按 `invalid-meta` 拒绝;解码成功后要求 `name`、`version`、`author` 非空且版本号为三段数字。清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。`dependencies.dsc` 会被当作清单的 `engines` 使用,必须写成单段版本范围,例如 `^1.0.0`;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检同样按 `invalid-meta` 拒绝,原因说明指向 `dependencies.dsc`。
 
 带作者签名的离线包:
 
@@ -220,7 +220,7 @@ npm 包的要点:
 | `load-failed` | 地址协议不支持、产物不是可存的 UTF-8 文本,或导入超过 10 秒 | 检查地址与产物格式 |
 | `invalid-plugin` | 产物没有导出 `activate`,或导出形态不被识别 | 检查导出形态 |
 | `missing-meta` / `missing-plugin` | 离线包根目录不是 `dist/` 的内容,或 npm 包里没有 `dist/` | 按打包要求重新生成离线包 |
-| `invalid-meta` | `meta.json` 缺少 `name`、`version`、`author`,版本号不是三段数字,或 `dependencies.dsc` 不是单段版本范围 | 修正 `meta.json`,版本范围写成单段表达式 |
+| `invalid-meta` | `meta.json` 不是合法 UTF-8,缺少 `name`、`version`、`author`,版本号不是三段数字,或 `dependencies.dsc` 不是单段版本范围 | 修正 `meta.json`,版本范围写成单段表达式 |
 | `corrupt-package` | 压缩包损坏,或 `plugin.js` 不是 UTF-8 文本 | 重新打包 |
 | `package-too-large` | `plugin.js` 超过 2 MB | 精简产物(行压缩、去掉内联资源)后重新打包 |
 

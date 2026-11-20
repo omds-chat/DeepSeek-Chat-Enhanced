@@ -67,14 +67,17 @@ dsc 插件在浏览器里扩展应用已有的能力,可用的能力包括:
 | zip | 包根目录 | 根目录直接放 `meta.json` 与 `plugin.js`,可选作者签名 `plugin.js.author.sig` 与 `author_pub.pem` |
 | npm 包(`.tgz`) | `package/dist/` | 只安装该目录下的产物,`package/` 下的其他内容被忽略 |
 
-安装前会做以下检查,任何一项不通过都在确认对话框内说明原因,不会弹出系统对话框:
+安装前会按下列顺序逐项检查,任何一项不通过都立即停止后续检查,并在确认对话框内说明原因,不会弹出系统对话框:
 
 | 检查 | 不通过时的提示 |
 |:---:|:---:|
 | 包内必须有 `meta.json` 与 `plugin.js` | 提示缺少哪个文件 |
-| `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | 提示清单内容不合规 |
-| 包内同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时按约定验签 | 提示签名校验未通过,仍可确认安装 |
 | 插件代码不超过 2 MB | 提示超过上限,请精简产物后重新打包 |
+| `meta.json` 是合法 UTF-8 文本 | 提示清单内容不合规 |
+| `meta.json` 可解析,`name`、`version`、`author` 非空,`version` 为三段数字 | 提示清单内容不合规 |
+| 存在 `dependencies.dsc` 时,其值必须是单段版本范围 | 提示清单内容不合规 |
+| `plugin.js` 是可还原的 UTF-8 文本 | 提示离线包无法解析 |
+| 包内同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时按约定验签 | 提示签名校验未通过,仍可确认安装 |
 
 签名与风险:
 
