@@ -8,10 +8,10 @@
 |:---:|:---:|:---:|
 | 签名 | `pnpm run pki -- sign-web` | 对每个 `.html`、`.js`、`.css` 生成 `<文件>.sig` |
 | 清单 | `dist/web_files.json` | 按路径排序列出全部被签名文件,清单自身也有 `.sig` |
-| 证书落盘 | `pnpm run pki -- sign-web` | 写出 `dist/certs/dsce/dsce-pages/dsce-pages-eec.crt` |
+| 证书落盘 | `pnpm run pki -- sign-web` | 写出 `dist/certs/ds-chat-pages/ds-chat-pages-eec.crt` |
 | 信任锚 | `rspack.config.ts` | 构建时把根证书 PEM 注入为 `__ROOT_CA_PEM__` |
 | 离线验签证书 | `rspack.config.ts` | 构建时把网页签名 EEC 证书 PEM 注入为 `__PAGES_EEC_PEM__` |
-| 信任数据分发 | online-data 分支 | 提供 `certs/dsce/root-ca/dsce-root-ca.crt` 与 `certs/dsce/dsce-pages/dsce-pages-eec.crt` |
+| 信任数据分发 | online-data 分支 | 提供 `certs/ds-chat/ds-chat-root-ca.crt` 与 `certs/ds-chat-pages/ds-chat-pages-eec.crt` |
 | 运行时校验 | `src/services/integrity/` | 页面挂载后异步校验证书链与全部签名,失败只提示一条警告 |
 
 ## 签名范围
@@ -56,10 +56,10 @@
 
 ```
 pnpm build
-node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pages-eec.crt --key eec_secret.pem
+node scripts/pki/ca.mjs sign-web --dir dist --eec certs/ds-chat-pages/ds-chat-pages-eec.crt --key eec_secret.pem
 ```
 
-`sign-web` 依次做四件事:遍历 `dist` 下全部 `.html`、`.js`、`.css` 生成 `<文件>.sig`;写出 `dist/web_files.json`;对清单生成 `web_files.json.sig`;把 EEC 证书按 certs 布局写为 `dist/certs/dsce/dsce-pages/dsce-pages-eec.crt` 。签名只读取文件字节,不修改被签名的文件。证书只按 certs 布局写出,不再产出产物根目录的 `eec.pem`;目标目录若仍留有旧布局的 `eec.pem`,`sign-web` 以非零退出码结束并要求先删除该文件,避免同一份产物带两份可能不同步的证书。
+`sign-web` 依次做四件事:遍历 `dist` 下全部 `.html`、`.js`、`.css` 生成 `<文件>.sig`;写出 `dist/web_files.json`;对清单生成 `web_files.json.sig`;把 EEC 证书按 certs 布局写为 `dist/certs/ds-chat-pages/ds-chat-pages-eec.crt` 。签名只读取文件字节,不修改被签名的文件。证书只按 certs 布局写出,不再产出产物根目录的 `eec.pem`;目标目录若仍留有旧布局的 `eec.pem`,`sign-web` 以非零退出码结束并要求先删除该文件,避免同一份产物带两份可能不同步的证书。
 
 | 情形 | 行为 |
 |:---:|:---:|
@@ -77,8 +77,8 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 
 | 常量 | 取值 | 用途 |
 |:---:|:---:|:---:|
-| `__ROOT_CA_PEM__` | `certs/dsce/root-ca/dsce-root-ca.crt` | 网页校验的信任锚,只认这一份 |
-| `__PAGES_EEC_PEM__` | `certs/dsce/dsce-pages/dsce-pages-eec.crt` | 离线时验证网页签名的 EEC 证书 |
+| `__ROOT_CA_PEM__` | `certs/ds-chat/ds-chat-root-ca.crt` | 网页校验的信任锚,只认这一份 |
+| `__PAGES_EEC_PEM__` | `certs/ds-chat-pages/ds-chat-pages-eec.crt` | 离线时验证网页签名的 EEC 证书 |
 
 `createConfig` 的 `rootCaPem` 与 `pagesEecPem` 参数可以显式覆盖对应默认值。
 
@@ -96,7 +96,7 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 
 | 材料 | 在线 | 离线 | 判据 |
 |:---:|:---:|:---:|:---:|
-| 根证书 | 拉 `certs/dsce/root-ca/dsce-root-ca.crt` 与内嵌副本逐字节比对 | 不比对,直接用内嵌 | 信任锚永远只用内嵌的那份;在线副本不参与任何决策,根证书不能用自己验证自己 |
+| 根证书 | 拉 `certs/ds-chat/ds-chat-root-ca.crt` 与内嵌副本逐字节比对 | 不比对,直接用内嵌 | 信任锚永远只用内嵌的那份;在线副本不参与任何决策,根证书不能用自己验证自己 |
 | 网页签名 EEC | 先取 online-data 副本,必须能在内嵌根证书下通过证书链校验 | 直接用 `__PAGES_EEC_PEM__` | 链不通过、取不到或无法解析都回退内嵌,回退时留一条控制台提示 |
 | CRL | 按 `index.json` 的登记取并验签 | 不请求,吊销状态视为未知 | 未知时不判定任何证书已吊销,也不阻断任何操作 |
 | 网页清单与逐文件签名 | 与页面同源取 | 与页面同源取 | 属于产物自身,始终按页面地址取,不走 online-data |
@@ -120,9 +120,9 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 |:---:|:---:|
 | 根证书为空 | 直接返回,不发起任何请求 |
 | 判定在线状态 | `navigator.onLine` 为 `false` 时不拉取根证书、EEC 与 CRL,直接用内嵌材料 |
-| 拉取 `certs/dsce/root-ca/dsce-root-ca.crt` | 在线时按 online-data 的多镜像依次尝试,单个请求超时 1 秒;拉不到时只记一条提示,继续按内嵌根证书校验 |
+| 拉取 `certs/ds-chat/ds-chat-root-ca.crt` | 在线时按 online-data 的多镜像依次尝试,单个请求超时 1 秒;拉不到时只记一条提示,继续按内嵌根证书校验 |
 | 核对信任锚 | 拉到的根证书必须与内嵌根证书逐字节一致,否则提示一条警告并继续用内嵌的那份 |
-| 选取网页 EEC | 在线优先取 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ,并要求在内嵌根证书下通过证书链校验;取不到、无法解析或链不通过时回退 `__PAGES_EEC_PEM__` |
+| 选取网页 EEC | 在线优先取 `certs/ds-chat-pages/ds-chat-pages-eec.crt` ,并要求在内嵌根证书下通过证书链校验;取不到、无法解析或链不通过时回退 `__PAGES_EEC_PEM__` |
 | 选取吊销列表 | 在线时按 `index.json` 的 `crl` 登记取 CRL 并验签;离线、取不到、解析失败或验签不通过时吊销状态按未知处理,不阻断校验 |
 | 校验证书链 | 签发者与主体匹配、EEC 的签名可用根证书公钥验证、两端都在有效期内、根证书为 CA、EEC 的 `keyUsage` 含 `digitalSignature`、EEC 不是 CA;吊销状态已知时一并检查 |
 | 两份 EEC 都拿不到 | 提示一条证书链警告,不继续逐文件校验 |
@@ -137,13 +137,13 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 
 ## 发布流水线
 
-`.github/workflows/pages.yml` 直接构建,根证书由 `certs/dsce/root-ca/dsce-root-ca.crt` 内嵌,不再从 secrets 注入;在构建之后、上传产物之前执行 `sign-web`:
+`.github/workflows/pages.yml` 直接构建,根证书由 `certs/ds-chat/ds-chat-root-ca.crt` 内嵌,不再从 secrets 注入;在构建之后、上传产物之前执行 `sign-web`:
 
 - `secrets.WEB_EEC_KEY` 写入仓库内被忽略的临时文件,签完立即删除;
-- EEC 证书取 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ;
+- EEC 证书取 `certs/ds-chat-pages/ds-chat-pages-eec.crt` ;
 - 执行 `node scripts/pki/ca.mjs sign-web --dir dist --eec <EEC> --key <私钥>` 。
 
-`sign-web` 把证书写到 `dist/certs/dsce/dsce-pages/dsce-pages-eec.crt` ,产物不再生成 `dist/eec.pem` 。
+`sign-web` 把证书写到 `dist/certs/ds-chat-pages/ds-chat-pages-eec.crt` ,产物不再生成 `dist/eec.pem` 。
 
 密钥缺失时签名步骤直接失败并给出明确错误,避免发布未签名的产物。
 
@@ -155,15 +155,15 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/dsce/dsce-pages/dsce-pag
 
 | 现象 | 常见原因 |
 |:---:|:---:|
-| 产物里 `__ROOT_CA_PEM__` 为空 | 只有 `createConfig` 显式传入空串才会这样;正常构建会从 `certs/dsce/root-ca/dsce-root-ca.crt` 注入 |
-| 产物里 `__PAGES_EEC_PEM__` 为空 | 同上,只有 `createConfig` 显式传入空串才会这样;正常构建会从 `certs/dsce/dsce-pages/dsce-pages-eec.crt` 注入 |
+| 产物里 `__ROOT_CA_PEM__` 为空 | 只有 `createConfig` 显式传入空串才会这样;正常构建会从 `certs/ds-chat/ds-chat-root-ca.crt` 注入 |
+| 产物里 `__PAGES_EEC_PEM__` 为空 | 同上,只有 `createConfig` 显式传入空串才会这样;正常构建会从 `certs/ds-chat-pages/ds-chat-pages-eec.crt` 注入 |
 | 页面提示证书链校验未通过 | 在线副本与内嵌材料都校验不过: 在线 EEC 不是内嵌根证书签发的且内嵌 EEC 也已过期,或内嵌根证书本身不在有效期内 |
 | 页面提示签名校验未通过 | 产物在签名后被改动,或签名用的 EEC 与产物内嵌的 EEC 不是同一张证书 |
 | 控制台提示改用了内嵌材料 | online-data 的 EEC 取不到、超时或链校验未通过,已按内嵌材料继续校验,属预期回退 |
 | 校验始终静默 | 产物没有 `web_files.json`,或根证书为空 |
 | `sign-web` 报 EEC 证书与私钥不配对 | 传入了别的证书或私钥 |
 | `sign-web` 报目标目录存在旧布局的证书 | 产物目录仍留着 `eec.pem`,删除该文件后重新运行,证书改由 certs 布局提供 |
-| `verify-web` 提示只有旧布局的证书 | 目录内缺 `certs/dsce/dsce-pages/dsce-pages-eec.crt`,已按兼容回退用了 `eec.pem`;重新运行 `sign-web` 生成规范路径 |
+| `verify-web` 提示只有旧布局的证书 | 目录内缺 `certs/ds-chat-pages/ds-chat-pages-eec.crt`,已按兼容回退用了 `eec.pem`;重新运行 `sign-web` 生成规范路径 |
 
 ## 相关文档
 

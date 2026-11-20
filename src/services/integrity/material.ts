@@ -10,9 +10,9 @@ import { isOnline, logMaterial, requestBytes } from '../trust/net.js'
 import { derEquals, pemToDer } from './pem.js'
 
 /** online-data 上的根证书路径；与构建内嵌的是同一份，只用于比对 */
-export const ROOT_CA_PATH = 'certs/dsce/root-ca/dsce-root-ca.crt'
+export const ROOT_CA_PATH = 'certs/ds-chat/ds-chat-root-ca.crt'
 /** online-data 上的网页签名 EEC 证书路径 */
-export const PAGES_EEC_PATH = 'certs/dsce/dsce-pages/dsce-pages-eec.crt'
+export const PAGES_EEC_PATH = 'certs/ds-chat-pages/ds-chat-pages-eec.crt'
 /** online-data 上的信任清单路径，只用来取吊销列表的登记 */
 const INDEX_FILE = 'index.json'
 

@@ -24,7 +24,7 @@ This branch adds the following **feature enhancements** to the source repository
 | `dsc-core` | dsc core, runs the basic services of Chat-Demo |
 | `dsc-plugin-engine` | dsc plugin engine, the middle layer that implements the plugin system |
 | `dsc-market` | dsc plugin market, reads the external plugin index and feeds the plugin panel's Plugin market tab |
-| Other same-origin plugins | See [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) |
+| Other same-origin plugins | See [dsc-inner-plugin](https://omds-chat.github.io/dsc-inner-plugin/) |
 
 Only `dsc-market` is loaded by the plugin engine and appears under Installed in the plugin panel; `dsc-core` and `dsc-plugin-engine` are host-side base modules and are not listed as plugins.
 
@@ -33,20 +33,20 @@ We follow some of the design philosophy and repository conventions of [DeepSeekR
 
 ## Try it online
 
-Click [try it online](https://omdsc-dev.github.io/chat/) to use it, or download the archive from [Releases](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced/releases), extract it, and double-click `index.html` to use it locally without installation or a build.
+Click [try it online](https://omds-chat.github.io/chat/) to use it, or download the archive from [Releases](https://github.com/omds-chat/DeepSeek-Chat-Enhanced/releases), extract it, and double-click `index.html` to use it locally without installation or a build.
 
 Note that we only provide the creation, display, and distribution of **static web pages (no agent capabilities)** and a few necessary plugins (the same-origin plugins above). We **do not provide any** paid services or backend services. In addition, we also list some external plugins made by community developers; introducing those plugins is at the user's **own judgment and risk**, so make sure you only introduce plugins you **trust**.
 
 > [!WARNING]
-> Note: Using DeepSeek-Chat-Enhanced and its online page still depends on a model API service and incurs charges, but these fees do not go into omdsc-dev's wallet.<br>
+> Note: Using DeepSeek-Chat-Enhanced and its online page still depends on a model API service and incurs charges, but these fees do not go into omds-chat's wallet.<br>
 > Unless you subscribe to a Token Plan, use a channel with free quota, or have sufficient budget, do not use DeepSeek-Chat-Enhanced casually, to avoid unexpected charges.
 
 > [!CAUTION]
 > Protect your API key, because it is stored and exposed directly in browser storage.<br>
 > Do not enable any plugin of unknown or untrusted origin, to prevent your API key and conversation content from leaking.<br>
-> Plugins provided by [omdsc-dev/dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) will not attempt to leak your credentials or data.<br>
-> Plugins listed by [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/) may have review omissions; verify their origin and safety before use.<br>
-> If you encounter a malicious plugin, you can [submit an issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new), [contact awesome-dsc-plugin](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report), or even [contact omdsc-dev directly](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report) to report it and request removal. But we cannot recover your losses; remove the malicious plugin promptly and update your API key.
+> Plugins provided by [omds-chat/dsc-inner-plugin](https://omds-chat.github.io/dsc-inner-plugin/) will not attempt to leak your credentials or data.<br>
+> Plugins listed by [awesome-dsc-plugin](https://omds-chat.github.io/awesome-dsc-plugin/) may have review omissions; verify their origin and safety before use.<br>
+> If you encounter a malicious plugin, you can [submit an issue](https://github.com/omds-chat/awesome-dsc-plugin/issues/new), [contact awesome-dsc-plugin](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report), or even [contact omds-chat directly](mailto:JularDepick@gmail.com?subject=Malicious%20plugin%20report) to report it and request removal. But we cannot recover your losses; remove the malicious plugin promptly and update your API key.
 
 
 ## Plugin panel
@@ -67,15 +67,15 @@ For end-user instructions, see the [plugin user guide](docs/user/guide/plugins.m
 
 ## Plugin market
 
-To view the plugin list online, visit [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/).
+To view the plugin list online, visit [awesome-dsc-plugin](https://omds-chat.github.io/awesome-dsc-plugin/).
 
-To view the same-origin plugin list online, visit [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/).
+To view the same-origin plugin list online, visit [dsc-inner-plugin](https://omds-chat.github.io/dsc-inner-plugin/).
 
-For plugin submission, see [omdsc-dev/awesome-dsc-plugin](https://github.com/omdsc-dev/awesome-dsc-plugin/).
+For plugin submission, see [omds-chat/awesome-dsc-plugin](https://github.com/omds-chat/awesome-dsc-plugin/).
 
 Plugins listed in the market **must comply with** the [dsc plugin development specification](docs/user/develop/basic/plugin-develop-spec.md).
 
-Plugin sources follow a certificate-based signature scheme: each source holds a signing certificate issued by the omdsc-dev root certificate, plugin artifacts and web artifacts carry that signature, and the browser verifies it when installing, when starting a plugin, and when the page loads. A plugin author may also sign the same plugin with their own private key, and that signature exists alongside the source signature.
+Plugin sources follow a certificate-based signature scheme: each source holds a signing certificate issued by the omds-chat root certificate, plugin artifacts and web artifacts carry that signature, and the browser verifies it when installing, when starting a plugin, and when the page loads. A plugin author may also sign the same plugin with their own private key, and that signature exists alongside the source signature.
 
 A source's trustworthiness is proven by the certificate chain, and the plugin market, the plugin panel, and the web runtime all verify the same certificates, with no separate collection trust signature. When verification fails you only get a warning: the install or the page still works, so decide for yourself whether to continue.
 
@@ -88,22 +88,26 @@ The `certs/` directory is the single source of public certificates and public ke
 
 ```
 certs/
-├── dsce/            # material used by dsc itself: root certificate, page signing certificate, same-origin plugin collection certificate
-├── plugin-set/      # plugin collection registry and the EEC of each collection
-└── schemas/         # JSON Schemas and index notes for the above (see certs/schemas/README.md)
+├── ds-chat/             # root certificate and root public key
+├── ds-chat-pages/       # EEC certificate and public key for page signing
+├── dsc-inner-plugin/    # EEC certificate and public key of the same-origin plugin collection
+├── awesome-dsc-plugin/  # EEC certificate and public key of a plugin collection; every collection gets one such source directory
+├── manifest.json        # plugin collection certificate registry
+└── schemas/             # JSON Schemas and index notes for the above (see certs/schemas/README.md)
 ```
 
 - Private keys are not in this directory: the root private key stays in the organisation's offline signing environment, and EEC private keys stay in each collection's CI secrets.
+- Each source directory also holds that source's certificate public key `<source id>-eec-secret.pub`; `ds-chat/` additionally holds the root public key `ds-chat-root-ca-secret.pub`.
 - Plugin author public keys belong to each plugin collection and are not placed here.
 - Trust data for the page and for plugins is taken from `certs/` only: CI copies it verbatim into the `online-data` branch, and the published layout matches `certs/`.
-- The build embeds `certs/dsce/root-ca/dsce-root-ca.crt` into the artifact; an offline run cannot fetch the online copy, so the embedded root certificate is what makes offline use possible.
+- The build embeds `certs/ds-chat/ds-chat-root-ca.crt` into the artifact; an offline run cannot fetch the online copy, so the embedded root certificate is what makes offline use possible.
 
 
 ## Building plugins
 
 Every dsc plugin is an independent project during **development**. You can write the plugin logic in **any programming language**, as long as the **built runtime artifact** conforms to the [**dsc plugin artifact specification**](docs/user/develop/basic/plugin-product-spec.md) so the plugin is recognized and runs.
 
-To keep plugins standardized and maintainable, and to make your plugin easier for others to use and build upon, we recommend developing plugins with the [dsc plugin template](https://github.com/omdsc-dev/dsc-plugin-template) provided by omdsc-dev.
+To keep plugins standardized and maintainable, and to make your plugin easier for others to use and build upon, we recommend developing plugins with the [dsc plugin template](https://github.com/omds-chat/dsc-plugin-template) provided by omds-chat.
 
 Every dsc plugin is a `js script` conforming to the [dsc plugin artifact specification](docs/user/develop/basic/plugin-product-spec.md) during **runtime**.
 
@@ -116,7 +120,7 @@ See [build-a-plugin.md](docs/user/develop/framework/build-a-plugin.md).
 
 ## Copyright and license
 
-Copyright &copy; 2026 omdsc-dev
+Copyright &copy; 2026 omds-chat
 
 See [COPYRIGHT](COPYRIGHT) for details.
 

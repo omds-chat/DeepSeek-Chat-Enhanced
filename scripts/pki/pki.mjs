@@ -22,7 +22,7 @@ export const ROOT_CA_FILE = 'root_ca.crt'
 /** 根 CA 私钥文件名,只在签名环境使用,不入库 */
 export const ROOT_CA_KEY_FILE = 'root_secret.pem'
 /** 网页签名证书在产物内的相对路径,证书统一按 certs 布局存放 */
-export const EEC_CERT_FILE = 'certs/dsce/dsce-pages/dsce-pages-eec.crt'
+export const EEC_CERT_FILE = 'certs/ds-chat-pages/ds-chat-pages-eec.crt'
 /**
  * 旧布局的 EEC 证书文件名。
  * 早期 sign-web 把证书复制到产物根目录的 eec.pem,尚未迁移的产物与第三方来源仍按该路径提供证书,
@@ -200,8 +200,8 @@ export function resolveKeyFile(source, label = '私钥') {
  */
 export function genRootCa(dir, options = {}) {
   requireOpenssl()
-  const org = requireText(options.org || 'omdsc-dev', '组织名称')
-  const name = requireText(options.name || 'omdsc-dev Root CA', '根 CA 名称')
+  const org = requireText(options.org || 'omds-chat', '组织名称')
+  const name = requireText(options.name || 'DeepSeek-Chat-Enhanced ROOT CA', '根 CA 名称')
   const days = String(options.days || 3650)
   const keyPath = resolve(dir, options.keyFile || ROOT_CA_KEY_FILE)
   const certPath = resolve(dir, options.certFile || ROOT_CA_FILE)
@@ -242,10 +242,10 @@ export function genEecKey(dir, options = {}) {
  * @param {object} [options] keyFile、csrFile
  * @returns {{csrPath: string, keyPath: string}}
  */
-export function genCsr(dir, commonName, org = 'omdsc-dev', options = {}) {
+export function genCsr(dir, commonName, org = 'omds-chat', options = {}) {
   requireOpenssl()
   const cn = requireText(commonName, 'commonName')
-  const o = requireText(org || 'omdsc-dev', '组织名称')
+  const o = requireText(org || 'omds-chat', '组织名称')
   const keyPath = resolve(dir, options.keyFile || EEC_KEY_FILE)
   requireFile(keyPath, 'EEC 私钥')
   const csrPath = resolve(dir, options.csrFile || EEC_CSR_FILE)

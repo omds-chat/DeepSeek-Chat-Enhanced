@@ -5,8 +5,8 @@ import type { TrustCollection, TrustFailureReason, TrustList } from './types.js'
 
 /** 信任清单的镜像地址；按顺序尝试，前者失败才用后者 */
 export const TRUST_MIRRORS: readonly string[] = [
-  'https://cdn.jsdelivr.net/gh/omdsc-dev/DeepSeek-Chat-Enhanced@online-data/',
-  'https://raw.githubusercontent.com/omdsc-dev/DeepSeek-Chat-Enhanced/online-data/',
+  'https://cdn.jsdelivr.net/gh/omds-chat/DeepSeek-Chat-Enhanced@online-data/',
+  'https://raw.githubusercontent.com/omds-chat/DeepSeek-Chat-Enhanced/online-data/',
 ]
 
 /** 合集并发校验上限 */
@@ -14,7 +14,7 @@ const CONCURRENCY = 4
 /**
  * 信任清单文件名；固定位于 online-data 根目录。
  * 根证书与各合集 EEC 的路径不在这里硬编码，一律采用清单里登记的相对路径，
- * 清单按 certs 目录结构给出 certs/dsce/root-ca/... 与 certs/plugin-set/<合集 id>/<合集 id>-eec.crt。
+ * 清单按 certs 目录结构给出 certs/ds-chat/... 与 certs/<合集 id>/<合集 id>-eec.crt。
  */
 const INDEX_FILE = 'index.json'
 /** 信任清单结构版本 */

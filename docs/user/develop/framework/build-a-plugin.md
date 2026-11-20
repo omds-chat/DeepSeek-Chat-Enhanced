@@ -63,7 +63,7 @@ export const activate = (context: PluginContext) => {
 export const deactivate = () => {}
 ```
 
-`import type` 只是为了让编辑器拿到类型提示,编译后不会留在产物里。该路径指向本仓库的类型定义;独立插件项目可以复制这份类型声明,或使用 omdsc-dev 提供的 dsc 插件模板。
+`import type` 只是为了让编辑器拿到类型提示,编译后不会留在产物里。该路径指向本仓库的类型定义;独立插件项目可以复制这份类型声明,或使用 omds-chat 提供的 dsc 插件模板。
 
 ### 产物
 

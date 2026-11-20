@@ -2,13 +2,13 @@
   "name": "deepseek-chat-enhanced",
   "version": "1.0.0",
   "description": "DeepSeek网页聊天对话(增强版)",
-  "author": "omdsc-dev",
+  "author": "omds-chat",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced.git"
+    "url": "git+https://github.com/omds-chat/DeepSeek-Chat-Enhanced.git"
   },
-  "homepage": "https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced",
+  "homepage": "https://github.com/omds-chat/DeepSeek-Chat-Enhanced",
   "private": true,
   "type": "module",
   "scripts": {

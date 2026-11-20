@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced/certs/schemas/trust-index.schema.json",
+  "$id": "https://github.com/omds-chat/DeepSeek-Chat-Enhanced/certs/schemas/trust-index.schema.json",
   "title": "online-data 信任清单",
   "description": "online-data 分支根目录 index.json 的结构。所有路径都相对 online-data 根目录,指向从 certs 包原样复制过来的证书。",
   "type": "object",
@@ -17,7 +17,7 @@
     },
     "rootCa": {
       "$ref": "#/$defs/relativePath",
-      "description": "根证书的相对路径,按 certs 布局为 certs/dsce/root-ca/dsce-root-ca.crt;只作比对,信任锚始终是构建内嵌的根证书。"
+      "description": "根证书的相对路径,按 certs 布局为 certs/ds-chat/ds-chat-root-ca.crt;只作比对,信任锚始终是构建内嵌的根证书。"
     },
     "crl": {
       "description": "吊销列表的相对路径,位于 online-data 根目录;没有吊销列表时为 null。",
@@ -55,12 +55,12 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "合集 id,同时是合集在 certs/plugin-set 下的目录名。",
+          "description": "合集 id,同时是合集在 certs 下的目录名。",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         },
         "eec": {
           "$ref": "#/$defs/relativePath",
-          "description": "该合集 EEC 证书的相对路径,按 certs 布局为 certs/plugin-set/<合集 id>/<合集 id>-eec.crt。"
+          "description": "该合集 EEC 证书的相对路径,按 certs 布局为 certs/<合集 id>/<合集 id>-eec.crt。"
         }
       }
     }

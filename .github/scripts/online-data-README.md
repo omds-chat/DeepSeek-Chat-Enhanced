@@ -30,10 +30,10 @@ online-data/
 ```json
 {
   "schemaVersion": 2,
-  "rootCa": "certs/dsce/root-ca/dsce-root-ca.crt",
+  "rootCa": "certs/ds-chat/ds-chat-root-ca.crt",
   "crl": null,
   "collections": [
-    { "id": "<合集名>", "eec": "certs/plugin-set/<合集名>/<合集名>-eec.crt" }
+    { "id": "<合集名>", "eec": "certs/<合集名>/<合集名>-eec.crt" }
   ]
 }
 ```
@@ -42,16 +42,16 @@ online-data/
 
 {{COLLECTIONS}}
 
-`dsc-inner-plugin` 不登记进 `collections`: 它不是普通合集,其 EEC 随 `certs/dsce/dsc-inner-plugin/` 一起分发。
+`dsc-inner-plugin` 不登记进 `collections`: 它不是普通合集,其 EEC 随 `certs/dsc-inner-plugin/` 一起分发。
 
 ## 证书
 
 | 证书 | 路径 |
 |:---:|:---:|
-| 根证书 | `certs/dsce/root-ca/dsce-root-ca.crt` |
-| 网页签名 EEC | `certs/dsce/dsce-pages/dsce-pages-eec.crt` |
-| 内部插件 EEC | `certs/dsce/dsc-inner-plugin/dsc-inner-plugin-eec.crt` |
-| 合集 EEC | `certs/plugin-set/<合集名>/<合集名>-eec.crt` |
+| 根证书 | `certs/ds-chat/ds-chat-root-ca.crt` |
+| 网页签名 EEC | `certs/ds-chat-pages/ds-chat-pages-eec.crt` |
+| 内部插件 EEC | `certs/dsc-inner-plugin/dsc-inner-plugin-eec.crt` |
+| 合集 EEC | `certs/<合集名>/<合集名>-eec.crt` |
 
 ## 校验口径
 

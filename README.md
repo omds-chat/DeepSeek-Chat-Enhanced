@@ -24,7 +24,7 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 | `dsc-core` | dsc核心,运行Chat-Demo的基本服务 |
 | `dsc-plugin-engine` | dsc插件引擎,实现插件体系的中间层 |
 | `dsc-market` | dsc插件市场,读取外源插件索引,为插件面板的「插件市场」提供列表与查询 |
-| 其他同源插件 | 详见 [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) |
+| 其他同源插件 | 详见 [dsc-inner-plugin](https://omds-chat.github.io/dsc-inner-plugin/) |
 
 其中 `dsc-market` 由插件引擎装载,可在插件面板的「已安装」中看到;`dsc-core` 与 `dsc-plugin-engine` 是宿主侧的基础模块,不进入插件列表。
 
@@ -33,20 +33,20 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 ## 在线体验
 
-点击 [在线体验](https://omdsc-dev.github.io/chat/) 即可使用,也可以前往 [Releases](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced/releases) 下载压缩包,解压后双击 `index.html` 在本地使用,无需安装或构建。
+点击 [在线体验](https://omds-chat.github.io/chat/) 即可使用,也可以前往 [Releases](https://github.com/omds-chat/DeepSeek-Chat-Enhanced/releases) 下载压缩包,解压后双击 `index.html` 在本地使用,无需安装或构建。
 
 注意,我们只提供 **静态网页(无Agent能力)** 和部分必要插件(上述同源插件)的制作、展示与分发,**不提供任何** 付费服务、后端服务。另外,我们还会收录一些由社区开发者制作的外源插件,该部分插件的引入由用户 **自行判断并承担** 安全风险,请确保只引入你 **信任安全** 的插件。
 
 > [!WARNING]
-> 温馨提示：使用 DeepSeek-Chat-Enhanced 及其在线网页一样需要依赖模型 API 服务并产生资费,但这些费用本身并不会进入 omdsc-dev 的钱包。<br>
+> 温馨提示：使用 DeepSeek-Chat-Enhanced 及其在线网页一样需要依赖模型 API 服务并产生资费,但这些费用本身并不会进入 omds-chat 的钱包。<br>
 > 除非您订阅了 Token Plan 、有免费额度的渠道或者预算充足,否则不要轻易使用 DeepSeek-Chat-Enhanced,以防止产生预期外的资费。
 
 > [!CAUTION]
 > 请保护好你的 API Key,因为它直接保存并暴露在浏览器储存中。<br>
 > 不要轻易启用未知来源的、不受用户本人信任的任何插件,以防止你的 API Key 、会话内容发生泄露造成不必要的损失。<br>
-> 由 [omdsc-dev/dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) 提供的插件不会试图泄露你的凭证和数据。<br>
-> 由 [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/) 收录的插件可能存在审查遗漏,使用前请先查证其来源和安全性。<br>
-> 如遇恶意插件,你可以 [提交Issue](https://github.com/omdsc-dev/awesome-dsc-plugin/issues/new) 或 [联系 awesome-dsc-plugin](mailto:JularDepick@gmail.com?subject=恶意插件举报) 甚至 [直接联系 omdsc-dev](mailto:JularDepick@gmail.com?subject=恶意插件举报) 进行举报、要求移除。但我们无法挽回你的损失,请及时移除恶意插件并更新您的 API Key 。
+> 由 [omds-chat/dsc-inner-plugin](https://omds-chat.github.io/dsc-inner-plugin/) 提供的插件不会试图泄露你的凭证和数据。<br>
+> 由 [awesome-dsc-plugin](https://omds-chat.github.io/awesome-dsc-plugin/) 收录的插件可能存在审查遗漏,使用前请先查证其来源和安全性。<br>
+> 如遇恶意插件,你可以 [提交Issue](https://github.com/omds-chat/awesome-dsc-plugin/issues/new) 或 [联系 awesome-dsc-plugin](mailto:JularDepick@gmail.com?subject=恶意插件举报) 甚至 [直接联系 omds-chat](mailto:JularDepick@gmail.com?subject=恶意插件举报) 进行举报、要求移除。但我们无法挽回你的损失,请及时移除恶意插件并更新您的 API Key 。
 
 
 ## 插件面板
@@ -67,15 +67,15 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 ## 插件市场
 
-插件市场在线查看列表请访问 [awesome-dsc-plugin](https://omdsc-dev.github.io/awesome-dsc-plugin/) 。
+插件市场在线查看列表请访问 [awesome-dsc-plugin](https://omds-chat.github.io/awesome-dsc-plugin/) 。
 
-同源插件列表在线查看请访问 [dsc-inner-plugin](https://omdsc-dev.github.io/dsc-inner-plugin/) 。
+同源插件列表在线查看请访问 [dsc-inner-plugin](https://omds-chat.github.io/dsc-inner-plugin/) 。
 
-插件收录申请详见 [omdsc-dev/awesome-dsc-plugin](https://github.com/omdsc-dev/awesome-dsc-plugin/) 。
+插件收录申请详见 [omds-chat/awesome-dsc-plugin](https://github.com/omds-chat/awesome-dsc-plugin/) 。
 
 插件市场收录的插件 **必须符合** [dsc插件开发规范](docs/user/develop/basic/plugin-develop-spec.md) 。
 
-插件来源遵循证书签名体系:每个来源持有由 omdsc-dev 根证书签发的签名证书,插件产物与网页产物都带该来源的签名,浏览器在安装、启动插件与打开页面时校验。插件作者还可以用自己的私钥对同一插件额外签名,该签名与来源签名并存。
+插件来源遵循证书签名体系:每个来源持有由 omds-chat 根证书签发的签名证书,插件产物与网页产物都带该来源的签名,浏览器在安装、启动插件与打开页面时校验。插件作者还可以用自己的私钥对同一插件额外签名,该签名与来源签名并存。
 
 来源可信性由证书链证明,插件市场、插件面板与网页运行时按同一套证书校验,没有额外的合集信任签名。校验不通过时只给出警告,不阻止安装或使用,由你自行判断是否继续。
 
@@ -88,21 +88,25 @@ DeepSeek 官方开源的仓库 [Chat-Demo](https://github.com/deepseek-ai/chat-d
 
 ```
 certs/
-├── dsce/            # dsc 自用材料: 根证书、网页签名证书、同源插件合集证书
-├── plugin-set/      # 插件合集登记清单与各合集的 EEC
-└── schemas/         # 上述 JSON 的 Schema 与索引说明(见 certs/schemas/README.md)
+├── ds-chat/             # 根证书与根公钥
+├── ds-chat-pages/       # 网页签名的 EEC 证书与公钥
+├── dsc-inner-plugin/    # 同源插件合集的 EEC 证书与公钥
+├── awesome-dsc-plugin/  # 插件合集的 EEC 证书与公钥,每个合集一个这样的来源目录
+├── manifest.json        # 合集证书登记清单
+└── schemas/             # 上述 JSON 的 Schema 与索引说明(见 certs/schemas/README.md)
 ```
 
 - 私钥不在此目录: 根私钥只在组织离线签名环境,EEC 私钥只在各合集的 CI secrets。
+- 每个来源目录里同时放该来源的证书公钥 `<来源 id>-eec-secret.pub`;根目录的 `ds-chat/` 还放根证书公钥 `ds-chat-root-ca-secret.pub`。
 - 插件作者公钥属于各插件合集自身,不放进这里。
 - 网页与插件的信任数据只从 `certs/` 取: CI 把它原样放进 `online-data` 分支,发布结构与 `certs/` 保持一致。
-- 构建时把 `certs/dsce/root-ca/dsce-root-ca.crt` 内嵌进产物;离线运行拉不到在线副本,内嵌的根证书是离线可用的前提。
+- 构建时把 `certs/ds-chat/ds-chat-root-ca.crt` 内嵌进产物;离线运行拉不到在线副本,内嵌的根证书是离线可用的前提。
 
 ## 制作插件
 
 每一个dsc插件在 **开发阶段** 都是一个独立的项目,你可以用 **任何编程语言** 编写插件的逻辑,只需要保证 **构建的运行时产物** 符合 [**dsc插件产物规范**](docs/user/develop/basic/plugin-product-spec.md) 即可保证插件的识别和运行。
 
-为保证插件的规范性、可维护性,方便你的插件能被更多人使用和二次开发,我们更推荐你使用 omdsc-dev 提供的 [dsc插件模板](https://github.com/omdsc-dev/dsc-plugin-template) 进行插件开发。
+为保证插件的规范性、可维护性,方便你的插件能被更多人使用和二次开发,我们更推荐你使用 omds-chat 提供的 [dsc插件模板](https://github.com/omds-chat/dsc-plugin-template) 进行插件开发。
 
 每一个dsc插件在 **运行阶段** 都是一个符合 [dsc插件产物规范](docs/user/develop/basic/plugin-product-spec.md) 的 `js脚本` 。
 
@@ -115,7 +119,7 @@ dsc插件由 `dsc-plugin-engine` 负责引入,并通过交互 `dsc-plugin-engine
 
 ## 版权与许可
 
-Copyright &copy; 2026 omdsc-dev
+Copyright &copy; 2026 omds-chat
 
 版权信息详见 [COPYRIGHT](COPYRIGHT) 。
 

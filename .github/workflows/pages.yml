@@ -225,7 +225,7 @@ jobs:
           chmod 600 temp/web-eec.key
           node scripts/pki/ca.mjs sign-web \
             --dir "${DIST_DIR}" \
-            --eec certs/dsce/dsce-pages/dsce-pages-eec.crt \
+            --eec certs/ds-chat-pages/ds-chat-pages-eec.crt \
             --key temp/web-eec.key
 
       # 签名自校验: 复制到归档分支之前先按线上口径验一遍
@@ -234,7 +234,7 @@ jobs:
           set -euo pipefail
           node scripts/pki/ca.mjs verify-web \
             --dir "${DIST_DIR}" \
-            --root-ca certs/dsce/root-ca/dsce-root-ca.crt
+            --root-ca certs/ds-chat/ds-chat-root-ca.crt
 
       # dist 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> 裁剪历史版本 -> commit、打 tag、push
       - name: Publish dist branch
@@ -269,15 +269,15 @@ jobs:
       # online-data 分支归档: 清理 -> 重建 version 目录 -> 复制 certs、生成 index.json 与 README.md
       # -> 裁剪历史版本 -> commit、打 tag、push
       # 内容来源: certs 目录整体原样复制(保留 certs/... 结构) + build-trust-index.mjs 依据
-      # certs/plugin-set/manifest.json 生成 index.json;旧的切分结构生成器 scripts/build-online-data.mjs 已退役
+      # certs/manifest.json 生成 index.json;旧的切分结构生成器 scripts/build-online-data.mjs 已退役
       #
       # index.json 的结构(字段固定):
       # {
       #   "schemaVersion": 2,
-      #   "rootCa": "certs/dsce/root-ca/dsce-root-ca.crt",
+      #   "rootCa": "certs/ds-chat/ds-chat-root-ca.crt",
       #   "crl": null,
       #   "collections": [
-      #     { "id": "<合集名>", "eec": "certs/plugin-set/<合集名>/<合集名>-eec.crt" }
+      #     { "id": "<合集名>", "eec": "certs/<合集名>/<合集名>-eec.crt" }
       #   ]
       # }
       #
@@ -297,9 +297,9 @@ jobs:
           # certs 整个目录原样复制,保持 certs/... 结构与主仓库一致
           mkdir -p online-data-worktree/certs
           cp -a certs/. online-data-worktree/certs/
-          # 依据 certs/plugin-set/manifest.json 生成信任清单
+          # 依据 certs/manifest.json 生成信任清单
           node .github/scripts/build-trust-index.mjs \
-            --manifest certs/plugin-set/manifest.json \
+            --manifest certs/manifest.json \
             --certs-root certs \
             --out online-data-worktree/index.json
           # 已归档版本列表,供 README 列出

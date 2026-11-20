@@ -36,8 +36,8 @@ dsc-market/
 
 | 来源 | base_url(按优先级) |
 |:---:|:---:|
-| `dsc-inner-plugin` | `https://omdsc-dev.github.io/dsc-inner-plugin/` |
-| `awesome-dsc-plugin` | `https://cdn.jsdelivr.net/gh/omdsc-dev/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omdsc-dev/awesome-dsc-plugin/main/`、`https://omdsc-dev.github.io/awesome-dsc-plugin/` |
+| `dsc-inner-plugin` | `https://omds-chat.github.io/dsc-inner-plugin/` |
+| `awesome-dsc-plugin` | `https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/`、`https://omds-chat.github.io/awesome-dsc-plugin/` |
 
 来源 id 与合集目录名一致,因此可以直接命中 online-data 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。来源类型仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
 
@@ -98,7 +98,7 @@ dsc-market/
 
 安装计划同时给出两个证书来源: 清单已登记时带 `eec`(优先使用,省一次请求),任何在线来源都带 `eecUrls`,按顺序为 `<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`。两种证书都必须由引擎先用内置根 CA 校验链,链不通过时结论为 `failed` 且不发起 CMS 验签,安装记录以 `eec_anchored` 记为未通过链校验。市场把运行态的 `trust` 与 `trustFailure` 一并交给引擎,但只用于界面展示来源是否被官方认可,不参与来源结论判定。
 
-信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时从 `certs/dsce/root-ca/dsce-root-ca.crt` 注入。信任清单里的同名根证书(`certs/dsce/root-ca/dsce-root-ca.crt`)只用于比对,与内嵌根证书不一致时以构建内置的为准,并在控制台留一条提示。
+信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时从 `certs/ds-chat/ds-chat-root-ca.crt` 注入。信任清单里的同名根证书(`certs/ds-chat/ds-chat-root-ca.crt`)只用于比对,与内嵌根证书不一致时以构建内置的为准,并在控制台留一条提示。
 
 ## 已移除插件清单
 

@@ -1,7 +1,7 @@
 # DSC 与 DSH 的设计异同
 
 - DSH 指 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)。
-- DSC 指 [DeepSeek-Chat-Enhanced](https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced),即 dsc 生态的主线产品。
+- DSC 指 [DeepSeek-Chat-Enhanced](https://github.com/omds-chat/DeepSeek-Chat-Enhanced),即 dsc 生态的主线产品。
 
 
 ## 设计理念
@@ -20,7 +20,7 @@
 |:---:|:---:|:---:|
 | 服务场景 | **本地** Agent 控制 | **在线** AI 对话 |
 | 服务对象 | **开发者** 群体为主 | **普通用户** 群体为主 |
-| 服务提供者 | [DeepSeek 官方](https://github.com/deepseek-ai/) + 社区共建 | [omdsc-dev 社区](https://github.com/omdsc-dev/) + 社区共建 |
+| 服务提供者 | [DeepSeek 官方](https://github.com/deepseek-ai/) + 社区共建 | [omds-chat 社区](https://github.com/omds-chat/) + 社区共建 |
 
 
 ## 服务边界
@@ -41,9 +41,9 @@
 
 <details><summary>我们到底在做什么？</summary>
 
-> 实际上,omdsc-dev 一直致力于降低 DeepSeek 系列 AI 产品的使用门槛,为 **普通用户** 提供更温和、更易用的二次开发产品,将 AI 前沿科技产品普惠给广大普通用户。
+> 实际上,omds-chat 一直致力于降低 DeepSeek 系列 AI 产品的使用门槛,为 **普通用户** 提供更温和、更易用的二次开发产品,将 AI 前沿科技产品普惠给广大普通用户。
 > 往小的说,我们敬仰并拥戴 DeepSeek 及其系列产品,并且不忍心见其因 [11·16 DeepSeek免费用户对话服务限额事件](https://baike.baidu.com/item/11%C2%B716%20DeepSeek%E5%85%8D%E8%B4%B9%E7%94%A8%E6%88%B7%E5%AF%B9%E8%AF%9D%E6%9C%8D%E5%8A%A1%E9%99%90%E9%A2%9D%E4%BA%8B%E4%BB%B6) 及过往的各种策略变动而遭受广大普通用户的贬低和抨击;实际上,我们也希望开发者用户能用上更好的Chat产品以辅助开发。
-> 往大的说,omdsc-dev 正积极参与推进 “AI普惠全人类” 的 **最后一公里** 。
+> 往大的说,omds-chat 正积极参与推进 “AI普惠全人类” 的 **最后一公里** 。
 
 </details>
 

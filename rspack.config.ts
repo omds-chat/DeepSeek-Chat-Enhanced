@@ -22,8 +22,8 @@ const cssLoader = {
  * 内嵌到产物的材料路径，相对仓库根目录。
  * 离线运行拉不到在线副本，根证书与网页签名 EEC 都必须随构建内嵌，因此只认 certs 目录里的这两份。
  */
-const EMBEDDED_ROOT_CA_PATH = 'certs/dsce/root-ca/dsce-root-ca.crt'
-const EMBEDDED_PAGES_EEC_PATH = 'certs/dsce/dsce-pages/dsce-pages-eec.crt'
+const EMBEDDED_ROOT_CA_PATH = 'certs/ds-chat/ds-chat-root-ca.crt'
+const EMBEDDED_PAGES_EEC_PATH = 'certs/ds-chat-pages/ds-chat-pages-eec.crt'
 
 /**
  * 读取内嵌 PEM 证书。
@@ -58,9 +58,9 @@ type ConfigOptions = {
   devServer?: Configuration['devServer']
   /** 开发模式标记；缺省按 NODE_ENV 判断 */
   dev?: boolean
-  /** 内嵌到产物的根证书 PEM，注入为 __ROOT_CA_PEM__；缺省读 certs/dsce/root-ca/dsce-root-ca.crt */
+  /** 内嵌到产物的根证书 PEM，注入为 __ROOT_CA_PEM__；缺省读 certs/ds-chat/ds-chat-root-ca.crt */
   rootCaPem?: string
-  /** 内嵌到产物的网页签名 EEC 证书 PEM，注入为 __PAGES_EEC_PEM__；缺省读 certs/dsce/dsce-pages/dsce-pages-eec.crt */
+  /** 内嵌到产物的网页签名 EEC 证书 PEM，注入为 __PAGES_EEC_PEM__；缺省读 certs/ds-chat-pages/ds-chat-pages-eec.crt */
   pagesEecPem?: string
 }
 

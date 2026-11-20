@@ -2,16 +2,16 @@
 /**
  * 生成 online-data 分支的信任清单 index.json。
  *
- * 合集条目取自 certs/plugin-set/manifest.json,collections 里每项的 eec 路径
- * 以 online-data 分支根目录为基准,前缀补 certs/plugin-set/ 。
+ * 合集条目取自 certs/manifest.json,collections 里每项的 eec 路径相对 certs 目录,
+ * 以 online-data 分支根目录为基准,前缀补 certs/ 。
  *
  * index.json 的结构:
  * {
  *   "schemaVersion": 2,
- *   "rootCa": "certs/dsce/root-ca/dsce-root-ca.crt",
+ *   "rootCa": "certs/ds-chat/ds-chat-root-ca.crt",
  *   "crl": null,
  *   "collections": [
- *     { "id": "<合集名>", "eec": "certs/plugin-set/<合集名>/<合集名>-eec.crt" }
+ *     { "id": "<合集名>", "eec": "certs/<合集名>/<合集名>-eec.crt" }
  *   ]
  * }
  *
@@ -24,10 +24,10 @@ import path from 'node:path'
 /** 输出清单的结构版本 */
 const SCHEMA_VERSION = 2
 /** 根证书在 online-data 分支内的路径,固定不变 */
-const ROOT_CA_PATH = 'certs/dsce/root-ca/dsce-root-ca.crt'
+const ROOT_CA_PATH = 'certs/ds-chat/ds-chat-root-ca.crt'
 /** 合集证书在 online-data 分支内的目录前缀 */
-const COLLECTION_PREFIX = 'certs/plugin-set/'
-/** 不登记进 collections 的目录: dsc-inner-plugin 不是普通合集,其 EEC 随 certs/dsce/ 一起复制 */
+const COLLECTION_PREFIX = 'certs/'
+/** 不登记进 collections 的目录: dsc-inner-plugin 不是普通合集,其 EEC 直接放在 certs/dsc-inner-plugin/ 下 */
 const NOT_A_COLLECTION = new Set(['dsc-inner-plugin'])
 /** 合集 id 允许的字符 */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
@@ -35,7 +35,7 @@ const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const USAGE = [
   '用法: node .github/scripts/build-trust-index.mjs --manifest <清单> --out <index.json> [--certs-root <certs 目录>]',
   '',
-  '  --manifest <文件>   certs/plugin-set/manifest.json',
+  '  --manifest <文件>   certs/manifest.json',
   '  --certs-root <目录> 主仓库的 certs 目录,用于核对证书文件是否存在,默认 certs',
   '  --out <文件>        输出的 index.json',
   '  --help              打印用法',
@@ -148,11 +148,11 @@ const main = () => {
   if (!existsSync(certsRoot) || !statSync(certsRoot).isDirectory()) {
     fail('certs 目录不存在: ' + options.certsRoot)
   }
-  const rootCa = path.join(certsRoot, 'dsce', 'root-ca', 'dsce-root-ca.crt')
+  const rootCa = path.join(certsRoot, 'ds-chat', 'ds-chat-root-ca.crt')
   if (!existsSync(rootCa) || !statSync(rootCa).isFile()) {
     fail('根证书不存在: ' + rootCa)
   }
-  const { collections, skipped } = buildCollections(manifest, path.join(certsRoot, 'plugin-set'))
+  const { collections, skipped } = buildCollections(manifest, path.dirname(manifestPath))
   const index = {
     schemaVersion: SCHEMA_VERSION,
     rootCa: ROOT_CA_PATH,

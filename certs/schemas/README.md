@@ -6,16 +6,16 @@
 
 | Schema 文件 | 约束的 JSON | 所在分支与路径 | 对应代码模块 |
 |:---:|:---:|:---:|:---:|
-| `plugin-set-manifest.schema.json` | 插件合集证书登记清单 | `main` 分支 `certs/plugin-set/manifest.json` | 无运行时读取方;生成 online-data 的 `index.json` 时按它取合集 id 与 EEC 路径 |
+| `plugin-set-manifest.schema.json` | 插件合集证书登记清单 | `main` 分支 `certs/manifest.json` | 无运行时读取方;生成 online-data 的 `index.json` 时按它取合集 id 与 EEC 路径 |
 | `trust-index.schema.json` | online-data 信任清单 | `online-data` 分支根目录 `index.json` | `src/services/trust/fetch.ts` 的 `parseTrustIndex`;`src/services/integrity/index.ts` 复用它取 `crl` |
 
 ## 路径约束
 
 两份 Schema 都对路径给出同一条约束: 路径必须是相对路径,使用正斜杠,不得以 `/` 开头,不得带 URL 协议前缀,不得含两个点开头的目录穿越。
 
-`certs/plugin-set/manifest.json` 里的 `eec` 相对 `certs/plugin-set` 目录,形式为 `<合集 id>/<合集 id>-eec.crt`。
+`certs/manifest.json` 里的 `eec` 相对 `certs` 目录,形式为 `<合集 id>/<合集 id>-eec.crt`。
 
-`index.json` 里的 `rootCa`、`crl` 与各合集的 `eec` 相对 online-data 根目录。由于 CI 把 `certs` 目录原样放进 online-data 分支,这些路径形如 `certs/dsce/root-ca/dsce-root-ca.crt`、`certs/plugin-set/<合集 id>/<合集 id>-eec.crt`;`index.json` 与 `crl.pem` 本身仍在 online-data 根目录。
+`index.json` 里的 `rootCa`、`crl` 与各合集的 `eec` 相对 online-data 根目录。由于 CI 把 `certs` 目录原样放进 online-data 分支,这些路径形如 `certs/ds-chat/ds-chat-root-ca.crt`、`certs/<合集 id>/<合集 id>-eec.crt`;`index.json` 与 `crl.pem` 本身仍在 online-data 根目录。
 
 ## 校验方式
 

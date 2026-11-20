@@ -27,16 +27,16 @@ export const DEFAULT_SOURCES: readonly MarketSource[] = [
     id: 'dsc-inner-plugin',
     name: 'dsc-inner-plugin',
     builtin: true,
-    baseUrls: ['https://omdsc-dev.github.io/dsc-inner-plugin/'],
+    baseUrls: ['https://omds-chat.github.io/dsc-inner-plugin/'],
   },
   {
     id: 'awesome-dsc-plugin',
     name: 'awesome-dsc-plugin',
     builtin: true,
     baseUrls: [
-      'https://cdn.jsdelivr.net/gh/omdsc-dev/awesome-dsc-plugin@main/',
-      'https://raw.githubusercontent.com/omdsc-dev/awesome-dsc-plugin/main/',
-      'https://omdsc-dev.github.io/awesome-dsc-plugin/',
+      'https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/',
+      'https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/',
+      'https://omds-chat.github.io/awesome-dsc-plugin/',
     ],
   },
 ]

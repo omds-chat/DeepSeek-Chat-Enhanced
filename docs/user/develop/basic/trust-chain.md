@@ -10,7 +10,7 @@
 |:---:|:---:|:---:|:---:|
 | 根证书机构(CA) | DeepSeek-Chat-Enhanced 仓库 | 根私钥(离线,不入库)、根证书 | 签发终端签名证书(EEC),维护吊销列表 |
 | 终端签名方(EEC) | 插件合集,如 awesome-dsc-plugin 与 dsc-inner-plugin | EEC 私钥(CI secret)、EEC 证书 | 用 CMS 分离签名给网页与插件文件签名 |
-| 独立签名方 | 插件作者,含 omdsc-dev 自身 | 作者密钥对 | 用裸公钥分离签名给插件文件签名 |
+| 独立签名方 | 插件作者,含 omds-chat 自身 | 作者密钥对 | 用裸公钥分离签名给插件文件签名 |
 
 信任锚只有根证书。EEC 由根证书签发,不能再签发下级证书;作者签名与 EEC 签名是两条独立的信任路径,互不替代。
 
@@ -44,7 +44,7 @@ ROOT_CA_SECRET=<根私钥路径> ROOT_CA_CERT=<根证书路径> \
 
 ```
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out eec_secret.pem
-openssl req -new -key eec_secret.pem -out eec.csr -subj '/O=omdsc-dev/CN=<合集名>'
+openssl req -new -key eec_secret.pem -out eec.csr -subj '/O=omds-chat/CN=<合集名>'
 ```
 
 `init-root` 只把根私钥写到 `--dir` 指定的目录,并拒绝写入仓库中被追踪的路径;仓库内只允许写到 git 忽略的临时目录。`issue-eec` 在签发后用根证书做一次 `openssl verify` 自检,并要求 CSR 的公钥是 ECDSA P-256。
@@ -60,7 +60,7 @@ openssl cms -sign -binary -in <文件> -out <文件>.sig \
   -signer <EEC 证书> -inkey eec_secret.pem -nocerts -noattr -outform DER
 ```
 
-`-binary` 表示按原始字节签名,不做换行规范化,与作者签名的逐字节语义一致;`-nocerts` 表示签名里不带证书,验证方从分发结构里取对应的 EEC 证书。网页产物对 `dist/` 下的 `.html`、`.js`、`.css` 逐个签名,由 `sign-web` 子命令完成,同时写出按路径排序的 `web_files.json` 清单并对其单独签名,最后把 EEC 证书按 certs 布局写到产物目录的 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ,不再写入产物根目录的 `eec.pem` ;旧布局的 `eec.pem` 只保留读取侧的兼容回退,待全部产物与来源迁移完成后可连同回退逻辑一起移除。签名加 `-outform DER` 输出裸 CMS,浏览器端可直接解析。
+`-binary` 表示按原始字节签名,不做换行规范化,与作者签名的逐字节语义一致;`-nocerts` 表示签名里不带证书,验证方从分发结构里取对应的 EEC 证书。网页产物对 `dist/` 下的 `.html`、`.js`、`.css` 逐个签名,由 `sign-web` 子命令完成,同时写出按路径排序的 `web_files.json` 清单并对其单独签名,最后把 EEC 证书按 certs 布局写到产物目录的 `certs/ds-chat-pages/ds-chat-pages-eec.crt` ,不再写入产物根目录的 `eec.pem` ;旧布局的 `eec.pem` 只保留读取侧的兼容回退,待全部产物与来源迁移完成后可连同回退逻辑一起移除。签名加 `-outform DER` 输出裸 CMS,浏览器端可直接解析。
 
 插件合集的目录数据不再逐文件签名,改为每层一份哈希清单并只对清单签名,插件产物 `plugin.js` 仍逐版本单独签名,见下文「合集目录: 三层哈希清单」。
 
@@ -121,20 +121,20 @@ L3 不覆盖 `plugin.js`:产物由每版本的 `plugin.js.sig` 独立签名,清�
 ```
 # 清单签名: 与文件签名同一口径,内容为 manifest.json 的字节
 openssl cms -verify -binary -inform DER -in manifest.json.sig -content manifest.json \
-  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile certs/dsce/dsce-pages/dsce-pages-eec.crt
+  -CAfile certs/ds-chat/ds-chat-root-ca.crt -certfile certs/ds-chat-pages/ds-chat-pages-eec.crt
 
 # 文件哈希
 openssl dgst -sha512 -r <文件>
 
 # 合集签名: 根证书作为信任锚,EEC 证书作为候选签名者
 openssl cms -verify -binary -inform DER -in <文件>.sig -content <文件> \
-  -CAfile certs/dsce/root-ca/dsce-root-ca.crt -certfile certs/dsce/dsce-pages/dsce-pages-eec.crt
+  -CAfile certs/ds-chat/ds-chat-root-ca.crt -certfile certs/ds-chat-pages/ds-chat-pages-eec.crt
 
 # 作者签名
 openssl pkeyutl -verify -pubin -inkey author_pub.pem -rawin -in <文件> -sigfile <文件>.author.sig
 
 # 证书链
-openssl verify -CAfile certs/dsce/root-ca/dsce-root-ca.crt certs/dsce/dsce-pages/dsce-pages-eec.crt
+openssl verify -CAfile certs/ds-chat/ds-chat-root-ca.crt certs/ds-chat-pages/ds-chat-pages-eec.crt
 ```
 
 整目录校验用 `verify-web` 子命令: 先校验证书链,再逐个校验 `.sig`,缺失签名与孤儿签名都计入失败清单,有任何失败时以非零状态退出。
@@ -143,11 +143,11 @@ openssl verify -CAfile certs/dsce/root-ca/dsce-root-ca.crt certs/dsce/dsce-pages
 
 ### 运行时验签的证书来源
 
-验签证书的来源不再是必要条件,信任锚才是。根 CA 在构建时内嵌进产物(`__ROOT_CA_PEM__`,由 `rspack.config.ts` 读取 `certs/dsce/root-ca/dsce-root-ca.crt` 写入),证书字节从哪里来并不重要:
+验签证书的来源不再是必要条件,信任锚才是。根 CA 在构建时内嵌进产物(`__ROOT_CA_PEM__`,由 `rspack.config.ts` 读取 `certs/ds-chat/ds-chat-root-ca.crt` 写入),证书字节从哪里来并不重要:
 
 | 证书来源 | 取用条件 |
 |:---:|:---:|
-| 信任清单登记的合集 `eec`,形如 `certs/plugin-set/<合集 id>/<合集 id>-eec.crt` | 清单已登记该来源时优先使用,省一次请求 |
+| 信任清单登记的合集 `eec`,形如 `certs/<合集 id>/<合集 id>-eec.crt` | 清单已登记该来源时优先使用,省一次请求 |
 | 来源站点的 `<base>/certs/<合集 id>-eec.crt` | 清单未登记该来源时使用,这是来源证书的规范路径 |
 | 来源站点根目录的 `<base>/eec.pem` | 兼容兜底,规范路径取不到时才尝试,供尚未迁移的第三方来源使用 |
 
@@ -159,9 +159,9 @@ openssl verify -CAfile certs/dsce/root-ca/dsce-root-ca.crt certs/dsce/dsce-pages
 
 证书的取用分在线与离线两种情形: 在线时信任清单登记的 `eec` 优先,没有登记时按上述取件顺序向来源站点请求;离线时改用安装记录里已存的 `eec`,不再发起请求。两种情形都只认内嵌根证书给出的链校验结论。
 
-根证书内嵌是离线运行的前提: 离线时拉不到任何在线副本,没有内嵌根证书就无法校验证书链,因此 `certs/dsce/root-ca/dsce-root-ca.crt` 缺失时构建直接失败。在线那份同名证书只作便利与比对,与内嵌证书不一致时仍按内置根证书校验,并在控制台留一条提示。
+根证书内嵌是离线运行的前提: 离线时拉不到任何在线副本,没有内嵌根证书就无法校验证书链,因此 `certs/ds-chat/ds-chat-root-ca.crt` 缺失时构建直接失败。在线那份同名证书只作便利与比对,与内嵌证书不一致时仍按内置根证书校验,并在控制台留一条提示。
 
-网页签名的终端证书同样按 `certs` 布局取用: 在线路径为 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ;离线时用构建内嵌的同名证书,注入为 `__PAGES_EEC_PEM__`。
+网页签名的终端证书同样按 `certs` 布局取用: 在线路径为 `certs/ds-chat-pages/ds-chat-pages-eec.crt` ;离线时用构建内嵌的同名证书,注入为 `__PAGES_EEC_PEM__`。
 
 安装记录与启动恢复按同一口径给出来源结论:
 
@@ -182,7 +182,7 @@ openssl verify -CAfile certs/dsce/root-ca/dsce-root-ca.crt certs/dsce/dsce-pages
 
 | 材料 | 在线 | 离线 | 判据 |
 |:---:|:---:|:---:|:---:|
-| 根证书 | 拉 `certs/dsce/root-ca/dsce-root-ca.crt` 只做比对 | 不请求 | 与内嵌不一致时用内嵌并告警;根证书不能用自己验证自己 |
+| 根证书 | 拉 `certs/ds-chat/ds-chat-root-ca.crt` 只做比对 | 不请求 | 与内嵌不一致时用内嵌并告警;根证书不能用自己验证自己 |
 | 网页签名 EEC | 取 online-data 副本,并在内嵌根证书下校链 | 用构建内嵌的 `__PAGES_EEC_PEM__` | 取不到、无法解析或链不通过都回退内嵌 |
 | 来源 EEC | 优先用信任清单所登记的那份,未登记时取来源站点的 `certs/<合集 id>-eec.crt`,取不到再试旧的 `eec.pem` | 用安装记录里已存的 `eec` | 一律用内嵌根证书校链,链不通过不进入 CMS 验签 |
 | CRL | 按 `index.json` 的 `crl` 登记取并验签 | 吊销状态视为未知 | 未知时不判定任何证书已吊销,也不阻断任何操作 |
@@ -269,17 +269,17 @@ online-data/
 ├── index.json                              # 信任清单
 ├── crl.pem                                 # 吊销列表(可选,生成后才有)
 └── certs/                                  # 与 main 分支的 certs 目录逐字节一致
-    ├── dsce/
-    │   ├── root-ca/
-    │   │   └── dsce-root-ca.crt            # 根证书,与构建内嵌的是同一份
-    │   ├── dsce-pages/
-    │   │   └── dsce-pages-eec.crt          # 网页签名的终端签名证书
-    │   └── dsc-inner-plugin/
-    │       └── dsc-inner-plugin-eec.crt
-    ├── plugin-set/
-    │   ├── manifest.json                   # 合集证书登记清单
-    │   └── <合集名>/
-    │       └── <合集名>-eec.crt            # 该合集的终端签名证书
+    ├── ds-chat/
+    │   ├── ds-chat-root-ca.crt             # 根证书,与构建内嵌的是同一份
+    │   └── ds-chat-root-ca-secret.pub      # 根证书公钥
+    ├── ds-chat-pages/
+    │   ├── ds-chat-pages-eec.crt           # 网页签名的终端签名证书
+    │   └── ds-chat-pages-eec-secret.pub
+    ├── dsc-inner-plugin/
+    │   └── dsc-inner-plugin-eec.crt
+    ├── awesome-dsc-plugin/
+    │   └── awesome-dsc-plugin-eec.crt      # 该合集的终端签名证书
+    ├── manifest.json                       # 合集证书登记清单
     └── schemas/
 ```
 
@@ -288,10 +288,10 @@ online-data/
 ```json
 {
   "schemaVersion": 2,
-  "rootCa": "certs/dsce/root-ca/dsce-root-ca.crt",
+  "rootCa": "certs/ds-chat/ds-chat-root-ca.crt",
   "crl": "crl.pem",
   "collections": [
-    { "id": "<合集名>", "eec": "certs/plugin-set/<合集名>/<合集名>-eec.crt" }
+    { "id": "<合集名>", "eec": "certs/<合集名>/<合集名>-eec.crt" }
   ]
 }
 ```
@@ -355,10 +355,10 @@ dist/
 | `init-root` | 生成 ECDSA P-256 根私钥与自签名根证书 | `--dir`、`--days`、`--org`、`--name`、`--force` |
 | `issue-eec` | 用根私钥签发 EEC | `--csr`、`--out`、`--days`、`--force` |
 | `sign-web` | 对目录下的 `.html`/`.js`/`.css` 生成 CMS 分离签名,并把证书按 certs 布局写入产物目录 | `--dir`、`--eec`、`--key` |
-| `verify-web` | 用根证书与目录内的 EEC 证书校验全部签名;默认取 `certs/dsce/dsce-pages/dsce-pages-eec.crt` ,旧布局的 `eec.pem` 只作兼容回退 | `--dir`、`--root-ca`、`--eec`、`--crl` |
+| `verify-web` | 用根证书与目录内的 EEC 证书校验全部签名;默认取 `certs/ds-chat-pages/ds-chat-pages-eec.crt` ,旧布局的 `eec.pem` 只作兼容回退 | `--dir`、`--root-ca`、`--eec`、`--crl` |
 | `gen-crl` | 生成 CRL | `--out`、`--days`、`--revoke` |
 
-`issue-eec` 与 `gen-crl` 从环境变量 `ROOT_CA_SECRET`、`ROOT_CA_CERT` 读取根私钥与根证书路径;这两个变量只属于签发工具,与构建无关,构建内嵌根证书直接读 `certs/dsce/root-ca/dsce-root-ca.crt`。
+`issue-eec` 与 `gen-crl` 从环境变量 `ROOT_CA_SECRET`、`ROOT_CA_CERT` 读取根私钥与根证书路径;这两个变量只属于签发工具,与构建无关,构建内嵌根证书直接读 `certs/ds-chat/ds-chat-root-ca.crt`。
 
 ## 私钥边界
 
@@ -366,8 +366,8 @@ dist/
 |:---:|:---:|:---:|
 | 根私钥 | 组织离线签名环境 | 仓库任何被追踪的路径、CI secrets 之外的任何位置、产物 |
 | EEC 私钥 | 合集 CI 的 secrets | 公开仓库文件、Pages 产物 |
-| 根证书 | `certs/dsce/root-ca/`、online-data 分支、产物 | 无需保密 |
-| EEC 证书 | `certs/plugin-set/<合集名>/`、`certs/dsce/dsce-pages/`、`certs/dsce/dsc-inner-plugin/`、合集根目录的 `certs/`、online-data 分支、网页产物的 `certs/dsce/dsce-pages/` | 无需保密 |
+| 根证书 | `certs/ds-chat/`、online-data 分支、产物 | 无需保密 |
+| EEC 证书 | `certs/<合集名>/`、`certs/ds-chat-pages/`、`certs/dsc-inner-plugin/`、合集根目录的 `certs/`、online-data 分支、网页产物的 `certs/ds-chat-pages/` | 无需保密 |
 | 作者私钥 | 作者本机 | 合集仓库、产物 |
 
 根 CA 只签发 EEC,不参与日常签名;合集 CI 只用 EEC 私钥签文件,不接触根私钥。
@@ -379,7 +379,7 @@ dist/
 | 项 | 实现方式 |
 |:---:|:---:|
 | 网页产物签名 | `sign-web` 子命令产出 `<文件>.sig` 与 `web_files.json` 清单 |
-| 运行时校验 | 页面用内嵌根证书与 `certs/dsce/dsce-pages/dsce-pages-eec.crt` 的证书链校验全部签名 |
+| 运行时校验 | 页面用内嵌根证书与 `certs/ds-chat-pages/ds-chat-pages-eec.crt` 的证书链校验全部签名 |
 | 合集信任 | 引擎用内置根证书校验来源证书链,清单登记的 EEC 只是优先取用的来源 |
 | 吊销检查 | `index.json` 登记 `crl` 时,网页 EEC 与合集 EEC 都按 CRL 检查吊销;离线时跳过,按吊销状态未知处理 |
 | 在线与离线 | 内嵌根证书与内嵌网页签名 EEC 随构建注入,在线副本先校验再采用,失败回退内嵌 |
@@ -391,23 +391,23 @@ dist/
 | 现象 | 常见原因 |
 |:---:|:---:|
 | `openssl cms -sign` 报 `provider signature failure` | EEC 私钥是 Ed25519,必须换成 ECDSA P-256 |
-| `verify-web` 报证书链校验失败 | 目录内的 `certs/dsce/dsce-pages/dsce-pages-eec.crt`(旧布局的 `eec.pem`)不是该根证书签发的,或换根后没有重新签发 |
+| `verify-web` 报证书链校验失败 | 目录内的 `certs/ds-chat-pages/ds-chat-pages-eec.crt`(旧布局的 `eec.pem`)不是该根证书签发的,或换根后没有重新签发 |
 | `sign-web` 报目标目录存在旧布局的证书 | 产物目录仍留着 `eec.pem`;删除该文件后重新运行,证书改由 certs 布局提供 |
-| `verify-web` 报目录内没有 EEC 证书 | 目录内既没有 `certs/dsce/dsce-pages/dsce-pages-eec.crt`,也没有兼容回退的 `eec.pem`;重新运行 `sign-web` 生成规范路径 |
+| `verify-web` 报目录内没有 EEC 证书 | 目录内既没有 `certs/ds-chat-pages/ds-chat-pages-eec.crt`,也没有兼容回退的 `eec.pem`;重新运行 `sign-web` 生成规范路径 |
 | `verify-web` 报某个文件 CMS 校验失败 | 该文件在签名后被改动过,或签名不是对当前字节生成的 |
 | `verify-web` 报 `certificate revoked` | EEC 已被 `gen-crl` 吊销 |
-| 生成的 `index.json` 里某个合集 `eec` 路径不对 | `certs/plugin-set/manifest.json` 的 `eec` 字段必须写成 `<合集 id>/<合集 id>-eec.crt` |
-| 网页运行时提示证书链校验未通过 | online-data 缺少 `certs/dsce/dsce-pages/dsce-pages-eec.crt`,或该证书不是当前根证书签发的 |
+| 生成的 `index.json` 里某个合集 `eec` 路径不对 | `certs/manifest.json` 的 `eec` 字段必须写成 `<合集 id>/<合集 id>-eec.crt` |
+| 网页运行时提示证书链校验未通过 | online-data 缺少 `certs/ds-chat-pages/ds-chat-pages-eec.crt`,或该证书不是当前根证书签发的 |
 | 市场提示「证书已被吊销」 | 该合集的 EEC 序列号已写进 `crl.pem`,需要签发新 EEC 并重新生成 CRL,`--revoke` 只列仍需吊销的序列号 |
 | 市场把整份清单判为不可信 | `crl.pem` 拉取失败、已过期、不是当前根证书签发的,或根证书 `keyUsage` 缺 `cRLSign` |
 | 已安装插件显示「来源证书校验未通过」 | 来源提供的 `certs/<合集 id>-eec.crt`(或兜底的 `eec.pem`)不是由内置根证书签发,或已过期、已被吊销;需要来源换发证书 |
 | 已安装插件显示「来源证书缺失」 | 信任清单登记了该来源的证书,但来源站点取不到 `certs/<合集 id>-eec.crt`,兜底的 `eec.pem` 也不存在;需要来源补发证书,或先按记录的版本重新安装 |
-| 来源已迁移到 `certs` 布局后仍提示拿不到证书 | 合集 id 与站点目录名不一致时,规范路径按清单登记的 id 推导;清单未登记该来源时按来源名归一化,可先用 `certs/plugin-set/manifest.json` 核对合集 id |
+| 来源已迁移到 `certs` 布局后仍提示拿不到证书 | 合集 id 与站点目录名不一致时,规范路径按清单登记的 id 推导;清单未登记该来源时按来源名归一化,可先用 `certs/manifest.json` 核对合集 id |
 | 已安装插件显示「来源已确认」并附「未在官方清单登记」 | 证书链与验签都已通过,只是该来源未在 online-data 清单登记,属正常状态 |
 | 市场显示「目录数据未校验」但插件仍可安装 | L1 或 L3 清单缺失、验签失败、哈希不一致,属预期的降级;产物仍由 `plugin.js.sig` 单独验证 |
 | 市场提示某层清单 revision 回退 | 该层清单的 `revision` 小于本机记录值,来源可能被回滚或替换;只提示,不阻断 |
 | `init-root` 报不得写入仓库被追踪的路径 | 根私钥只能写到仓库外的目录或 git 忽略的临时目录 |
-| 构建报缺少内嵌根证书 | `certs/dsce/root-ca/dsce-root-ca.crt` 不在工作树里;离线运行必须有内嵌根证书,该文件随仓库提供 |
+| 构建报缺少内嵌根证书 | `certs/ds-chat/ds-chat-root-ca.crt` 不在工作树里;离线运行必须有内嵌根证书,该文件随仓库提供 |
 
 ## 延伸阅读
 

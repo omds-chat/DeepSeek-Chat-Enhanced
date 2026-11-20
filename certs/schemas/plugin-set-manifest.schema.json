@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/omdsc-dev/DeepSeek-Chat-Enhanced/certs/schemas/plugin-set-manifest.schema.json",
+  "$id": "https://github.com/omds-chat/DeepSeek-Chat-Enhanced/certs/schemas/plugin-set-manifest.schema.json",
   "title": "插件合集证书登记清单",
-  "description": "certs/plugin-set/manifest.json 的结构。登记各插件合集的 EEC 证书,路径相对 certs/plugin-set 目录。",
+  "description": "certs/manifest.json 的结构。登记各插件合集的 EEC 证书,路径相对 certs 目录。",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,7 @@
     },
     "collections": {
       "type": "array",
-      "description": "已登记的插件合集;每项对应 certs/plugin-set 下的一个目录。",
+      "description": "已登记的插件合集;每项对应 certs 下的一个来源目录。",
       "items": {
         "$ref": "#/$defs/collection"
       }
@@ -33,12 +33,12 @@
       "properties": {
         "id": {
           "type": "string",
-          "description": "合集 id,同时是合集在 certs/plugin-set 下的目录名;同一份清单内不得重复。",
+          "description": "合集 id,同时是合集在 certs 下的目录名;同一份清单内不得重复。",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         },
         "eec": {
           "type": "string",
-          "description": "该合集 EEC 证书的路径,相对 certs/plugin-set 目录,形式为 <合集 id>/<合集 id>-eec.crt。",
+          "description": "该合集 EEC 证书的路径,相对 certs 目录,形式为 <合集 id>/<合集 id>-eec.crt。",
           "minLength": 1,
           "pattern": "^(?!\\./)(?![A-Za-z][A-Za-z0-9+.-]*:)(?!/)(?!.*(^|/)\\.\\.(/|$))(?!.*\\\\)[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*-eec\\.crt$"
         }
