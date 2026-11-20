@@ -8,6 +8,7 @@
 dsc-market/
 ├── index.ts    # 插件对象与清单导出（activate / deactivate）
 ├── client.ts   # 来源解析、目录拉取、缓存、安装计划
+├── model.ts    # 目录数据模型识别：合集（三层清单）与整站（web_files.json）
 ├── sources.ts  # 来源配置：默认值、地址校验、持久化
 ├── trust.ts    # 信任清单判定：是否被官方认可,不参与来源结论
 ├── updates.ts  # 版本更新检查：数据基址推导、版本比较、重装材料地址
@@ -53,10 +54,12 @@ dsc-market/
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
 2. 在 online-data 的 `index.json` 里按来源 id 与名称查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用内置根证书校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未登记。这一步只给出「是否被官方认可」的展示结论,来源结论由引擎按本机链校验与验签给出。
-3. 取 `<base_url>/manifest.json` 与 `manifest.json.sig`,按 L1 清单验签,再用它校验根 `meta.json` 与 `plugins.json` 的哈希。
-4. 取 `<base_url>/plugins.json` 得到插件目录索引,每条包含 `plugin_name`、`author`、`tag`。
-5. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/manifest.json` 与签名,按 L3 清单验签,再用它校验 `versions.json` 与该版本 `meta.json` 的哈希;同时取 `<base_url>/plugins/<author>/manifest.json` 按 L2 清单验签,取出 `author_pub.pem` 登记的哈希。拿到 `versions.json` 的 `latest` 后取该版本 `meta.json` 作为展示信息。
-6. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `plugins.json` 反查。三层清单的结论与各层 revision 随安装来源交给引擎。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrls` 即来源自带的地址列表,按顺序为 `<base_url>/certs/<合集 id>/<合集 id>-eec.crt`、`<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`(嵌套布局是当前公开发布布局,扁平路径只在旧站点存在、留作兼容,`eec.pem` 最后兜底);引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
+3. 取来源证书,三档顺序见下节;清单已登记时直接用清单里的那份,省一次请求。
+4. 识别目录数据模型:先探测合集模型的特征文件 `manifest.json` 与 `plugins.json`,再探测整站模型的特征文件 `web_files.json` 与证书;两种都不成立时按未确认处理,不报错。见下节「目录数据的两种模型」。
+5. 取 `<base_url>/plugins.json` 得到插件目录索引,每条包含 `plugin_name`、`author`、`tag`。该文件在识别模型时已取回一次,不重复请求。
+6. 校验根目录材料并据此确定目录结论:合集模型取 `<base_url>/manifest.json` 与 `manifest.json.sig` 按 L1 验签,再用它校验根 `meta.json` 与 `plugins.json` 的哈希;整站模型取 `web_files.json` 与签名,先在本机校验证书链,再用证书验清单签名,最后按清单逐文件验签 `meta.json` 与 `plugins.json`。
+7. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/` 的校验材料并校验 `versions.json` 与该版本 `meta.json`:合集模型用 L3 清单,整站模型用这两个文件各自的 `<文件>.sig`。合集模型另取 `<base_url>/plugins/<author>/manifest.json` 按 L2 清单验签,取出 `author_pub.pem` 登记的哈希;整站模型没有 L2 清单,该哈希缺省,引擎按未校验作者公钥哈希处理。拿到 `versions.json` 的 `latest` 后取该版本 `meta.json` 作为展示信息。
+8. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `plugins.json` 反查。目录数据结论与各层 revision 随安装来源交给引擎(整站模型没有清单 revision,该字段为空)。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrls` 即来源自带的地址列表,按顺序为 `<base_url>/certs/<合集 id>/<合集 id>-eec.crt`、`<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`(嵌套布局是当前公开发布布局,扁平路径只在旧站点存在、留作兼容,`eec.pem` 最后兜底);引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
 
 合集的可信性由「根 CA 签发的 EEC」证明,没有额外的合集信任签名(旧结构见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md))。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
 
@@ -73,6 +76,47 @@ dsc-market/
 `manifest.json.sig` 是 CMS 的 DER 二进制,按字节读取;目录数据文件仍经 `net` 能力按文本读取,哈希按还原后的 UTF-8 字节计算。清单缺失、验签失败或哈希不一致都不阻断:目录照常展示,该来源标记为「目录数据未校验」,该插件标记为未校验,产物仍由 `plugin.js.sig` 单独验证。
 
 每层路径记住见过的最大 `revision`,写在 `plugins:storage` 的 `manifest-revisions` 键下。本次拿到的 `revision` 小于记录值时,来源运行态多出一条 `revisionWarnings`,界面按提示展示,只警告不阻断。
+
+### 目录数据的两种模型
+
+同一份目录数据(`meta.json`、`plugins.json`、`plugins/<author>/...`)有两种签名组织方式,市场按特征文件识别当前来源属于哪一种:
+
+| 模型 | 特征文件 | 目录数据的签名材料 |
+|:---:|:---:|:---:|
+| 合集模型 | `<base_url>/manifest.json` 与 `<base_url>/plugins.json` | 三层哈希清单,每层一份 `manifest.json.sig` |
+| 整站模型 | `<base_url>/web_files.json` 与来源证书 | `web_files.json.sig` 加逐文件 `<文件>.sig` |
+| 未确认 | 两种特征文件都不成立 | 无,目录照常展示,结论一律为未校验 |
+
+识别顺序固定:先探测合集模型的两个特征文件,都取到即按合集处理,不再看整站特征文件;其次探测 `web_files.json` 且来源证书已取到即按整站处理;其余情形按未确认处理,不报错、不写 `error`,目录照常展示。识别结果写在来源运行态的 `model` 字段,取值 `collection`、`site`、`unknown`。
+
+合集优先是硬约束:整站模型不改变合集模型的取件、验签与结论,只在合集特征文件不成立时介入。整站模型与未确认模型都不产生清单 revision,也不产生 revision 回退提示。
+
+### 整站模型(web_files.json 与逐文件签名)
+
+整站模型用一份整站清单加逐文件签名覆盖站内的 `.html`、`.js`、`.css`、`.json`,常见于只发布整站签名的来源。验签顺序:
+
+| 顺序 | 做法 |
+|:---:|:---:|
+| 1 | 取证书:信任清单已登记时用清单里那份,未登记时按下面的三档取件 |
+| 2 | 用构建内嵌的根证书在本机校验证书链,链不通过即失败,且不再发起 CMS 验签 |
+| 3 | 用证书验 `<base_url>/web_files.json` 的签名 `web_files.json.sig` |
+| 4 | 按清单逐文件验签本次实际消费的文件;文件不在清单内按失败处理,签名文件缺失按未校验处理 |
+| 5 | 插件产物 `plugin.js` 的整站签名由引擎按 `plugin.js.sig` 与同一份证书验签,与合集模型的产物验签走同一条通道 |
+| 6 | 作者签名 `plugin.js.author.sig` 是可选材料,失败只警告;整站模型没有 L2 清单,作者公钥哈希缺省 |
+
+签名结论只有三态:通过、未校验、失败。清单或签名缺失、没有证书、环境不具备校验条件按未校验处理;证书链不通过、清单签名不通过、文件签名不通过按失败处理。失败只把 `catalogVerified` 与 `metaVerified` 置为否,不写 `error`、不阻断浏览与安装,与合集模型的口径一致。
+
+逐文件验签的对象是市场已取到的那份字节,不重新取件,避免验签内容与实际消费内容不一致。整站清单只在首次消费时验签一次,结论在同一次目录拉取内复用。
+
+证书三档取件顺序(两种模型共用):
+
+| 档 | 地址 | 说明 |
+|:---:|:---:|:---:|
+| 1 | `<base_url>/certs/<合集 id>/<合集 id>-eec.crt` | 公开发布布局;信任清单已登记时直接用清单里的证书,跳过这一档 |
+| 2 | `<base_url>/certs/<合集 id>-eec.crt` | 旧站点的扁平布局,只作兼容 |
+| 3 | `<base_url>/eec.pem` | 最早的根目录布局,只发布整站签名的来源常见这一档 |
+
+三档都由引擎先用内置根 CA 校验证书链,链不通过时不发起 CMS 验签;三档都取不到才算拿不到证书,此时按未校验处理。
 
 ## 信任状态
 
@@ -96,7 +140,7 @@ dsc-market/
 | `unknown` | 无法确认来源 | 完全没有来源信息 |
 | `local` | 本地安装 | 用户上传的离线包,没有来源,不参与来源判定 |
 
-目录数据是否已校验是独立结论,用 `catalogVerified` 表示,不并入来源结论:来源运行态与安装计划各带一份,前者是 L1 结论,后者是 L1 与 L3 结论的合取。目录未校验时来源结论不变,产物仍按 `plugin.js.sig` 判定。
+目录数据是否已校验是独立结论,用 `catalogVerified` 表示,不并入来源结论:来源运行态与安装计划各带一份,前者是根目录材料的结论(合集模型为 L1 清单,整站模型为整站清单加根目录两个文件),后者再与插件目录材料的结论(合集模型为 L3 清单,整站模型为该插件两个文件的签名)取合取。目录未校验时来源结论不变,产物仍按 `plugin.js.sig` 判定。整站签名与作者签名是两条独立路径,整站签名不代替作者签名。
 
 安装计划同时给出两个证书来源: 清单已登记时带 `eec`(优先使用,省一次请求),任何在线来源都带 `eecUrls`,按顺序为嵌套的 `<base_url>/certs/<合集 id>/<合集 id>-eec.crt`、旧站点的扁平路径 `<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`。两种证书都必须由引擎先用内置根 CA 校验链,链不通过时结论为 `failed` 且不发起 CMS 验签,安装记录以 `eec_anchored` 记为未通过链校验。市场把运行态的 `trust` 与 `trustFailure` 一并交给引擎,但只用于界面展示来源是否被官方认可,不参与来源结论判定。
 
@@ -171,7 +215,7 @@ import { market } from '../dsc-market/index.js'
 
 const client = market()
 client?.sources()              // 来源列表
-client?.runtime('awesome-dsc-plugin') // 来源运行态:state、baseUrl、trust、eecFromTrustList、meta、plugins
+client?.runtime('awesome-dsc-plugin') // 来源运行态:state、baseUrl、trust、model、eecFromTrustList、meta、plugins
 client?.selected()             // 当前选中的来源 id
 client?.select('awesome-dsc-plugin')
 await client?.refresh('awesome-dsc-plugin', true)  // 拉取并校验;force 为 true 时忽略缓存
@@ -199,7 +243,9 @@ await client?.checkRemoved('https://example.com/plugins/a/demo/1.0.0/plugin.js')
 | 单个插件 `versions.json` 或 `meta.json` 失败 | 该行标记失败原因,其余插件不受影响 |
 | L1 清单缺失、验签失败或哈希不一致 | 目录照常展示,该来源标记为「目录数据未校验」 |
 | L3 清单缺失、验签失败或哈希不一致 | 该插件标记为未校验,其余插件不受影响 |
+| 整站清单缺失、验签失败或逐文件验签不通过 | 目录照常展示,该来源标记为「目录数据未校验」,不写失败原因 |
 | 某层清单 revision 小于本地记录值 | 来源运行态追加一条回退提示,只警告不阻断 |
+| 两种模型的特征文件都不成立 | 目录照常展示,结论一律为未校验,不发警告、不报错 |
 | 结构不符的目录条目 | 跳过并计入 `skipped` |
 | 更新检查的 `versions.json` 未超过 5 分钟 | 复用缓存的最新版本号 |
 | 更新检查的请求超时或失败 | 该插件不显示任何更新标注 |

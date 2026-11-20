@@ -9,6 +9,15 @@ import {
   type ManifestReader,
   type RevisionMemory,
 } from '../../services/integrity/manifest.js'
+import {
+  fetchSiteManifest,
+  SITE_SIGNATURE_SUFFIX,
+  siteUrlOf,
+  verifySiteFile,
+  verifySiteManifest,
+  type SignatureState,
+  type SiteManifestFetch,
+} from '../../services/integrity/site.js'
 import { collectionCertPaths, normalizeCollectionId } from '../../services/trust/collection.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/types.js'
 import { toPluginId } from '../dsc-plugin-engine/pluginId.js'
@@ -19,6 +28,7 @@ import type {
   StorageCapability,
 } from '../dsc-plugin-engine/types.js'
 import { createDownloadReporter } from './count.js'
+import { detectSourceModel, type SourceModel } from './model.js'
 import { checkRemoved, type RemovedVerdict } from './removed.js'
 import { normalizeBaseUrls, readSources, writeSources } from './sources.js'
 import { resolveSourceTrust } from './trust.js'
@@ -68,6 +78,9 @@ const embeddedRootCa = (): string => (typeof __ROOT_CA_PEM__ === 'string' ? __RO
 
 /** 把文本还原成字节；目录文件按 UTF-8 文本分发，哈希按还原后的字节计算 */
 const textBytes = (text: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(text)
+
+/** 把已取到的字节还原成文本；整站模型按字节取件，解析与哈希各用一份 */
+const bytesText = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
 /** 对外查询与操作接口 */
 export type MarketClient = {
@@ -343,6 +356,7 @@ const emptyRuntime = (id: string): SourceRuntime => ({
   eecFromTrustList: false,
   chainVerified: false,
   collectionId: '',
+  model: 'unknown',
   plugins: [],
   fetchedAt: null,
   catalogVerified: false,
@@ -373,6 +387,8 @@ const resolveSource = async (net: NetCapability, source: MarketSource): Promise<
 
 /** 一层清单的校验结论；verified 为 false 时 manifest 为 null */
 type LayerCheck = {
+  /** 该层相对来源根目录的路径；合集根为空串，其余以斜杠结尾 */
+  layerPath: string
   verified: boolean
   manifest: Manifest | null
   revision: number | null
@@ -392,10 +408,6 @@ type LayerContext = {
   layers: Map<string, Promise<LayerCheck>>
   /** 回退提示按层去重 */
   warnings: Map<string, RevisionWarning>
-  /** 合集根目录数据是否已按 L1 清单校验通过 */
-  catalogVerified: boolean
-  /** L1 清单的 revision；没有拿到 L1 清单时为 null */
-  l1Revision: number | null
 }
 
 /** 层路径转成层号：合集根为 L1，作者目录为 L2，插件目录为 L3 */
@@ -437,7 +449,7 @@ const loadLayer = (context: LayerContext, layerPath: string): Promise<LayerCheck
     return cached
   }
   const task = (async (): Promise<LayerCheck> => {
-    const unverified: LayerCheck = { verified: false, manifest: null, revision: null }
+    const unverified: LayerCheck = { layerPath, verified: false, manifest: null, revision: null }
     if (context.rootCa === '' || context.eec === '') {
       return unverified
     }
@@ -464,22 +476,93 @@ const loadLayer = (context: LayerContext, layerPath: string): Promise<LayerCheck
         revision,
       })
     }
-    return { verified: true, manifest: fetched.manifest, revision }
+    return { layerPath, verified: true, manifest: fetched.manifest, revision }
   })()
   context.layers.set(key, task)
   return task
 }
 
-/** 比对一层清单登记的某个文件；清单未取到或文件未取到都按不一致处理 */
-const fileMatches = async (
-  check: LayerCheck,
-  filePath: string,
-  text: string | null
-): Promise<boolean> => {
-  if (check.manifest === null || text === null) {
-    return false
+/**
+ * 目录数据的校验策略。
+ * 合集模型按层清单比哈希：open 取并校验该层 manifest.json，matches 比对该层文件的 SHA-512。
+ * 整站模型按逐文件签名：open 只反映整站清单是否验签通过，matches 验该文件自己的 <路径>.sig。
+ * 两种策略都只产出「通过 / 未通过」，未通过一律降级为未校验，不阻断浏览与安装。
+ */
+type CatalogVerifier = {
+  /** 打开一层目录，取该层的校验材料 */
+  open(layerPath: string): Promise<LayerCheck>
+  /** 校验一层内的某个文件；bytes 是已取到的文件字节，缺失传 null */
+  matches(check: LayerCheck, filePath: string, bytes: Uint8Array<ArrayBuffer> | null): Promise<boolean>
+}
+
+/** 合集模型：三层哈希清单 */
+const createCollectionVerifier = (context: LayerContext): CatalogVerifier => ({
+  open: (layerPath) => loadLayer(context, layerPath),
+  matches: async (check, filePath, bytes) =>
+    check.manifest === null || bytes === null
+      ? false
+      : await hashMatches(check.manifest, filePath, bytes),
+})
+
+/**
+ * 整站模型：web_files.json 与逐文件签名。
+ * 清单验签只做一次并缓存结论，清单未通过时该层一律按未校验处理；
+ * 逐文件验签的对象是调用方已取到的那份字节，不重新取件，避免验签内容与实际消费内容不一致。
+ */
+const createSiteVerifier = (
+  baseUrl: string,
+  site: SiteManifestFetch,
+  certPem: string,
+  rootCa: string
+): CatalogVerifier => {
+  let state: Promise<SignatureState> | null = null
+  const manifestState = (): Promise<SignatureState> => {
+    state ??= verifySiteManifest(site, certPem, rootCa)
+    return state
   }
-  return await hashMatches(check.manifest, filePath, textBytes(text))
+  return {
+    open: async (layerPath) => ({
+      layerPath,
+      verified: (await manifestState()) === 'verified',
+      manifest: null,
+      revision: null,
+    }),
+    matches: async (check, filePath, bytes) => {
+      if (!check.verified || bytes === null || site.manifest === null) {
+        return false
+      }
+      const path = check.layerPath + filePath
+      const signature = await manifestReader(siteUrlOf(baseUrl, path) + SITE_SIGNATURE_SUFFIX)
+      const verdict = await verifySiteFile({
+        path,
+        bytes,
+        signature,
+        manifest: site.manifest,
+        certPem,
+        rootCa,
+      })
+      return verdict === 'verified'
+    },
+  }
+}
+
+/** 未确认模型：两种模型的特征文件都不成立，目录照常展示，结论一律为未校验 */
+const unverifiedVerifier: CatalogVerifier = {
+  open: async (layerPath) => ({ layerPath, verified: false, manifest: null, revision: null }),
+  matches: async () => false,
+}
+
+/** 一次目录拉取的上下文；层材料与校验策略分开，模型不同只换策略 */
+type CatalogContext = {
+  net: NetCapability
+  /** 来源根目录，以斜杠结尾 */
+  baseUrl: string
+  /** 目录数据的校验策略；合集、整站与未确认三种 */
+  verifier: CatalogVerifier
+  /** 合集根目录数据是否已按 L1 清单或整站清单校验通过 */
+  catalogVerified: boolean
+  /** L1 清单的 revision；没有拿到 L1 清单或整站模型下为 null */
+  l1Revision: number | null
 }
 
 /** 把已取到的各层 revision 收敛成安装记录要保存的结构 */
@@ -518,11 +601,12 @@ const resolveCollectionEec = async (
 
 /**
  * 拉取单个插件的版本与展示信息。
- * 先用 L3 清单校验 versions.json 与展示版本的 meta.json，再用 L2 清单取作者公钥的哈希；
- * 清单缺失或验签失败时降级为未校验，目录照常展示。
+ * 先用插件目录的材料校验 versions.json 与展示版本的 meta.json，再用作者目录的材料取作者公钥哈希；
+ * 合集模型对应 L3 与 L2 清单，整站模型对应逐文件签名（没有 L2 清单，作者公钥哈希缺省）；
+ * 材料缺失或验签失败时降级为未校验，目录照常展示。
  */
 const loadPlugin = async (
-  context: LayerContext,
+  context: CatalogContext,
   entry: CatalogEntry
 ): Promise<CatalogPlugin | null> => {
   if (!isSegment(entry.name) || !isSegment(entry.author)) {
@@ -531,13 +615,17 @@ const loadPlugin = async (
   const authorPath = 'plugins/' + entry.author + '/'
   const basePath = authorPath + entry.name + '/'
   const [l2, l3] = await Promise.all([
-    loadLayer(context, authorPath),
-    loadLayer(context, basePath),
+    context.verifier.open(authorPath),
+    context.verifier.open(basePath),
   ])
   const authorPubSha512 = l2.manifest?.files.find((file) => file.path === 'author_pub.pem')?.sha512
   const versionsText = await requestText(context.net, joinUrl(context.baseUrl, basePath + 'versions.json'))
   const versionList = versionsText === null ? null : parseVersions(versionsText)
-  const versionsOk = await fileMatches(l3, 'versions.json', versionsText)
+  const versionsOk = await context.verifier.matches(
+    l3,
+    'versions.json',
+    versionsText === null ? null : textBytes(versionsText)
+  )
   const authorPub = authorPubSha512 === undefined ? {} : { authorPubSha512 }
   if (!versionList) {
     return {
@@ -562,7 +650,11 @@ const loadPlugin = async (
   const detailPath = basePath + versionList.latest + '/'
   const metaText = await requestText(context.net, joinUrl(context.baseUrl, detailPath + 'meta.json'))
   const parsedMeta = metaText === null ? null : parseRuntimeMeta(metaText)
-  const metaOk = await fileMatches(l3, versionList.latest + '/meta.json', metaText)
+  const metaOk = await context.verifier.matches(
+    l3,
+    versionList.latest + '/meta.json',
+    metaText === null ? null : textBytes(metaText)
+  )
   const conclusions: CatalogConclusions = {
     catalogVerified: context.catalogVerified,
     metaVerified: l3.verified && versionsOk && metaOk,
@@ -586,7 +678,7 @@ const loadPlugin = async (
 
 /** 拉取整个目录；并发受限，顺序在结果里统一排序 */
 const loadCatalog = async (
-  context: LayerContext,
+  context: CatalogContext,
   entries: CatalogEntry[]
 ): Promise<{ plugins: CatalogPlugin[]; skipped: number }> => {
   const plugins: CatalogPlugin[] = []
@@ -713,6 +805,8 @@ export const createMarketClient = (
         eecFromTrustList: outcome.eecFromTrustList,
         chainVerified: outcome.chainVerified,
         collectionId: outcome.collectionId,
+        // 来源不可达时无从识别模型，按未确认处理
+        model: 'unknown',
         plugins: [],
         fetchedAt: null,
         catalogVerified: false,
@@ -723,31 +817,48 @@ export const createMarketClient = (
     }
     const baseUrl = outcome.baseUrl
     const eec = await resolveCollectionEec(net, baseUrl, outcome.eec, outcome.collectionId)
-    const context: LayerContext = {
+    const rootCa = embeddedRootCa()
+    // 先按特征文件识别来源模型：合集优先，整站作为第二模型，两者都不成立时按未确认处理
+    const probe = await detectSourceModel(baseUrl, manifestReader, eec)
+    const model: SourceModel = probe.model
+    const layerContext: LayerContext = {
       net,
       baseUrl,
       eec,
-      rootCa: embeddedRootCa(),
+      rootCa,
       memory: revisionMemory,
       layers: new Map(),
       warnings: new Map(),
-      catalogVerified: false,
-      l1Revision: null,
     }
-    // 先取 L1 清单并验签，再用它校验本次要消费的目录文件；清单缺失或验签失败只降级为未校验
-    const l1 = await loadLayer(context, '')
-    context.l1Revision = l1.revision
-    const metaOk = await fileMatches(l1, 'meta.json', outcome.metaText)
-    const pluginsText = await requestText(net, joinUrl(baseUrl, 'plugins.json'))
-    const pluginsOk = await fileMatches(l1, 'plugins.json', pluginsText)
-    context.catalogVerified = l1.verified && metaOk && pluginsOk
+    const verifier =
+      model === 'collection'
+        ? createCollectionVerifier(layerContext)
+        : model === 'site' && probe.site !== null
+          ? createSiteVerifier(baseUrl, probe.site, eec, rootCa)
+          : unverifiedVerifier
+    // 先验根目录材料（合集的 L1 清单、整站的 web_files.json），再用它校验本次消费的目录文件；
+    // 材料缺失或验签失败只降级为未校验，不阻断浏览与安装
+    const l1 = await verifier.open('')
+    const metaOk = await verifier.matches(
+      l1,
+      'meta.json',
+      outcome.metaText === null ? null : textBytes(outcome.metaText)
+    )
+    const pluginsOk = await verifier.matches(l1, 'plugins.json', probe.plugins)
+    const context: CatalogContext = {
+      net,
+      baseUrl,
+      verifier,
+      catalogVerified: l1.verified && metaOk && pluginsOk,
+      l1Revision: l1.revision,
+    }
     let plugins: CatalogPlugin[] = []
     let skipped = 0
     let error: TranslationKey | null = null
-    if (pluginsText === null) {
+    if (probe.plugins === null) {
       error = 'pluginMarketCatalogFailed'
     } else {
-      const index = parsePluginsIndex(pluginsText)
+      const index = parsePluginsIndex(bytesText(probe.plugins))
       if (!index) {
         error = 'pluginMarketCatalogFailed'
       } else {
@@ -773,10 +884,12 @@ export const createMarketClient = (
       eecFromTrustList: outcome.eecFromTrustList,
       chainVerified: outcome.chainVerified,
       collectionId: outcome.collectionId,
+      model,
       plugins,
       fetchedAt: Date.now(),
       catalogVerified: context.catalogVerified,
-      revisionWarnings: [...context.warnings.values()],
+      // revision 回退提示只属于合集的三层清单，整站与未确认模型没有清单可取
+      revisionWarnings: model === 'collection' ? [...layerContext.warnings.values()] : [],
       skipped,
       error,
     })
@@ -826,8 +939,9 @@ export const createMarketClient = (
 
   /**
    * 取插件目录下的最新版本号；失败或结构不符返回 null，由调用方按无法判断处理。
-   * 检查更新同样先取 L3 清单并验签，用它校验 versions.json；清单缺失时降级为未校验，
+   * 检查更新同样先取该插件目录的校验材料，用它校验 versions.json；材料缺失时降级为未校验，
    * revision 回退只给提示，不改变更新判定。
+   * 来源尚未刷新时按合集口径尝试（模型未知），已识别为整站模型时改按逐文件签名校验。
    */
   const latestOf = async (location: InstalledLocation): Promise<string | null> => {
     const key = location.pluginDir
@@ -842,31 +956,39 @@ export const createMarketClient = (
     // 同址来源已知合集 id 时直接用；未知时按来源名归一化，仍取不到时只试旧布局
     const collectionId = runtime?.collectionId ?? (owner ? normalizeCollectionId(owner.name) : '')
     const eec = await resolveCollectionEec(net, location.root, runtime?.eec ?? null, collectionId)
-    const context: LayerContext = {
+    const rootCa = embeddedRootCa()
+    const layerContext: LayerContext = {
       net,
       baseUrl: location.root,
       eec,
-      rootCa: embeddedRootCa(),
+      rootCa,
       memory: revisionMemory,
       layers: new Map(),
       warnings: new Map(),
-      catalogVerified: runtime?.catalogVerified ?? false,
-      l1Revision: null,
+    }
+    let verifier: CatalogVerifier = createCollectionVerifier(layerContext)
+    if (runtime?.model === 'site' && rootCa !== '') {
+      const site = await fetchSiteManifest(location.root, manifestReader)
+      if (site.manifest !== null) {
+        verifier = createSiteVerifier(location.root, site, eec, rootCa)
+      }
     }
     const layerPath = location.pluginDir.startsWith(location.root)
       ? location.pluginDir.slice(location.root.length)
       : ''
-    const l3 = layerPath === '' ? null : await loadLayer(context, layerPath)
+    const l3 = layerPath === '' ? null : await verifier.open(layerPath)
     const text = await requestText(net, versionsUrlOf(location))
     const list = text === null ? null : parseVersions(text)
-    recordRevisionWarnings(location.root, context.warnings.values())
+    recordRevisionWarnings(location.root, layerContext.warnings.values())
     if (!list) {
       return null
     }
     if (l3 !== null) {
       conclusionsCache.set(location.pluginDir, {
-        catalogVerified: context.catalogVerified,
-        metaVerified: l3.verified && (await fileMatches(l3, 'versions.json', text)),
+        catalogVerified: runtime?.catalogVerified ?? false,
+        metaVerified:
+          l3.verified &&
+          (await verifier.matches(l3, 'versions.json', text === null ? null : textBytes(text))),
         revisions: revisionsOf(null, null, l3.revision),
       })
     }

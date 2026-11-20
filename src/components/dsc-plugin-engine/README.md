@@ -151,6 +151,8 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 | 作者裸签名 | 插件作者 | `plugin.js.author.sig`、`author_pub.pem` | `src/services/integrity/ed25519.ts` 的 `verifyDetachedSignature` |
 | 三层清单签名 | 合集 EEC 证书 | 每层的 `manifest.json.sig` | `src/services/integrity/manifest.ts` 的 `verifyManifest`,由插件市场调用 |
 
+只发布整站签名的来源(下称整站模型)不需要引擎侧的额外分支:它的 `plugin.js` 同样带一份 `plugin.js.sig`,签名者是来源的整站签名证书,引擎按 `eec` 与 `eecUrls` 取证书、校链、再验签,与合集的 CMS 验签走同一条通道。整站模型常见把证书放在来源根目录的 `eec.pem`,正好落在三档取件的第三档。整站模型没有 L2 清单,`authorPubSha512` 缺省,作者公钥不做哈希把关,作者签名仍按 `plugin.js.author.sig` 与 `author_pub.pem` 校验,失败只提示、不阻断安装。
+
 CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名者为该来源的 EEC 证书;作者签名是 Ed25519 裸签名,同样直接对原始字节验签,不做摘要预处理。`verifyDetachedCms` 要求同时传入签名者证书与根证书,函数内部先用根证书校验证书链,未通过直接返回 false,未校验链的证书不会进入验签。`signature.ts` 负责把两种签名收拢成一个 `verified`、`failed`、`unverified` 结论:合集证书先过链校验,链不通过时不发起 CMS 验签;两种材料都有时须同时通过,只有一种材料时只校验该种,都没有时为 `unverified`。证书链与 CMS 校验模块按需动态加载,未启用签名校验的构建不会把 `pkijs` 带进首屏代码。
 
 来源结论另按四态给出,判定只看本机结论: 证书链通过且 CMS 验签通过才算已确认。
@@ -162,7 +164,7 @@ CMS 签名是逐字节语义,验签对象是 `plugin.js` 的原始字节,签名�
 | `unknown` | 无法确认来源 | 完全没有来源信息 |
 | `local` | 本地安装 | 用户上传的离线包,没有来源,不参与来源判定 |
 
-目录数据的三层清单与产物签名相互独立：`plugin.js` 只按 `plugin.js.sig` 验签,清单缺失或验签失败只让「目录数据是否已校验」为否,不改变产物结论,也不改变来源结论。安装记录另存 `catalog_verified`、`meta_verified` 与 `manifest_revisions`,界面按 `catalogVerified` 展示「目录数据已校验」或「目录数据未校验」;同一插件重装时若某层 `revision` 小于记录值,引擎日志记一条并给一次提示,不阻断安装。
+目录数据的签名材料与产物签名相互独立：`plugin.js` 只按 `plugin.js.sig` 验签,目录材料缺失或验签失败只让「目录数据是否已校验」为否,不改变产物结论,也不改变来源结论。目录材料在合集模型下是三层清单,在只发布整站签名的来源下是 `web_files.json` 与逐文件签名;两种模型都只通过安装来源里的 `catalogVerified`、`metaVerified` 表达结论,引擎不需要区分模型,整站模型的 `manifest_revisions` 为空。安装记录另存 `catalog_verified`、`meta_verified` 与 `manifest_revisions`,界面按 `catalogVerified` 展示「目录数据已校验」或「目录数据未校验」;同一插件重装时若某层 `revision` 小于记录值,引擎日志记一条并给一次提示,不阻断安装。
 
 验签证书优先取信任清单登记的那张,清单未登记时按 `eecUrls` 的顺序取来源自带的嵌套路径 `certs/<合集 id>/<合集 id>-eec.crt`、旧站点的扁平路径 `certs/<合集 id>-eec.crt` 与兜底的 `eec.pem`;三档都必须先用内置根 CA 校验证书链,链不通过时结论为 `failed`(原因 `chain` 或 `revoked`),不会发起 CMS 验签,引擎日志记一条 `certificate chain ..., cms skipped`。拿不到证书或验签不通过同样记为 `failed`(原因 `other`),其中信任清单登记了证书而证书文件缺失的情形界面单列「来源证书缺失」;只有完全没有来源信息才是 `unknown`。安装记录用 `eec_anchored` 标记证书链是否已在本机校验通过,用 `source_trust`、`trust_failure` 保存信任清单判定;启动恢复按存储的证书重新做链校验并重写标记,只有链通过且验签通过的记录才算 `confirmed`。信任清单的结论只用于界面展示,未登记时在「来源已确认」旁补一条「未在官方清单登记」的中性标注。
 

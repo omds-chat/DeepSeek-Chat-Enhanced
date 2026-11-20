@@ -1,6 +1,7 @@
 import type { TranslationKey } from '../../i18n/index.js'
 import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import type { PluginManifest, PluginSourceType } from '../dsc-plugin-engine/types.js'
+import type { SourceModel } from './model.js'
 
 /**
  * 来源信任状态；只表示 online-data 信任清单是否登记并认可该来源,不参与来源结论判定。
@@ -112,6 +113,11 @@ export type SourceRuntime = {
   chainVerified: boolean
   /** 合集 id：清单登记的 id 优先，其次清单登记的目录名，最后用站点名归一化 */
   collectionId: string
+  /**
+   * 来源模型：collection 是三层清单的合集，site 是整站签名站点，
+   * unknown 表示两种模型的特征文件都不成立，目录照常展示但结论一律为未校验。
+   */
+  model: SourceModel
   plugins: CatalogPlugin[]
   fetchedAt: number | null
   /** 合集根目录数据是否已按 L1 清单校验通过 */

@@ -186,7 +186,7 @@ npm 包的要点:
 2. 对 `plugin.js` 的字节做裸公钥分离签名:`openssl pkeyutl -sign -rawin -inkey author_secret.pem -in plugin.js -out plugin.js.author.sig` 。
 3. 把 `plugin.js.author.sig` 与 `author_pub.pem` 一起放进包内,与 `meta.json`、`plugin.js` 同级。
 
-只带其中一个文件时,引擎按未提供签名处理,并在确认对话框里提示未校验。合集侧对 `plugin.js` 与 `meta.json` 的 CMS 签名由合集用 EEC 完成,作者不需要参与;两套签名的约定见 [信任链与 PKI 签名](../basic/trust-chain.md) 。
+只带其中一个文件时,引擎按未提供签名处理,并在确认对话框里提示未校验。合集侧的 CMS 签名与整站签名由合集用自己持有的 EEC 私钥完成,它覆盖 `plugin.js` 与目录数据,但不代替作者签名:作者签名由作者用自己持有的私钥签,合集只做收录与整站签名。`meta.json` 的完整性由合集的三层清单或整站清单覆盖,不需要作者签名。两套签名的约定见 [信任链与 PKI 签名](../basic/trust-chain.md) 。
 
 ## 让用户安装
 
