@@ -1,72 +1,37 @@
 # dsc 插件产物规范
 
-本文规定 dsc 插件的产物形态、导出契约、清单字段、版本与兼容、加载方式以及错误与降级行为。规范内容与 `dsc-plugin-engine` 的当前实现一致,未实现的能力不写入本文。
+> 本文件现在只起关联与占位作用:产物与运行时规范不再在本仓库维护,以模板仓库 [dsc-plugin-template](https://github.com/omds-chat/dsc-plugin-template) 的 specs 为准。
+> - [dsc 插件运行时规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md)
+> - [dsc 插件开发规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-develop-spec.md)
+>
+> 模板仓库同时提供清单与运行时 meta 的 JSON Schema 与零依赖校验脚本。
 
-## 产物形态
+## 已迁往模板的部分
 
-| 项 | 规定 |
+| 主题 | 模板对应章节 |
 |:---:|:---:|
-| 文件数量 | 单个 js 文件;代码里不得用相对路径导入其它模块或资源,分发时只交付这一个文件 |
-| 模块格式 | 浏览器可 `import` 的 ESM;不使用 `require`、Node 内置模块与后端接口 |
-| 运行环境 | 页面主线程,可用浏览器 API;不得读写本地文件系统 |
-| 依赖 | 不得新增运行依赖;可复用宿主已加载的浏览器能力 |
-| 样式 | 自行注入并清理,不覆盖宿主已有类名 |
+| 产物形态:单文件、ESM、编码、运行位置、依赖与资源、存放与恢复 | 运行时规范 1. 产物形态 |
+| 导出契约:具名 `activate`、`default` 导出、插件工厂、`manifest` 导出与优先级 | 运行时规范 2. 导出契约 |
+| 清单字段与校验:`id`、`name`、`version`、`engines`、`dependencies`、`conflicts`、`capabilities`、`contributions` | 开发规范 2.1 字段与校验规则 |
+| 能力分档、`net:fetch` 仅内置可见、`plugins:storage` 的存储边界与贡献点范围 | 开发规范 2.1、运行时规范 4 与 5.4 |
+| 版本与兼容:三段版本、单段 `engines` 表达式、依赖与冲突按 id 判定 | 开发规范 3. 版本与依赖 |
+| 加载方式的地址判定、清单优先级、跨源分发与 CORS | 运行时规范 2 与 3、开发规范 6.1 |
+| 生命周期状态、能力限流与超时、上下文成员、可见数据范围 | 运行时规范 3、4、5 |
+| 离线包的布局、`meta.json` 的字段规则与预检顺序 | 开发规范 4、6.2 |
 
-## 导出契约
+## 本文保留的 dsce 专有内容
 
-产物必须导出以下之一：
+以下内容模板仓库不覆盖,仍以本仓库的实现与文档为准:
 
-| 导出形态 | 说明 |
+| 主题 | 为什么留在本仓库 |
 |:---:|:---:|
-| `export const activate` | 具名导出插件对象,`activate(context)` 必填 |
-| `export default` | 默认导出插件对象或插件工厂 |
-| 插件工厂 | 函数,返回插件对象或返回它的 Promise |
-| `export const manifest` | 具名导出清单;`installFromUrl` 未传入清单时使用 |
+| 合集 CMS 签名、三层清单签名、来源结论与目录数据校验 | 与 [信任链与 PKI 签名](trust-chain.md) 配套,属于本仓库的 PKI 与插件市场实现 |
+| 代码体积上限 2 MB,在线与离线包共用同一上限 | 模板 specs 当前按 1 MB 记述,本仓库已提升到 2 MB,发布前需人工复核该上限 |
+| 安装记录持久化(`<APP_NAME>-plugins` 的字段集合) | 本仓库 IndexedDB 的实现细节 |
+| 引擎安装接口与离线包的两步安装 | 本仓库 `dsc-plugin-engine` 的宿主接口 |
+| 错误与降级的原因代码与用户可见文案 | 与本仓库的 `i18n` 文案键配套 |
 
-插件对象：
-
-| 成员 | 必填 | 说明 |
-|:---:|:---:|:---:|
-| `activate(context)` | 是 | 启动入口,可返回 Promise;超时 5 秒 |
-| `deactivate()` | 否 | 停用入口,可返回 Promise;超时 3 秒,之后执行注册的释放函数 |
-
-产物可以同时导出具名 `manifest`,引擎在运行时加载时读取它,作为未传入清单时的安装依据;写在 `default` 导出对象上的 `manifest` 同样被识别,模块顶层的具名导出优先。
-
-## 清单字段
-
-| 字段 | 必填 | 规定 |
-|:---:|:---:|:---:|
-| `id` | 是 | 小写字母开头,允许数字与连字符,3 到 64 字符,全局唯一 |
-| `name` | 是 | 展示名称,不得为空 |
-| `version` | 是 | `主版本.次版本.修订号` |
-| `engines` | 否 | 兼容的 dsc-core 版本范围 |
-| `dependencies` | 否 | 依赖的插件 id;安装时须已存在,激活时须已激活 |
-| `conflicts` | 否 | 冲突的插件 id;同时安装被拒绝 |
-| `capabilities` | 是 | 申请的能力,不得重复 |
-| `contributions` | 否 | 订阅的贡献点,不得重复 |
-
-能力分三档：
-
-| 能力 | 可见范围 | 说明 |
-|:---:|:---:|:---:|
-| `sessions:list`、`sessions:read`、`sessions:rename`、`events:session`、`notify`、`settings:locale` | 全部插件 | 会话只读视图、事件订阅、宿主提示与当前语言 |
-| `plugins:storage` | 全部插件 | 插件自身的键值数据,保存在浏览器 localStorage |
-| `net:fetch` | 仅内置插件 | 读取外源文本资源,例如插件索引 |
-
-`net:fetch` 对第三方插件不可见：引擎维护一份内置插件 id 集合,只有集合内的插件申请该能力才会被接受;第三方清单里写 `net:fetch` 时安装结果为 `unknown-capability`,与申请一个不存在的能力表现完全一致。
-
-`plugins:storage` 对第三方插件开放,但数据保存在浏览器本地,随站点数据清除而丢失,插件不得把它当作可靠存储。卸载插件不会清除该插件的插件数据,重新安装后仍能读到旧数据;清理入口在设置的数据管理中。
-
-贡献点仅限 `session:changed`。
-
-## 版本与兼容
-
-- `version` 为插件自身版本,只允许三段数字。
-- `engines` 与 dsc-core 版本比较,支持 `^`、`~`、`>=`、`<=` 与精确版本;`^` 要求主版本一致且不低于下界,`~` 要求主次版本一致且不低于下界。
-- `engines` 缺省视为不限制;不满足时安装被拒绝,原因为 `incompatible-version`。
-- 依赖与冲突按插件 id 判定,不比较版本。
-
-## 加载方式
+## 引擎安装接口
 
 | 方式 | 接口 | 说明 |
 |:---:|:---:|:---:|
@@ -74,22 +39,7 @@
 | 运行时加载 | `engine.installFromUrl(url, manifest?)` | 用 `fetch` 取产物字节,按文本存进安装记录后再以 Blob 地址 `import` 加载,成功后自动激活;超时 10 秒 |
 | 手动激活 | `engine.activate(id)` | 依赖满足时进入 `active` |
 
-`url` 只接受 `https` 的任意主机,或 `http` 的本机回环地址(`localhost`、`127.0.0.1`、`[::1]`),按页面地址解析相对路径;其余地址直接拒绝,结果为 `load-failed`。
-
-清单优先级：`installFromUrl(url, manifest)` 显式传入的清单优先;未传入时使用产物导出的 `manifest`;两者都没有时安装被拒绝,原因为 `invalid-manifest`,并提示 `pluginManifestMissing`。
-
-### 跨源分发与 CORS
-
-安装阶段由引擎用 `fetch` 取产物字节,所以取件过程受普通的跨源请求规则约束:
-
-| 部署形态 | 托管方要求 | 结果 |
-|:---:|:---:|:---:|
-| 与页面同源 | 无需额外响应头 | 正常取件 |
-| 与页面跨源 | 响应必须带 `Access-Control-Allow-Origin`,值为 `*` 或页面来源 | 缺该头时取件被拒绝 |
-
-取件默认不携带凭证,所以 `Access-Control-Allow-Origin: *` 即可满足要求,不需要 `Access-Control-Allow-Credentials`。产物必须是单文件:安装时取的字节按文本存进安装记录,安装与启动都用 Blob 地址导入,导入的基址不是产物地址,相对路径的模块与资源导入无法解析;需要外部资源时在代码里用绝对地址自行请求。
-
-不满足时表现为安装失败:字节取不到,安装结果为 `artifact-unreachable`,界面提示插件产物地址请求不到;原始错误写入 `engineLogs()`,具体原因只在浏览器控制台可见。
+地址规则、清单优先级与跨源取件要求见模板仓库的运行时规范 2、3 与开发规范 6.1;取件失败的表现见本文末的错误与降级表。
 
 ## 产物签名
 
@@ -99,9 +49,9 @@
 |:---:|:---:|:---:|:---:|
 | 合集 CMS 分离签名 | 合集 EEC 证书 | `plugin.js.sig` | 清单已登记时优先用清单证书,未登记时取来源站点的 `certs/<合集 id>-eec.crt`,取不到再试旧的 `eec.pem`;两种证书都要先过本机证书链校验 |
 | 三层清单签名 | 合集 EEC 证书 | 每层的 `manifest.json.sig` | 覆盖该层目录数据的哈希,不覆盖 `plugin.js`;验签口径与产物签名一致 |
-| 作者裸签名 | 插件作者 | `plugin.js.author.sig`、`meta.json.author.sig` | 合集内的 `plugins/<作者>/author_pub.pem` |
+| 作者裸签名 | 插件作者 | `plugin.js.author.sig` | 合集内的 `plugins/<作者>/author_pub.pem` |
 
-合集签名为逐字节语义,签名对象是 `plugin.js` 的原始字节,签名者是该来源的 EEC 证书;作者签名为 Ed25519 裸签名,同样直接对原始字节签名。安装与启动时两种材料都有则须同时通过,只有一种则只校验该种,都没有按未校验处理。校验失败只提示,不阻断安装与启动。
+合集签名为逐字节语义,签名对象是 `plugin.js` 的原始字节,签名者是该来源的 EEC 证书;作者签名为 Ed25519 裸签名,同样直接对原始字节签名。安装与启动时两种材料都有则须同时通过,只有一种则只校验该种,都没有按未校验处理。校验失败只提示,不阻断安装与启动。`meta.json` 的完整性由合集的三层哈希清单覆盖,作者不为它签名。
 
 合集的可信性由根 CA 签发的 EEC 证书证明,信任锚是构建时内嵌的根证书:证书字节可以来自 online-data 清单登记的 `eec` 路径,也可以来自来源站点的 `certs/<合集 id>-eec.crt`(旧布局的 `eec.pem` 仅作兼容兜底),但都必须先在本机通过证书链校验;链不通过时结论为 `failed` 且不再发起 CMS 验签。清单里没有该来源只影响界面标注,不影响能否验签。
 
@@ -131,18 +81,13 @@
 
 ## 本地离线包
 
-本地插件由用户上传,面板一次只接受一个文件,扩展名为 `.zip` 或 `.tgz`。包内产物形态:
-
-| 包格式 | 产物位置 | 说明 |
-|:---:|:---:|:---:|
-| zip | 包根目录 | 根目录直接放 `meta.json` 与 `plugin.js`,可选作者签名 `plugin.js.author.sig` 与 `author_pub.pem`;子目录内容忽略 |
-| tgz(npm 包) | `package/dist/` | 只取该目录下的文件,`package/` 下的其他内容一律忽略 |
-
-`meta.json` 遵循运行时 meta schema,引擎只做最小校验:`name`、`version`、`author` 非空,`version` 为三段数字。`meta.json` 里的 `capabilities` 用于推导安装清单(与插件市场同一 id 规则);缺该字段时使用产物导出的 `manifest`,两者都没有时安装被拒绝,原因为 `invalid-manifest`。
+本地插件由用户上传,面板一次只接受一个文件,扩展名为 `.zip` 或 `.tgz`。包内布局、`meta.json` 的字段规则与预检顺序见模板仓库的开发规范 4 与 6.2;本节保留 dsce 侧的签名规则、代码上限与安装接口。
 
 签名规则:包内同时提供 `plugin.js.author.sig` 与 `author_pub.pem` 时按约定校验作者对 `plugin.js` 的裸公钥分离签名,校验不通过只提示,不拒绝安装,记录标记为校验失败;包内没有签名材料时同样允许安装,记录标记为未校验,界面在确认对话框中提示该插件未经签名校验。合集签名 `plugin.js.sig` 与三层哈希清单属于合集分发产物,不在离线包内校验。签名约定见 [信任链与 PKI 签名](trust-chain.md) 。
 
-单个插件的 `plugin.js` 上限 1 MB,超出即拒绝安装,原因为 `package-too-large`:本地插件的代码文本要存进 IndexedDB,异常大的包会挤占存储配额,而本地插件没有外部来源可回退。
+单个插件的 `plugin.js` 上限 2 MB,超出即拒绝安装,原因为 `package-too-large`:代码文本要存进 IndexedDB,异常大的产物会挤占存储配额,在线安装与本地离线包一致。
+
+`meta.json` 的 `dependencies.dsc` 会直接当作清单的 `engines` 使用,必须写成单段版本范围,例如 `^1.0.0`、`~1.2.0`、`>=1.0.0` 或 `*`;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检直接拒绝,原因为 `invalid-meta`,原因说明指向 `dependencies.dsc` 字段。
 
 安装分两步,便于界面在中间插入二次确认:
 
@@ -200,12 +145,12 @@
 | 离线包扩展名不是 `.zip` 或 `.tgz` | 预检拒绝,原因 `unsupported-package` |
 | 离线包无法解压,或 `plugin.js` 不是合法文本 | 预检拒绝,原因 `corrupt-package` |
 | 离线包缺少 `meta.json` 或 `plugin.js` | 预检拒绝,原因 `missing-meta` 或 `missing-plugin` |
-| 离线包 `meta.json` 不合规 | 预检拒绝,原因 `invalid-meta` |
+| 离线包 `meta.json` 不合规,含 `dependencies.dsc` 不是单段版本范围 | 预检拒绝,原因 `invalid-meta`,原因说明指出不满足的字段 |
 | 离线包作者签名校验未通过 | 不拒绝安装,记录标记为 `failed` 并提示 |
 | 清单缺失、验签失败或哈希不一致 | 不拒绝安装,目录数据结论降级为未校验,产物仍按 `plugin.js.sig` 验证 |
 | `author_pub.pem` 与 L2 清单登记的哈希不一致 | 不采用该公钥,作者签名按未校验处理,不影响合集 CMS 验签 |
 | 某层清单 revision 小于安装记录里的值 | 只提示,不拒绝安装 |
-| 离线包 `plugin.js` 超过 1 MB | 预检拒绝,原因 `package-too-large` |
+| 离线包 `plugin.js` 超过 2 MB | 预检拒绝,原因 `package-too-large` |
 | 激活抛错或超时 | 插件标记 `failed`,引擎与其他插件继续运行 |
 | 未授予的能力被调用 | 抛 `PluginCapabilityError`,并提示 `pluginCapabilityDenied` |
 | 超出限流 | 抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited` |

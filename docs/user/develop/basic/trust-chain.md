@@ -340,7 +340,6 @@ online-data/
 dist/
 ├── meta.json
 ├── plugin.js
-├── meta.json.author.sig    # 启用作者签名时生成
 ├── plugin.js.author.sig    # 启用作者签名时生成
 ├── author_pub.pem          # 启用作者签名时生成,交给合集放到 plugins/<作者>/author_pub.pem
 └── MUST_PLUSH_WITH_PACKAGE

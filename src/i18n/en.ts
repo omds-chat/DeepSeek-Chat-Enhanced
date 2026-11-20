@@ -1,3 +1,4 @@
+import { MAX_PLUGIN_CODE_MB } from '../components/dsc-plugin-engine/types.js'
 import type { zh } from './zh.js'
 
 export const en = {
@@ -280,9 +281,8 @@ export const en = {
   pluginReasonMissingMeta: 'The offline package has no meta.json',
   pluginReasonMissingPlugin: 'The offline package has no plugin.js',
   pluginReasonInvalidMeta:
-    'meta.json cannot be parsed, or name, version or author is missing, or the version is not three numbers',
-  pluginReasonPackageTooLarge:
-    'The plugin code exceeds the 1 MB limit; trim the artifact and package it again',
+    'meta.json cannot be parsed, or name, version or author is missing, or the version is not three numbers, or dependencies.dsc is not a single range expression',
+  pluginReasonPackageTooLarge: `The plugin code exceeds the ${MAX_PLUGIN_CODE_MB} MB limit; trim the artifact and package it again`,
   pluginReasonUnknown: 'Unknown cause; see the plugin logs for details',
   pluginLogsTitle: 'Plugin logs: {name}',
   pluginLogsEmpty: 'No logs yet',

@@ -1,3 +1,5 @@
+import { MAX_PLUGIN_CODE_MB } from '../components/dsc-plugin-engine/types.js'
+
 export const zh = {
   welcomeMessageChat250808: '今天有什么可以帮到你？',
   contentCaveat: '内容由 AI 生成，请仔细甄别',
@@ -263,8 +265,8 @@ export const zh = {
   pluginReasonMissingMeta: '离线包内缺少 meta.json',
   pluginReasonMissingPlugin: '离线包内缺少 plugin.js',
   pluginReasonInvalidMeta:
-    'meta.json 无法解析，或缺少 name、version、author，或版本号不是三段数字',
-  pluginReasonPackageTooLarge: '插件代码超过 1 MB 上限，请精简产物后重新打包',
+    'meta.json 无法解析，或缺少 name、version、author，或版本号不是三段数字，或 dependencies.dsc 不是单段版本范围',
+  pluginReasonPackageTooLarge: `插件代码超过 ${MAX_PLUGIN_CODE_MB} MB 上限，请精简产物后重新打包`,
   pluginReasonUnknown: '未知原因，详情见插件日志',
   pluginLogsTitle: '插件日志：{name}',
   pluginLogsEmpty: '暂无日志',

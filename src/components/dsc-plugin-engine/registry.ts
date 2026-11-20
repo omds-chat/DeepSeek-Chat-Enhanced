@@ -1,5 +1,6 @@
 import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
+import { RANGE_PATTERN } from './versionRange.js'
 import {
   CONTRIBUTION_POINTS,
   type ContributionHandler,
@@ -24,9 +25,6 @@ const MAX_LOG = 100
 const ID_PATTERN = /^[a-z][a-z0-9-]{2,63}$/
 /** 版本号规则；严格三段且无前导零，与运行时 meta schema 一致 */
 const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
-/** 版本范围规则 */
-const RANGE_PATTERN = /^(\^|~|>=|<=|=)?(\d+\.\d+\.\d+)$/
-
 /** 落盘用的来源元数据；宿主直接注册的插件没有这一层 */
 export type PluginOrigin = {
   sourceType: PluginSourceType

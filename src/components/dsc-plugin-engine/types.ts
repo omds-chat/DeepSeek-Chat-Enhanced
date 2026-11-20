@@ -10,7 +10,10 @@ import type {
  * 单个插件的代码上限(字节)。
  * 代码文本要存进 IndexedDB,异常大的产物会挤占存储配额,在线安装与离线包共用这一上限。
  */
-export const MAX_PLUGIN_CODE_BYTES = 1024 * 1024
+export const MAX_PLUGIN_CODE_BYTES = 2 * 1024 * 1024
+
+/** 代码上限的 MB 数,供文案使用；由字节常量派生,调整上限只改上一处 */
+export const MAX_PLUGIN_CODE_MB = MAX_PLUGIN_CODE_BYTES / (1024 * 1024)
 
 /** 贡献点；插件可订阅的核心事件 */
 export type ContributionPoint = 'session:changed'
@@ -182,7 +185,7 @@ export type InstallRejection =
   | 'missing-meta'
   /** 离线包内缺少 plugin.js */
   | 'missing-plugin'
-  /** meta.json 无法解析，或缺少必填字段、版本号不是三段数字 */
+  /** meta.json 无法解析，或缺少必填字段、版本号不是三段数字、dependencies.dsc 不是单段版本范围 */
   | 'invalid-meta'
   /** 插件代码超过单个插件上限 */
   | 'package-too-large'

@@ -1,7 +1,8 @@
 import { gunzipSync, unzipSync } from 'fflate'
 import { verifyDetachedSignature } from '../../services/integrity/ed25519.js'
 import type { CoreCapabilityId } from '../dsc-core/index.js'
-import { toPluginId } from './pluginId.js'
+import { pluginIdProblemText, toPluginId } from './pluginId.js'
+import { isSingleRangeExpression } from './versionRange.js'
 import {
   MAX_PLUGIN_CODE_BYTES,
   type InstallRejection,
@@ -41,6 +42,8 @@ export type PackageInspection = {
   authorPub?: string
   /** 作者签名原始字节；包内没有时缺省 */
   authorSig?: Uint8Array
+  /** 无法由 meta 推导清单时的说明；插件名收敛不出合规 id 时指向命名 */
+  manifestProblem: string | null
   /** 签名材料只提供了一半或不可用，安装后按未校验处理 */
   incompleteSignature: boolean
   /** 签名材料齐全但验签不通过；安装后标记为 failed，仍然允许安装 */
@@ -61,7 +64,7 @@ export type PackageMeta = {
   description: LocalizedText
   /** 申请的能力；缺字段或含非字符串项时为 null */
   capabilities: CoreCapabilityId[] | null
-  /** 依赖的 dsc 版本范围，来自 dependencies.dsc */
+  /** 依赖的 dsc 版本范围，来自 dependencies.dsc；只接受单段表达式 */
   engines?: string
 }
 
@@ -276,22 +279,26 @@ const readCapabilities = (value: unknown): CoreCapabilityId[] | null => {
   return capabilities
 }
 
+/** meta.json 的解析结果；不合规时 detail 指出不满足的字段 */
+export type PackageMetaResult = { ok: true; meta: PackageMeta } | { ok: false; detail: string }
+
 /**
- * 解析 meta.json 并做最小校验：name、author 非空，version 为三段数字。
+ * 解析 meta.json 并做最小校验：name、author 非空，version 为三段数字，
+ * 存在 dependencies.dsc 时只接受单段版本范围。
  * 与运行时 meta schema 对齐，字段缺失时按空串处理，不据此拒绝安装。
  */
-export const parsePackageMeta = (text: string): PackageMeta | null => {
+export const readPackageMeta = (text: string): PackageMetaResult => {
   const parsed = parseJson(text)
   if (!isRecord(parsed)) {
-    return null
+    return { ok: false, detail: 'meta.json is not a JSON object' }
   }
   const { name, version, author } = parsed
   if (!isFilled(name) || !isFilled(version) || !isFilled(author)) {
-    return null
+    return { ok: false, detail: 'meta.json requires non-empty name, version and author' }
   }
   const trimmedVersion = version.trim()
   if (!VERSION_PATTERN.test(trimmedVersion)) {
-    return null
+    return { ok: false, detail: 'meta.json version must be three numbers' }
   }
   const meta: PackageMeta = {
     name: name.trim(),
@@ -303,9 +310,17 @@ export const parsePackageMeta = (text: string): PackageMeta | null => {
   }
   const dependencies = parsed.dependencies
   if (isRecord(dependencies) && isFilled(dependencies.dsc)) {
-    meta.engines = dependencies.dsc.trim()
+    const range = dependencies.dsc.trim()
+    // dependencies.dsc 会被当作清单的 engines 使用，组合范围在清单侧不合法
+    if (!isSingleRangeExpression(range)) {
+      return {
+        ok: false,
+        detail: 'meta.json dependencies.dsc must be a single range expression, e.g. ^1.0.0',
+      }
+    }
+    meta.engines = range
   }
-  return meta
+  return { ok: true, meta }
 }
 
 /** 由 meta 构造清单；缺 capabilities 或 name 无法转成 id 时返回 null */
@@ -347,10 +362,11 @@ export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageI
   if (metaText === null) {
     return { ok: false, reason: 'invalid-meta', detail: 'meta.json is not valid UTF-8' }
   }
-  const meta = parsePackageMeta(metaText)
-  if (!meta) {
-    return { ok: false, reason: 'invalid-meta' }
+  const metaRead = readPackageMeta(metaText)
+  if (!metaRead.ok) {
+    return { ok: false, reason: 'invalid-meta', detail: metaRead.detail }
   }
+  const meta = metaRead.meta
   const codeText = decodePluginCode(pluginBytes)
   if (codeText === null) {
     return { ok: false, reason: 'corrupt-package', detail: 'plugin.js is not valid UTF-8' }
@@ -360,9 +376,13 @@ export const inspectPackageFiles = async (files: PackageFiles): Promise<PackageI
   const pubText = pubBytes ? decodeText(pubBytes) : null
   const hasSign = signBytes !== undefined && signBytes.length > 0
   const hasPub = pubText !== null && pubText.trim() !== ''
+  const manifest = buildManifest(meta)
   const inspection: PackageInspection = {
     meta,
-    manifest: buildManifest(meta),
+    manifest,
+    // 清单推导失败但能力字段齐全时，缺的是插件名收敛出的 id 不合规，原因指向命名
+    manifestProblem:
+      manifest === null && meta.capabilities ? pluginIdProblemText(meta.name) : null,
     codeText,
     incompleteSignature: hasSign !== hasPub,
     signatureFailed: false,

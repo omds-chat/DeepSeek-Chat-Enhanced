@@ -631,8 +631,16 @@ export const installPluginEngine = (): PluginEngine => {
     }
     const resolved = inspection.manifest ?? loaded.manifest
     if (!resolved) {
+      // 插件名收敛不出合规 id 时，把原因指向命名而不是笼统的清单非法
+      if (inspection.manifestProblem) {
+        pushEngineLog(`install local ${fallbackId} rejected: ${inspection.manifestProblem}`)
+      }
       report('pluginManifestMissing', { id: fallbackId })
-      return { ok: false, reason: 'invalid-manifest' }
+      return {
+        ok: false,
+        reason: 'invalid-manifest',
+        detail: inspection.manifestProblem ?? undefined,
+      }
     }
     const material: SignatureMaterial = {
       eec: '',
@@ -718,6 +726,10 @@ export const installPluginEngine = (): PluginEngine => {
   const installFromLocalFile = async (file: File): Promise<InstallResult> => {
     const inspected = await inspectLocalPackage(file)
     if (!inspected.ok) {
+      // 预检失败的具体原因只进引擎日志，界面用通用文案
+      if (inspected.detail !== undefined) {
+        pushEngineLog(`local package ${file.name} rejected: ${inspected.reason} ${inspected.detail}`)
+      }
       report('pluginInstallRejected', {
         id: file.name,
         reason: pluginReasonText(inspected.reason, inspected.detail),
@@ -729,7 +741,7 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 存储记录转成注册表用的来源元数据。
-   * 旧记录可能没有数据基址,此时按 source_url 推导,恢复后再落盘补齐,更新检查不必回查 datalog.json。
+   * 旧记录可能没有数据基址,此时按 source_url 推导,恢复后再落盘补齐,更新检查不必回查 plugins.json。
    */
   const toOrigin = (entry: StoredPluginRecord): store.PluginOrigin => {
     const origin: store.PluginOrigin = {

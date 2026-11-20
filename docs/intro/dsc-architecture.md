@@ -143,7 +143,7 @@ core 对 engine 只暴露两样东西: 一份能力表,和一对凭据。
 | 错误类型 | 能力未授予、限流、超时、取消四种,另有插件数据错误与外源请求错误 |
 | 安装拒绝原因 | 清单非法、未知能力、未知贡献点、版本不兼容、重名、缺依赖、冲突、加载失败、产物非法、签名无效,以及离线包专有的扩展名、解包、缺元信息、缺产物、元信息非法、体积超限 |
 
-这份契约一旦改动就影响第三方插件,任何字段增删都要按规范流程走。公开契约的完整条文见 [dsc 插件开发规范](../user/develop/basic/plugin-develop-spec.md) 与 [dsc 插件产物规范](../user/develop/basic/plugin-product-spec.md)。
+这份契约一旦改动就影响第三方插件,任何字段增删都要按规范流程走。公开契约的完整条文见模板仓库的 [dsc 插件开发规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-develop-spec.md) 与 [dsc 插件运行时规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md);本仓库的 [dsc 插件产物规范](../user/develop/basic/plugin-product-spec.md) 只保留模板未覆盖的签名与持久化内容。
 
 ### 内部实现
 
@@ -253,7 +253,7 @@ dsc 的插件机制是浏览器内的最小实现,概念上与 dsh 一一对应,
 
 | 文档 | 内容 |
 |:---:|:---:|
-| [dsc 插件开发规范](../user/develop/basic/plugin-develop-spec.md) | 插件对象、清单字段、能力清单、可见数据范围与错误处理 |
-| [dsc 插件产物规范](../user/develop/basic/plugin-product-spec.md) | 产物形态、导出契约、加载方式、安装持久化与降级行为 |
+| [dsc 插件开发规范](../user/develop/basic/plugin-develop-spec.md) | 占位与关联文档,规范以模板仓库 specs 为准 |
+| [dsc 插件产物规范](../user/develop/basic/plugin-product-spec.md) | 模板未覆盖的 dsce 专有内容:合集签名与来源结论、目录数据校验、安装持久化、引擎安装接口 |
 | [信任链与 PKI 签名](../user/develop/basic/trust-chain.md) | 根证书、终端签名证书、合集签名与作者签名、吊销与重签 |
 | [DSC 与 DSH 的设计异同](dsc-diff-dsh.md) | 设计理念、产品服务、服务边界与技术架构的对比 |

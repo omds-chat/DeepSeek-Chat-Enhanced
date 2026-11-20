@@ -25,7 +25,7 @@ dsc 插件在运行阶段就是一个符合 [dsc 插件产物规范](../basic/pl
 | 可用 API | 浏览器 API,例如 `fetch`、`localStorage`、`setTimeout` |
 | 不可用 | Node 内置模块、后端接口、本地文件系统 |
 | 依赖 | 不得新增运行依赖 |
-| 宿主版本 | dsc-core `1.0.0`,对应清单的 `engines` 字段 |
+| 宿主版本 | dsc-core `1.0.0`,对应清单的 `engines` 字段,写成单段版本范围 |
 
 产物按普通 ESM 在页面内 `import`,因此必须是浏览器能直接解析的模块代码,不能包含 `require` 或打包器专用的运行时占位。
 
@@ -106,6 +106,8 @@ export const activate = (context) => {
 
 | 能力 | 可见范围 | `context` 成员 | 限流 |
 |:---:|:---:|:---:|:---:|
+| 无 | 全部插件 | `context.id` | — |
+| 无 | 全部插件 | `context.version` | — |
 | `sessions:list` | 全部插件 | `context.sessions.list` | 30 次 / 10 秒 |
 | `sessions:read` | 全部插件 | `context.sessions.read` | 30 次 / 10 秒 |
 | `sessions:rename` | 全部插件 | `context.sessions.rename` | 5 次 / 10 秒 |
@@ -114,6 +116,8 @@ export const activate = (context) => {
 | `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
 | `net:fetch` | 仅内置插件 | `context.net.getText`、`context.net.postJson` | 10 次 / 10 秒 |
+
+`context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
 
 `net:fetch` 只对内置插件开放。第三方插件在清单里申请它时,安装结果为 `unknown-capability`,与申请一个不存在的能力表现一致;调用层还会再校验一次。
 
@@ -172,7 +176,7 @@ npm 包的要点:
 - `package.json` 的 `files` 需要包含 `dist`,否则产物不会进包。
 - `package/` 下的其他内容被忽略,只安装 `package/dist/` 下的文件。
 
-`meta.json` 是安装依据:引擎只校验 `name`、`version`、`author` 非空且版本号为三段数字;清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。
+`meta.json` 是安装依据:引擎只校验 `name`、`version`、`author` 非空且版本号为三段数字;清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。`dependencies.dsc` 会被当作清单的 `engines` 使用,必须写成单段版本范围;写成组合范围时预检按 `invalid-meta` 拒绝,原因说明指向 `dependencies.dsc`。
 
 带作者签名的离线包:
 
@@ -208,7 +212,7 @@ npm 包的要点:
 | `invalid-manifest` | `id`、`name`、`version` 不符合规则,或产物未导出清单且调用时未传入清单 | 修正清单字段;确保产物导出 `manifest` |
 | `unknown-capability` | 申请了能力表之外的能力,或第三方插件申请 `net:fetch` | 只申请能力清单内的能力 |
 | `unknown-contribution` | `contributions` 不在贡献点表内 | 只使用 `session:changed` |
-| `incompatible-version` | `engines` 与宿主 `1.0.0` 不匹配 | 调整 `engines` |
+| `incompatible-version` | `engines` 与宿主 `1.0.0` 不匹配,或写成了 `>=1.0.0 <2.0.0` 这类组合范围 | 把 `engines` 改成单段表达式 |
 | `duplicate` | 同 id 插件已存在 | 先卸载旧插件再安装 |
 | `missing-dependency` | `dependencies` 中的插件未安装 | 先安装依赖 |
 | `conflict` | `conflicts` 中的插件已安装 | 先卸载冲突插件 |
@@ -216,9 +220,9 @@ npm 包的要点:
 | `load-failed` | 地址协议不支持、产物不是可存的 UTF-8 文本,或导入超过 10 秒 | 检查地址与产物格式 |
 | `invalid-plugin` | 产物没有导出 `activate`,或导出形态不被识别 | 检查导出形态 |
 | `missing-meta` / `missing-plugin` | 离线包根目录不是 `dist/` 的内容,或 npm 包里没有 `dist/` | 按打包要求重新生成离线包 |
-| `invalid-meta` | `meta.json` 缺少 `name`、`version`、`author`,或版本号不是三段数字 | 修正 `meta.json` |
+| `invalid-meta` | `meta.json` 缺少 `name`、`version`、`author`,版本号不是三段数字,或 `dependencies.dsc` 不是单段版本范围 | 修正 `meta.json`,版本范围写成单段表达式 |
 | `corrupt-package` | 压缩包损坏,或 `plugin.js` 不是 UTF-8 文本 | 重新打包 |
-| `package-too-large` | `plugin.js` 超过 1 MB | 精简产物(行压缩、去掉内联资源)后重新打包 |
+| `package-too-large` | `plugin.js` 超过 2 MB | 精简产物(行压缩、去掉内联资源)后重新打包 |
 
 签名校验不通过不属于安装拒绝:引擎仍会安装,只把该插件标记为校验失败并提示用户自行判断,重新签名后重新打包即可消除提示。
 

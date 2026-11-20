@@ -15,6 +15,7 @@ dsc-plugin-engine/
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
 ├── localPackage.ts # 本地离线包解析与校验：zip、tgz、meta.json、签名
 ├── pluginId.ts     # 插件 id 规则：清单插件名转 id 的唯一实现
+├── versionRange.ts # 版本范围规则：单段比较表达式，清单 engines 与离线包 dependencies.dsc 共用
 ├── signature.ts    # 产物签名校验：合集 CMS 分离验签与作者裸签名,作者公钥按 L2 清单哈希把关
 ├── builtin.ts      # 内置插件清单与工厂
 └── README.md       # 机制说明与 dsh 映射表
@@ -29,13 +30,13 @@ dsc-plugin-engine/
 | `id` | 是 | 小写字母开头,允许数字与连字符,3 到 64 字符 |
 | `name` | 是 | 展示名称,不得为空 |
 | `version` | 是 | `主版本.次版本.修订号` |
-| `engines` | 否 | 兼容的 dsc-core 版本范围,支持 `^`、`~`、`>=`、`<=` 与精确版本 |
+| `engines` | 否 | 兼容的 dsc-core 版本范围,只接受单段表达式,支持 `^`、`~`、`>=`、`<=` 与精确版本 |
 | `dependencies` | 否 | 依赖的插件 id,安装时须已存在,激活时须已激活 |
 | `conflicts` | 否 | 冲突的插件 id,同时安装会被拒绝 |
 | `capabilities` | 是 | 申请的能力,必须在核心能力表内且不得重复 |
 | `contributions` | 否 | 订阅的贡献点,必须在贡献点表内且不得重复 |
 
-清单的 `id` 由插件名收敛而来：去掉 `@scope/` 前缀后转小写,非 `[a-z0-9-]` 的字符折叠为连字符,再去掉首尾连字符,结果不匹配规则时安装按 `invalid-manifest` 拒绝。规则只有 `pluginId.ts` 一处实现,离线包、在线安装与插件市场都引用它,同一插件经不同路径得到同一个 id。
+清单的 `id` 由插件名收敛而来：去掉 `@scope/` 前缀后转小写,非 `[a-z0-9-]` 的字符折叠为连字符,再去掉首尾连字符。收敛结果立即按清单规则 `^[a-z][a-z0-9-]{2,63}$` 校验,字符形态或长度不合规时安装按 `invalid-manifest` 拒绝,原因说明指向插件命名而不是笼统的清单非法。规则只有 `pluginId.ts` 一处实现,离线包、在线安装与插件市场都引用它,同一插件经不同路径得到同一个 id。
 
 清单可以随产物一起导出：`export const manifest = {...}`,也可以挂在 `default` 导出对象上,模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`;两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
@@ -43,7 +44,7 @@ dsc-plugin-engine/
 
 `source` 还可携带目录数据的三层清单结论：`catalogVerified` 是 L1 清单的结论,`metaVerified` 是该版本 L3 清单的结论,`revisions` 是各层 `revision`,`authorPubSha512` 是 L2 清单登记的 `author_pub.pem` 哈希。前三项只写进安装记录,不参与来源结论;`authorPubSha512` 用于把关作者公钥:引擎拉到的公钥字节与该哈希不一致时不采用该公钥,作者签名按未校验处理,合集 CMS 验签不受影响。
 
-`source` 还可携带两个目录地址：`dataBase` 是该版本目录(`<base>/plugins/<作者>/<插件>/<版本>/`),`pluginBase` 是插件目录(`<base>/plugins/<作者>/<插件>/`)。两者缺省时由 `url` 推导:`deriveDataBase` 去掉最后一段文件名,`derivePluginBase` 再去掉版本号。安装时两个地址一并写入安装记录,后续检查更新直接按 `dataBase` 请求 `versions.json` 与 `meta.json`,不再从来源根目录的 `datalog.json` 反查。
+`source` 还可携带两个目录地址：`dataBase` 是该版本目录(`<base>/plugins/<作者>/<插件>/<版本>/`),`pluginBase` 是插件目录(`<base>/plugins/<作者>/<插件>/`)。两者缺省时由 `url` 推导:`deriveDataBase` 去掉最后一段文件名,`derivePluginBase` 再去掉版本号。安装时两个地址一并写入安装记录,后续检查更新直接按 `dataBase` 请求 `versions.json` 与 `meta.json`,不再从来源根目录的 `plugins.json` 反查。
 
 ### 生命周期
 
@@ -113,7 +114,7 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 缺失某个字段表示这条记录没有对应的签名材料,启动校验按未校验处理。旧版的 `pub` 与 `sign` 字段(JSON 信任签名方案)不再读取,升级后已安装插件显示为未校验,重新安装即可拿到新字段。没有任何一项校验字段的记录视为旧版本安装,已安装列表在来源结论旁提示重新安装,并在操作列给出「重新安装」入口,按记录的同一版本走一次完整安装流程。
 
-`code` 保存插件代码文本,在线与本地插件都写:在线插件在安装阶段下载 `plugin.js` 后按 UTF-8 文本存入,本地插件取离线包内的 `plugin.js`。启动恢复只用它重建 Blob URL 再 `import()`,不再为启动拉取网络;网络不可达时插件照常启动。写入前已确认代码文本可以还原成原始字节,签名针对原始字节计算,因此重建后的字节与验签时一致。单个插件代码上限 1 MB,超限时拒绝安装并给出原因。
+`code` 保存插件代码文本,在线与本地插件都写:在线插件在安装阶段下载 `plugin.js` 后按 UTF-8 文本存入,本地插件取离线包内的 `plugin.js`。启动恢复只用它重建 Blob URL 再 `import()`,不再为启动拉取网络;网络不可达时插件照常启动。写入前已确认代码文本可以还原成原始字节,签名针对原始字节计算,因此重建后的字节与验签时一致。单个插件代码上限 2 MB(见 `types.ts` 的 `MAX_PLUGIN_CODE_BYTES`),在线与本地共用这一上限,超限时拒绝安装并给出原因。
 
 安装、卸载、启用与停用都立即落盘;落盘失败只写入 `engineLogs()`,不影响内存状态。IndexedDB 不可用时降级为内存存储,同样只记引擎日志,不抛错。
 
@@ -193,7 +194,9 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | `plugin.js` 是可还原的 UTF-8 文本 | `corrupt-package` |
 | 同时有 `plugin.js.author.sig` 与 `author_pub.pem` 时,作者签名不通过 | 不拒绝,记录标记为 `failed` |
 | 只有作者签名或只有作者公钥 | 不拒绝,按 `unverified` 安装 |
-| `plugin.js` 不超过 1 MB | `package-too-large` |
+| `plugin.js` 不超过 2 MB | `package-too-large` |
+
+`meta.json` 的 `dependencies.dsc` 会被直接当作清单的 `engines` 使用,只接受单段表达式;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检按 `invalid-meta` 拒绝,原因说明指向该字段。
 
 包内只有一半签名材料时按 `unverified` 安装,并在引擎日志里记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
 
