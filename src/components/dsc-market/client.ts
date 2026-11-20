@@ -113,7 +113,7 @@ type ResolveOutcome = {
   eecFromTrustList: boolean
   /** 合集 EEC 证书链是否校验通过 */
   chainVerified: boolean
-  /** 合集 id：源站点上证书路径 certs/<合集 id>-eec.crt 要用它 */
+  /** 合集 id：源站点上证书路径 certs/<合集 id>/<合集 id>-eec.crt 要用它 */
   collectionId: string
 }
 
@@ -495,8 +495,8 @@ const revisionsOf = (
 
 /**
  * 合集证书：信任清单已登记时优先用它，省一次请求；
- * 未登记时按 certs/<合集 id>-eec.crt 取，取不到再退回旧的 eec.pem，
- * 两条都失败时返回空串，由调用方按拿不到证书处理。
+ * 未登记时按 certs/<合集 id>/<合集 id>-eec.crt 取，取不到再退回旧站点的扁平路径
+ * certs/<合集 id>-eec.crt 与最旧的 eec.pem，三档都失败时返回空串，由调用方按拿不到证书处理。
  */
 const resolveCollectionEec = async (
   net: NetCapability,
@@ -939,7 +939,8 @@ export const createMarketClient = (
       sigUrl: paths.sigUrl,
       authorPubUrl: paths.authorPubUrl,
       authorSigUrl: paths.authorSigUrl,
-      // 来源根目录下的合集证书：certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；引擎取到后先做链校验
+      // 来源根目录下的合集证书：嵌套的 certs/<合集 id>/<合集 id>-eec.crt 优先，旧站点的扁平路径
+      // certs/<合集 id>-eec.crt 兼容，最旧的 eec.pem 兜底；引擎取到后先做链校验
       eecUrls: collectionCertPaths(collectionId).map((path) => joinUrl(location.root, path)),
       ...(conclusions ?? { catalogVerified: false, metaVerified: false, revisions: {} }),
     }
@@ -1063,7 +1064,8 @@ export const createMarketClient = (
         // 作者公钥放在作者目录，与合集分发结构 plugins/<作者>/author_pub.pem 一致
         authorPubUrl: joinUrl(baseUrl, 'plugins/' + plugin.author + '/author_pub.pem'),
         authorSigUrl: joinUrl(baseUrl, versionPath + 'plugin.js.author.sig'),
-        // 来源自带的合集证书：certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；引擎取到后先做链校验
+        // 来源自带的合集证书：嵌套的 certs/<合集 id>/<合集 id>-eec.crt 优先，旧站点的扁平路径
+        // certs/<合集 id>-eec.crt 兼容，最旧的 eec.pem 兜底；引擎取到后先做链校验
         eecUrls,
       }
       // 清单已登记该来源的证书时优先用它，省一次请求；两种证书都要过链校验

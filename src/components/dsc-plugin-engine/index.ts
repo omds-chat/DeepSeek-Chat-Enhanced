@@ -70,7 +70,8 @@ const MAX_ENGINE_LOG = 100
 /**
  * 安装时携带的来源信息。
  * eec 与 eecUrls 都提供合集证书：两者都有时优先用信任清单登记的 eec，省一次请求；
- * eecUrls 按顺序尝试，规范路径 certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；
+ * eecUrls 按顺序尝试，公开发布布局 certs/<合集 id>/<合集 id>-eec.crt 优先，
+ * 旧站点的扁平布局 certs/<合集 id>-eec.crt 兼容，最旧的 eec.pem 最后兜底；
  * 证书必须在本机通过证书链校验才会用于 CMS 验签，链不通过时结论为 failed 且不再验签。
  * authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签；没有证书时 CMS 验签直接跳过。
  */

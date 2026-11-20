@@ -1,7 +1,9 @@
 /**
  * 合集证书在来源站点的取件路径。
- * 规范布局是 <来源基址>/certs/<合集 id>-eec.crt，合集 id 与该来源在信任清单登记的合集 id 一致；
- * 旧的 <来源基址>/eec.pem 只作兼容兜底，供尚未迁移的第三方来源继续使用。
+ * 公开发布布局是 <来源基址>/certs/<合集 id>/<合集 id>-eec.crt，目录名与合集 id 一致，
+ * 与该来源在信任清单登记的合集 id 相同；
+ * 旧站点仍在用的扁平路径 <来源基址>/certs/<合集 id>-eec.crt 只作兼容，
+ * 最旧的 <来源基址>/eec.pem 排在最后兜底。
  */
 
 /** 合集证书目录 */
@@ -24,14 +26,29 @@ export const normalizeCollectionId = (name: string): string =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
 
-/** 规范取件路径 certs/<合集 id>-eec.crt；id 不合法时返回空串 */
+/** 公开发布布局 certs/<合集 id>/<合集 id>-eec.crt；id 不合法时返回空串 */
 export const collectionCertPath = (id: string): string =>
+  ID_PATTERN.test(id)
+    ? COLLECTION_CERT_DIR + '/' + id + '/' + id + COLLECTION_CERT_SUFFIX
+    : ''
+
+/**
+ * 旧站点的扁平布局 certs/<合集 id>-eec.crt；id 不合法时返回空串。
+ * 仅用于兼容尚未迁移到公开发布布局的来源，新来源不应依赖它。
+ */
+export const flatCertPath = (id: string): string =>
   ID_PATTERN.test(id) ? COLLECTION_CERT_DIR + '/' + id + COLLECTION_CERT_SUFFIX : ''
 
-/** 依次尝试的取件路径：规范路径优先，旧的 eec.pem 兜底，两条都失败才算拿不到证书 */
+/**
+ * 依次尝试的取件路径：公开发布布局优先，旧站点的扁平布局兼容，旧的 eec.pem 最后兜底。
+ * 三档都取不到才算拿不到证书；id 不合法时只剩 eec.pem 一档。
+ */
 export const collectionCertPaths = (id: string): string[] => {
   const canonical = collectionCertPath(id)
-  return canonical === '' ? [LEGACY_EEC_FILE] : [canonical, LEGACY_EEC_FILE]
+  if (canonical === '') {
+    return [LEGACY_EEC_FILE]
+  }
+  return [canonical, flatCertPath(id), LEGACY_EEC_FILE]
 }
 
 /** 信任清单里一条合集的标识；dir 是清单登记路径里的合集目录名 */

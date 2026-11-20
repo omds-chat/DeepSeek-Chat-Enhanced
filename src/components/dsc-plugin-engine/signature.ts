@@ -55,7 +55,8 @@ export type SignatureSource = {
   eec?: string
   /**
    * 来源自带的合集证书地址，按顺序尝试：
-   * 规范路径 certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底；清单未登记时取它
+   * 公开发布布局 certs/<合集 id>/<合集 id>-eec.crt 优先，旧站点的扁平布局
+   * certs/<合集 id>-eec.crt 兼容，最旧的 eec.pem 最后兜底；清单未登记时取它
    */
   eecUrls?: string[]
   /** plugin.js.sig 地址；缺省为 <url>.sig */
@@ -86,7 +87,8 @@ export const authorPubMatches = async (
 /**
  * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。
  * 合集证书优先用信任清单已登记或安装记录里已存的那张，没有时在线依次尝试来源自带的
- * certs/<合集 id>-eec.crt 与旧的 eec.pem；离线不发请求，只用已存的证书。证书都必须在本机用构建内嵌的根证书通过证书链校验才会用于验签，
+ * certs/<合集 id>/<合集 id>-eec.crt、旧站点的 certs/<合集 id>-eec.crt 与最旧的 eec.pem；
+ * 离线不发请求，只用已存的证书。证书都必须在本机用构建内嵌的根证书通过证书链校验才会用于验签，
  * 校验在 verifyArtifact 里完成。都没有时 CMS 验签直接跳过，由调用方按拿不到证书处理。
  */
 export const loadSignatureMaterial = async (
@@ -123,8 +125,9 @@ const resolveAuthorPub = async (source?: SignatureSource): Promise<string> => {
 /**
  * 取验签用的合集证书。
  * 已登记的那份（信任清单登记或安装记录里存的）优先，省一次来源站点的请求；
- * 没有登记时在线按顺序尝试来源自带的地址：规范路径 certs/<合集 id>-eec.crt 优先，
- * 取不到再试旧的 eec.pem，两条都失败才算拿不到证书；离线不发请求。
+ * 没有登记时在线按顺序尝试来源自带的地址：公开发布布局 certs/<合集 id>/<合集 id>-eec.crt 优先，
+ * 取不到再试旧站点的扁平路径 certs/<合集 id>-eec.crt，最后试最旧的 eec.pem，
+ * 三档都失败才算拿不到证书；离线不发请求。
  * 证书一律由 verifyArtifact 用构建内嵌的根证书校链，链不通过不会用于 CMS 验签。
  */
 const resolveEec = async (source?: SignatureSource): Promise<string> => {
@@ -149,7 +152,9 @@ const resolveEec = async (source?: SignatureSource): Promise<string> => {
     }
   }
   if (eecUrls.length > 0) {
-    noteMaterial('没有取到来源站点的合集证书，certs 布局与 eec.pem 兜底都失败，跳过 CMS 验签')
+    noteMaterial(
+      '没有取到来源站点的合集证书，嵌套与扁平两种 certs 布局、eec.pem 兜底都失败，跳过 CMS 验签'
+    )
   }
   return ''
 }

@@ -106,7 +106,7 @@ export type SourceRuntime = {
   meta: SourceMeta | null
   /** 该来源在信任清单登记的合集 EEC 证书 PEM；未列入清单时为 null */
   eec: string | null
-  /** 证书来自 online-data 信任清单，而不是来源自己分发的 eec.pem */
+  /** 证书来自 online-data 信任清单，而不是来源站点自己分发的合集证书 */
   eecFromTrustList: boolean
   /** 合集 EEC 证书链是否校验通过；endorsed 来源为 false 时表示只有 dsc 背书这一层判定 */
   chainVerified: boolean
@@ -126,7 +126,8 @@ export type SourceRuntime = {
 /**
  * 安装计划；交给引擎的 installFromUrl。
  * eec 是信任清单登记的合集证书，登记了就用它，省一次请求；
- * eecUrls 是来源自带的证书地址，按顺序尝试：certs/<合集 id>-eec.crt 优先，旧的 eec.pem 兜底。
+ * eecUrls 是来源自带的证书地址，按顺序尝试：公开发布布局 certs/<合集 id>/<合集 id>-eec.crt 优先，
+ * 旧站点的扁平布局 certs/<合集 id>-eec.crt 兼容，最旧的 eec.pem 最后兜底。
  * 两种证书都必须由引擎用内置根 CA 通过证书链校验才会用于验签，链不通过时来源结论为 failed。
  */
 export type InstallPlan = CatalogConclusions & {
@@ -140,7 +141,7 @@ export type InstallPlan = CatalogConclusions & {
   sourceType: PluginSourceType
   /** 合集 EEC 证书 PEM；来自 online-data 信任清单，已登记时优先使用 */
   eec?: string
-  /** 来源自带的合集证书地址，按顺序尝试；清单未登记时由引擎依次取用 */
+  /** 来源自带的合集证书地址，按顺序尝试（嵌套、扁平、eec.pem 三档）；清单未登记时由引擎依次取用 */
   eecUrls?: string[]
   /** plugin.js.sig 地址，CMS 分离签名 */
   sigUrl: string

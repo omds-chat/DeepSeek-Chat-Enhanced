@@ -39,7 +39,7 @@ export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => 
   const collectionId = collectionIdOf(listed, source.name)
   if (isEndorsedSource(source)) {
     if (!listed) {
-      // 只有 dsc 背书这一层判定；安装时仍由引擎按 certs/<合集 id>-eec.crt 取证书验签
+      // 只有 dsc 背书这一层判定；安装时仍由引擎按来源 certs 布局的嵌套、扁平与 eec.pem 三档取证书验签
       return {
         trust: 'endorsed',
         trustFailure: null,

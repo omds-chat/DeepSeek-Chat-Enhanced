@@ -19,23 +19,28 @@ import type {
   UiCapability,
 } from './types.js'
 
-/** 单能力策略：时间窗内的调用上限与单次超时 */
-type Policy = { limit: number; windowMs: number; timeoutMs: number }
+/**
+ * 单能力策略：时间窗内的调用上限，以及异步调用的单次超时。
+ * 同步成员没有超时（同步调用不适用），这几项不填 timeoutMs：
+ * sessions:rename、notify、plugins:storage，以及只给引擎用的 plugins:data-clear；
+ * events:session 只登记处理器、不逐次调用，同样不填。
+ */
+type Policy = { limit: number; windowMs: number; timeoutMs?: number }
 
 const POLICIES: Record<CoreCapabilityId, Policy> = {
   'sessions:list': { limit: 30, windowMs: 10000, timeoutMs: 3000 },
   'sessions:read': { limit: 30, windowMs: 10000, timeoutMs: 3000 },
-  'sessions:rename': { limit: 5, windowMs: 10000, timeoutMs: 3000 },
-  'events:session': { limit: 5, windowMs: 10000, timeoutMs: 3000 },
-  notify: { limit: 10, windowMs: 10000, timeoutMs: 3000 },
+  'sessions:rename': { limit: 5, windowMs: 10000 },
+  'events:session': { limit: 5, windowMs: 10000 },
+  notify: { limit: 10, windowMs: 10000 },
   'settings:locale': { limit: 60, windowMs: 10000, timeoutMs: 3000 },
   // 内层 10 秒超时由 dsc-core 的 net:fetch 自己中止请求，这里只做外层兜底
   'net:fetch': { limit: 10, windowMs: 10000, timeoutMs: 12000 },
   // 内层 5 秒超时由 dsc-core 的计数请求自己中止，POST 与 GET 各用一个窗口，避免互相挤占
   'net:fetch-post': { limit: 10, windowMs: 10000, timeoutMs: 7000 },
-  'plugins:storage': { limit: 100, windowMs: 10000, timeoutMs: 3000 },
+  'plugins:storage': { limit: 100, windowMs: 10000 },
   // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
-  'plugins:data-clear': { limit: 0, windowMs: 10000, timeoutMs: 3000 },
+  'plugins:data-clear': { limit: 0, windowMs: 10000 },
 }
 
 /** 能力未授予 */
@@ -166,7 +171,12 @@ export const createPluginContext = ({
     if (options?.signal?.aborted) {
       throw new PluginAbortError(capability)
     }
-    return await runWithTimeout(run(), POLICIES[capability].timeoutMs, {
+    const { timeoutMs } = POLICIES[capability]
+    // 策略表没给超时的能力按同步成员处理，不包装超时；异步成员都在表里给出数值
+    if (timeoutMs === undefined) {
+      return await run()
+    }
+    return await runWithTimeout(run(), timeoutMs, {
       onTimeout: () => report('pluginCallTimeout', { id: manifest.id, capability }),
       signal: options?.signal,
       abortError: () => new PluginAbortError(capability),

@@ -40,7 +40,7 @@ export type StoredPluginRecord = {
   manifest_revisions?: ManifestRevisions
   /** 合集 EEC 证书 PEM */
   eec?: string
-  /** 证书来自 online-data 信任清单；旧记录没有该字段，按未锚定处理 */
+  /** 证书链是否已在本机用内置根证书校验通过；旧记录没有该字段，按未锚定处理 */
   eec_anchored?: boolean
   /** 来源信任判定；旧记录没有该字段 */
   source_trust?: SourceTrustState

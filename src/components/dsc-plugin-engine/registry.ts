@@ -34,7 +34,7 @@ export type PluginOrigin = {
   dataBase?: string
   /** 插件目录的地址,形如 <base>/plugins/<作者>/<插件>/ */
   pluginBase?: string
-  /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签；清单已登记时取清单证书，未登记时取来源 certs 目录下的证书 */
+  /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签；清单已登记时取清单证书，未登记时按来源 certs 布局的嵌套、扁平与 eec.pem 三档依次取 */
   eec?: string
   /** 证书链是否已在本机校验通过；缺省视为未校验，来源结论按 failed 处理 */
   eecAnchored?: boolean

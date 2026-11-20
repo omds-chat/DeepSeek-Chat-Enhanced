@@ -56,7 +56,7 @@ dsc-market/
 3. 取 `<base_url>/manifest.json` 与 `manifest.json.sig`,按 L1 清单验签,再用它校验根 `meta.json` 与 `plugins.json` 的哈希。
 4. 取 `<base_url>/plugins.json` 得到插件目录索引,每条包含 `plugin_name`、`author`、`tag`。
 5. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/manifest.json` 与签名,按 L3 清单验签,再用它校验 `versions.json` 与该版本 `meta.json` 的哈希;同时取 `<base_url>/plugins/<author>/manifest.json` 按 L2 清单验签,取出 `author_pub.pem` 登记的哈希。拿到 `versions.json` 的 `latest` 后取该版本 `meta.json` 作为展示信息。
-6. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `plugins.json` 反查。三层清单的结论与各层 revision 随安装来源交给引擎。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrls` 即来源自带的地址列表,按顺序为 `<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`;引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
+6. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `plugins.json` 反查。三层清单的结论与各层 revision 随安装来源交给引擎。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrls` 即来源自带的地址列表,按顺序为 `<base_url>/certs/<合集 id>/<合集 id>-eec.crt`、`<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`(嵌套布局是当前公开发布布局,扁平路径只在旧站点存在、留作兼容,`eec.pem` 最后兜底);引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
 
 合集的可信性由「根 CA 签发的 EEC」证明,没有额外的合集信任签名(旧结构见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md))。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
 
@@ -98,7 +98,7 @@ dsc-market/
 
 目录数据是否已校验是独立结论,用 `catalogVerified` 表示,不并入来源结论:来源运行态与安装计划各带一份,前者是 L1 结论,后者是 L1 与 L3 结论的合取。目录未校验时来源结论不变,产物仍按 `plugin.js.sig` 判定。
 
-安装计划同时给出两个证书来源: 清单已登记时带 `eec`(优先使用,省一次请求),任何在线来源都带 `eecUrls`,按顺序为 `<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`。两种证书都必须由引擎先用内置根 CA 校验链,链不通过时结论为 `failed` 且不发起 CMS 验签,安装记录以 `eec_anchored` 记为未通过链校验。市场把运行态的 `trust` 与 `trustFailure` 一并交给引擎,但只用于界面展示来源是否被官方认可,不参与来源结论判定。
+安装计划同时给出两个证书来源: 清单已登记时带 `eec`(优先使用,省一次请求),任何在线来源都带 `eecUrls`,按顺序为嵌套的 `<base_url>/certs/<合集 id>/<合集 id>-eec.crt`、旧站点的扁平路径 `<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`。两种证书都必须由引擎先用内置根 CA 校验链,链不通过时结论为 `failed` 且不发起 CMS 验签,安装记录以 `eec_anchored` 记为未通过链校验。市场把运行态的 `trust` 与 `trustFailure` 一并交给引擎,但只用于界面展示来源是否被官方认可,不参与来源结论判定。
 
 信任锚 `__ROOT_CA_PEM__` 由 `rspack.config.ts` 在构建时从 `certs/ds-chat/ds-chat-root-ca.crt` 注入。信任清单里的同名根证书(`certs/ds-chat/ds-chat-root-ca.crt`)只用于比对,与内嵌根证书不一致时以构建内置的为准,并在控制台留一条提示。
 
@@ -136,7 +136,7 @@ dsc-market/
 | 判定 | 本地 `manifest.version` 落后为「可更新」,相同或更高为「已是最新」,版本号不合法或没有来源时不显示任何标注 |
 | 请求约束 | 单个请求超时 1 秒,并发上限 4,失败静默;结果按插件目录缓存 5 分钟 |
 
-「可更新」是强提示,点击后按钮转为 3 秒确认态,确认后由 `reinstallPlan` 生成重新安装计划：产物与签名材料地址按已安装记录的版本目录推导,证书地址按来源根目录推导为 `certs/<合集 id>-eec.crt` 与兜底的 `eec.pem`,清单已登记时优先用清单证书,两种证书都要过链校验。引擎没有覆盖安装入口,因此界面先卸载旧记录再按最新版重新安装;新版本安装失败时按记录里的版本回滚。同一路径也用于旧版本安装的记录: 这类记录没有任何校验字段,来源结论只能是「来源未确认」,已安装列表在结论旁补一条提示并给出「重新安装」,点击后按记录里的同一版本走上面的流程。
+「可更新」是强提示,点击后按钮转为 3 秒确认态,确认后由 `reinstallPlan` 生成重新安装计划：产物与签名材料地址按已安装记录的版本目录推导,证书地址按来源根目录推导为 `certs/<合集 id>/<合集 id>-eec.crt`、旧站点的扁平路径 `certs/<合集 id>-eec.crt` 与兜底的 `eec.pem`,清单已登记时优先用清单证书,两种证书都要过链校验。引擎没有覆盖安装入口,因此界面先卸载旧记录再按最新版重新安装;新版本安装失败时按记录里的版本回滚。同一路径也用于旧版本安装的记录: 这类记录没有任何校验字段,来源结论只能是「来源未确认」,已安装列表在结论旁补一条提示并给出「重新安装」,点击后按记录里的同一版本走上面的流程。
 
 ## 下载计数
 
@@ -179,7 +179,7 @@ client?.addSource('自定义', ['https://example.com/plugins/'])
 client?.setBaseUrls('awesome-dsc-plugin', ['https://cdn.example.com/'])
 client?.moveSource('dsc-inner-plugin', -1)
 client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
-client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(规范路径优先,旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单
+client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(嵌套路径优先,旧站点的扁平路径兼容,最旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 await client?.checkUpdates([{ id: 'demo', version: '1.0.0', sourceUrl: 'https://example.com/plugins/a/demo/1.0.0/plugin.js' }]) // 更新检查：Map<id, { status: 'outdated' | 'latest', latest }>
 client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trust, trustFailure }，地址结构不符时为 null

@@ -10,7 +10,7 @@ export type TrustFailureReason = 'missing' | 'chain' | 'revoked'
 /** 信任清单中的单个合集；不可信的条目同样列出，只是不给证书 */
 export type TrustCollection = {
   id: string
-  /** 清单登记路径里的来源目录名；形如 certs/<目录名>/<目录名>-eec.crt 的目录名 */
+  /** 清单登记路径里的来源目录名；即公开发布布局 certs/<目录名>/<目录名>-eec.crt 的目录名 */
   dir: string
   /** 合集 EEC 证书 PEM；不可信时为 null，避免被当作可信证书使用 */
   eec: string | null
