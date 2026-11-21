@@ -79,6 +79,8 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 `net:fetch` 只对内置插件开放。引擎启动时把 `builtin.ts` 里的插件 id 登记进注册表;安装校验时若清单申请了 `net:fetch` 而 id 不在集合内,直接返回 `unknown-capability`,第三方插件无法把它与一个不存在的能力区分开。能力调用层会再校验一次,防止绕过安装校验直接拿到 `context.net`。
 
+联网受引擎管控:插件对外发起请求的通道就是 `context.net`,第三方插件当前拿不到 `net:fetch`,需要联网时由宿主决定是否开放。这条口径是契约约束,不是技术隔离:插件产物与宿主同源运行在页面主线程里,引擎无法从技术上阻止同源代码直接调用浏览器全局的 `fetch`,直接调用属于不合规,不能作为插件可以自行联网的依据。
+
 请求约束全部由 `dsc-core` 的 `net.ts` 落实：只允许 https 与 GET,不发送 Cookie 与自定义请求头(`credentials: 'omit'`),只接受 `text/*` 与 `application/json` 响应,响应体上限 512KB,超时 10 秒并用 `AbortController` 真正中止请求。网络失败与解析失败由插件自行降级,引擎不弹宿主提示。
 
 `context.net.postJson` 面向不计结果的计数请求：只允许 https 与 JSON 请求体,请求体与响应体上限各 4KB,超时 5 秒,不跟随重定向,响应体丢弃只回传状态码。它复用 `net:fetch` 的授予口径,但用自己的限流窗口,避免计数请求挤占读取预算。
@@ -228,7 +230,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 生命周期 | Cordis fiber 的挂载、激活与 `ctx.effect` 释放 | `registered` / `active` / `inactive` / `failed`,停用时执行 disposers | `index.ts`、`registry.ts` |
 | 服务与依赖注入 | `ctx.<key>` 服务与 `inject` 依赖 | `PluginContext` 能力对象与 `dependencies` 校验 | `capabilities.ts`、`registry.ts` |
 | 能力/贡献点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册贡献点并返回释放函数 | `capabilities.ts` |
-| 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
+| 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;联网只经 `context.net`,第三方插件不可用;插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
 | 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 IndexedDB `<APP_NAME>-plugins` 的 `plugins` 仓库,插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>` | `db.ts`、`../dsc-core/plugin-data.ts` |
 | 内置插件 | dsh 自带插件包与内置 bundle | `builtin.ts` 清单,启动时先于外部插件装载 | `builtin.ts` |
