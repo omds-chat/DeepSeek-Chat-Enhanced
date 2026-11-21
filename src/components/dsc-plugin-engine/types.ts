@@ -87,7 +87,10 @@ export type PluginManifest = {
   engines?: string
   /** 依赖的插件 id；安装时须已存在，激活时须已激活 */
   dependencies?: string[]
-  /** 冲突的插件 id；同时安装会被拒绝 */
+  /**
+   * 冲突的插件 id；安装期与启用期都生效。
+   * 安装时该项已存在即拒绝；启用时该项正在运行也拒绝，且不会自动停用任何一方。
+   */
   conflicts?: string[]
   /**
    * 申请的能力；必须在核心能力表内。
@@ -249,7 +252,7 @@ export type LoadedPlugin = { plugin: DscPlugin; manifest?: PluginManifest }
 /** 插件状态 */
 export type PluginState = 'registered' | 'active' | 'inactive' | 'failed'
 
-/** 安装拒绝原因；后五项只由本地离线包产生 */
+/** 安装拒绝原因；末尾几项只由本地离线包产生 */
 export type InstallRejection =
   | 'invalid-manifest'
   | 'unknown-capability'
@@ -258,6 +261,12 @@ export type InstallRejection =
   | 'duplicate'
   | 'missing-dependency'
   | 'conflict'
+  /** 安装期冲突：本插件清单声明排斥已安装的插件（正向），detail 给出对方 id */
+  | 'install-conflict-declared'
+  /** 安装期冲突：已安装插件的清单声明排斥本插件（反向），detail 给出对方 id */
+  | 'install-conflict-required'
+  /** 安装期冲突：两边互相声明排斥对方，detail 给出对方 id */
+  | 'install-conflict-mutual'
   | 'load-failed'
   /** 产物字节取不到：404、网络失败或被跨源策略拦住 */
   | 'artifact-unreachable'
@@ -276,8 +285,77 @@ export type InstallRejection =
   /** 插件代码超过单个插件上限 */
   | 'package-too-large'
 
-/** 安装结果 */
-export type InstallResult = { ok: true } | { ok: false; reason: InstallRejection; detail?: string }
+/**
+ * 安装结果。
+ * 安装入口会自动启用插件，activation 记录这次启用的结论：启用被拒（例如与运行中的插件冲突）时
+ * 安装本身仍然成功，界面据此避免用「安装完成」提示盖掉启用被拒的原因。
+ * 拒绝原因为冲突类（install-conflict-*）时，conflicts 带回全部冲突对，
+ * detail 是与原因同类的那几对里对方插件的 id，供界面提示「哪一方声明的、涉及哪些 id」。
+ */
+export type InstallResult =
+  | { ok: true; activation?: ActivateResult }
+  | {
+      ok: false
+      reason: InstallRejection
+      detail?: string
+      /** 安装期冲突明细；只有冲突类原因带这个字段 */
+      conflicts?: InstallConflict[]
+    }
+
+/**
+ * 启用期冲突描述。
+ * single 表示只有一方在清单里声明排斥另一方；mutual 表示两边都声明了排斥对方。
+ * declarer 是发起要求的一方，target 是被要求关闭的一方；mutual 时 declarer 取本次要启用的插件。
+ */
+export type ActivationConflict = {
+  kind: 'single' | 'mutual'
+  declarer: string
+  target: string
+}
+
+/**
+ * 安装期冲突描述，与启用期冲突同形。
+ * declarer 是在清单里声明排斥对方的一方，target 是被排斥的一方；mutual 表示两边互相声明。
+ * 安装期判的是「能否共存」，已安装记录不论启停都算在内；
+ * 启用期的 activationConflicts 判的是「能否同时运行」，只看 active 的记录。
+ */
+export type InstallConflict = ActivationConflict
+
+/** 启用拒绝原因；conflict 表示与正在运行的插件冲突 */
+export type ActivateRejection =
+  | 'not-installed'
+  | 'no-plugin-instance'
+  | 'missing-dependency'
+  | 'conflict'
+  | 'activate-failed'
+
+/** 启用结果；冲突时必定带上全部冲突描述，界面按第一项提示 */
+export type ActivateResult =
+  | { ok: true }
+  | {
+      ok: false
+      reason: 'conflict'
+      detail: string
+      conflicts: ActivationConflict[]
+    }
+  | {
+      ok: false
+      reason: Exclude<ActivateRejection, 'conflict'>
+      detail?: string
+    }
+
+/** 停用选项；force 表示用户明确要求强行停用 */
+export type DeactivateOptions = { force?: boolean }
+
+/**
+ * 停用结果。
+ * depended-on 表示仍有处于启用状态的插件依赖它，停用被拒；dependents 列出这些插件。
+ * 强制标志不改变结论：引擎不会连带停用依赖方，关联停用由用户自己完成。
+ */
+export type DeactivateResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-active' }
+  | { ok: false; reason: 'depended-on'; dependents: string[]; forced: boolean }
 
 /** 双语文本；缺失的一侧用另一侧补 */
 export type LocalizedText = { 'zh-CN': string; 'en-US': string }
@@ -343,3 +421,35 @@ export type PluginStateView = {
   mounts: MountPoint[]
   error?: string
 }
+
+/**
+ * 待决定记录里的一对冲突，与启用期冲突同形。
+ * single 只表达一个方向：declarer 在清单里声明排斥 target；mutual 表示两边都声明了排斥对方。
+ */
+export type PendingConflictPair = ActivationConflict
+
+/**
+ * 一次冲突检测留下的待决定记录。
+ * 引擎检测到冲突时先把涉及的全部启用插件停用，再把整组冲突写成这条记录，
+ * 由用户在插件面板选择保留哪一个；选择之前不自动启用任何一方。
+ * 记录落在引擎自己的库里，不混进插件存储。
+ */
+export type PendingConflict = {
+  /** 组 id：按字典序拼接涉及插件 id，同一组插件再次触发时覆盖同一条记录 */
+  id: string
+  /** 涉及的全部插件 id，按字典序；由冲突对推导，读回时重建 */
+  plugins: string[]
+  /** 全部冲突对，至少一对 */
+  pairs: PendingConflictPair[]
+  /** 检测时间（毫秒时间戳） */
+  at: number
+}
+
+/** 用户对待决定冲突组做选择后的结论 */
+export type ConflictDecisionResult =
+  | { ok: true; kept: string; stopped: string[] }
+  | {
+      ok: false
+      reason: ActivateRejection | 'not-found' | 'not-in-group'
+      detail?: string
+    }

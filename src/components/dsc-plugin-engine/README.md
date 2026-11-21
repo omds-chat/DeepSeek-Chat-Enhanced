@@ -11,11 +11,14 @@ dsc-plugin-engine/
 ├── loader.ts       # 浏览器内加载插件运行时 js 产物
 ├── capabilities.ts # 能力白名单与受限代理（安全封装层）
 ├── requestPatch.ts # 请求补丁的白名单、范围裁剪与合并
-├── registry.ts     # 插件注册表、依赖与冲突校验、内置 id 集合
+├── registry.ts     # 插件注册表、安装与启用校验、内置 id 集合
+├── dependencies.ts # 依赖关系判定：停用前置检查、依赖未满足与被依赖阻塞两种状态
+├── installConflicts.ts # 安装期冲突判定：正反两个方向，与启用期同口径
 ├── sources.ts      # 供应端点注册表：声明合并（能力并集）、定义比对与能力矩阵
 ├── credentials.ts  # 供应端点凭证存取（IndexedDB，键为端点 id + 基址，插件不可见）
 ├── providerRun.ts  # 按端点执行：选端点、读凭证、调 source:run、错误归类
-├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
+├── db.ts           # 安装记录与待决定冲突组的持久化（IndexedDB，不可用时降级为内存）
+├── pendingConflicts.ts # 待决定冲突组：形态收敛、合并与按卸载清理
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
 ├── localPackage.ts # 本地离线包解析与校验：zip、tgz、meta.json、签名
 ├── pluginId.ts     # 插件 id 规则：清单插件名转 id 的唯一实现
@@ -37,8 +40,8 @@ dsc-plugin-engine/
 | `name` | 是 | 展示名称,不得为空 |
 | `version` | 是 | `主版本.次版本.修订号` |
 | `engines` | 否 | 兼容的 dsc-core 版本范围,只接受单段表达式,支持 `^`、`~`、`>=`、`<=` 与精确版本 |
-| `dependencies` | 否 | 依赖的插件 id,安装时须已存在,激活时须已激活 |
-| `conflicts` | 否 | 冲突的插件 id,同时安装会被拒绝 |
+| `dependencies` | 否 | 依赖的插件 id,安装、启用、停用、卸载四处都生效:安装时须已存在,激活时须已激活,停用与卸载时不得有已启用的依赖方 |
+| `conflicts` | 否 | 冲突的插件 id,安装期与启用期都生效,两个方向都算:安装时任一方声明排斥另一方即拒绝(原因按声明方向分三条);启用时只算 `active` 记录,冲突则停用双方并写入待决定记录,由用户选择保留哪一个 |
 | `capabilities` | 是 | 申请的能力,必须在核心能力表内且不得重复 |
 | `mounts` | 否 | 声明的挂载点(`session:changed`、`chat:before-request`),必须在挂载点表内且不得重复 |
 
@@ -54,14 +57,93 @@ dsc-plugin-engine/
 
 `source` 还可携带两个目录地址：`dataBase` 是该版本目录(`<base>/plugins/<作者>/<插件>/<版本>/`),`pluginBase` 是插件目录(`<base>/plugins/<作者>/<插件>/`)。两者缺省时由 `url` 推导:`deriveDataBase` 去掉最后一段文件名,`derivePluginBase` 再去掉版本号。安装时两个地址一并写入安装记录,后续检查更新直接按 `dataBase` 请求 `versions.json` 与 `meta.json`,不再从来源根目录的 `plugins.json` 反查。
 
+### 安装期校验
+
+在线安装(`installFromUrl`)、离线包安装(`commitLocalPackage`)与宿主注册(`install`)都先经过 `checkInstallable`,校验顺序与拒绝原因如下:
+
+| 校验 | 判定 | 拒绝原因 |
+|:---:|:---:|:---:|
+| 清单形态 | `id`、`name`、`version` 合规,能力与挂载点去重后都在表内 | `invalid-manifest`、`unknown-capability`、`unknown-mount` |
+| 重名 | 已有同 id 且带插件实例的记录 | `duplicate` |
+| 版本兼容 | `engines` 覆盖 `CORE_VERSION` | `incompatible-version` |
+| 冲突 | 两个方向都判,见下 | `install-conflict-declared`、`install-conflict-required`、`install-conflict-mutual` |
+| 依赖 | `dependencies` 都已登记 | `missing-dependency` |
+
+冲突判定落在 `installConflicts.ts`,与启用期的 `activationConflicts` 同口径:本插件的 `conflicts` 命中已安装记录是正向,已安装记录的 `conflicts` 命中本插件是反向,两边互相声明合并成一条 `mutual`。拒绝结果里 `reason` 按声明方向分成三条原因码,`detail` 给出与原因同类的那几对里对方插件的 id,`conflicts` 带回全部冲突对(`kind`、`declarer`、`target`),界面据此说清是哪一方声明的、涉及哪些 id;冲突对同时写进引擎日志。多个冲突对方向不一致时,提示取优先级最高的一类(双向、反向、正向依次降低),其余冲突对仍然随 `conflicts` 返回。
+
+两个时机的口径不同,区别在「拦住的是什么」:
+
+| 时机 | 参与判定的记录 | 拦住的东西 |
+|:---:|:---:|:---:|
+| 安装期 | 全部安装记录,含已停用与启动失败的占位记录 | 共存:互相排斥的两个插件不该同时留在列表里 |
+| 启用期 | 只算 `active` 记录 | 同时运行:停用的插件不占运行位 |
+
+因此「已停用但保留安装」的记录会拦下安装,却不会拦下启用:新插件一旦装上就与它共存,用户随时可以把它启用,安装期是唯一能提前拒绝的时点;启用期则按运行状态判定,只关心此刻是否同时运行。
+
 ### 生命周期
 
 ```
 install      → registered
-activate     → active     （依赖未激活或抛错、超时则 failed）
-deactivate   → inactive   （先调插件 deactivate，再执行 disposers 并清空挂载点）
-unload       → 移除记录   （存在已激活的下游依赖时拒绝）
+activate     → active     （依赖未激活时按已停用落盘并提示;与运行中的插件冲突时停用冲突双方并等待用户决定;抛错、超时则 failed）
+deactivate   → inactive   （存在已启用的依赖方时拒绝;先调插件 deactivate，再执行 disposers 并清空挂载点）
+unload       → 移除记录   （存在已启用的依赖方时拒绝）
 ```
+
+启用前除了检查依赖，还检查清单的 `conflicts`：声明里的某个插件只要处于 `active`，就按保守策略处置——先把冲突双方全部停用，再写入待决定记录，由用户选择保留哪一个；反向声明同样生效，正在运行的插件声明排斥本插件时也按同一策略处置。两边互相声明时合并为一条双向冲突，其余按单向冲突处理。`activate()` 的结构化结果保持不变：冲突时为 `{ ok: false, reason: 'conflict', conflicts: [...] }`，每个 `ActivationConflict` 带 `kind`（`single` 或 `mutual`）、`declarer` 与 `target`，调用方仍能拿到完整的冲突描述。
+
+### 冲突的保守处理
+
+冲突不留给用户「都跑着」的中间态，也不由引擎替用户选边：检测到冲突时先把涉及的全部插件停下来，再把整组冲突记成待决定状态，等用户在插件页选择。安装期的冲突不走这条路径，直接拒绝安装（见「安装期校验」）；下面的处置只针对启用期。
+
+```
+启用请求命中冲突
+  1. 停用本次冲突涉及的全部启用插件（含正在运行的一方）
+  2. 停用后依赖它们的插件按依赖未满足的既有口径自动停用
+  3. 把整组冲突写入待决定记录（引擎自己的库）
+  4. 发一条警告：冲突双方、声明方向、本次被停用的插件
+  5. 用户选择保留哪一个：删除该组记录，按选择启用保留的那一个，其余保持停用
+```
+
+| 环节 | 行为 | 位置 |
+|:---:|:---:|:---:|
+| 检测 | 声明方声明排斥目标方（单向），或两边互相声明（双向） | `registry.ts` 的 `activationConflicts` |
+| 停用 | 涉及的已启用插件全部停用，`enabled` 一并置为 false | `index.ts` 的 `suspendForConflict` |
+| 记录 | 冲突组：涉及插件 id、冲突对（含方向与声明方）、检测时间 | `pendingConflicts.ts`、`db.ts` |
+| 警告 | 单向与双向两条成对文案，带冲突双方与被停用的插件列表 | `i18n/zh.ts`、`i18n/en.ts` |
+| 选择 | 删除该组记录，启用保留的一个，其余保持停用，不连带启用依赖方 | `index.ts` 的 `resolvePendingConflict` |
+| 启动 | 记录涉及的插件一律不自动启用；记录里的插件已卸载时清理该条记录 | `index.ts` 的 `autoActivate`、`prunePending` |
+
+待决定记录的形态：
+
+| 字段 | 内容 |
+|:---:|:---:|
+| `id` | 按字典序拼接涉及插件 id，同一组插件再次触发时覆盖同一条 |
+| `plugins` | 涉及的全部插件 id，按字典序；由冲突对推导，读回时重建 |
+| `pairs` | 全部冲突对，每对带 `kind`（`single` 或 `mutual`）、`declarer` 与 `target` |
+| `at` | 检测时间（毫秒时间戳） |
+
+待决定记录落在引擎自己的库里（`<APP_NAME>-plugins` 版本 2 的 `conflict-groups` 仓库），不混进插件存储。与已有记录有交集的冲突并入同一条：一次待决定对应一个连通的冲突组，用户只选一个保留，其余保持停用。
+
+界面入口在插件页「已安装」列表顶部，独立成块，不改动列表的表格结构。理由：冲突双方都在同一个列表里，选完能立刻看到状态从「已停用」变成「运行中」；冲突只影响启用状态，与插件市场无关。逐条冲突默认全部列出，冲突对超过 5 条时先给汇总句与条数，点开才展开逐条详情（双方插件名、声明方向与原因）；某条冲突对涉及已卸载插件时整对略过，记录随之清理。
+
+引擎门面新增两个入口：`pendingConflicts()` 返回待决定记录的快照（已按卸载清理），`resolvePendingConflict(groupId, keepId)` 完成一次选择并返回结构化的 `ConflictDecisionResult`。
+
+### 依赖的四处生效
+
+依赖在安装、启用、停用、卸载四处都生效，判定共用同一份清单字段与注册表状态：
+
+| 时机 | 判定 | 不满足时 |
+|:---:|:---:|:---:|
+| 安装 | 依赖已登记 | 拒绝安装，原因 `missing-dependency` |
+| 启用 | 依赖处于 `active` | 不启用：记录直接标记为 `inactive`，错误字段写入 `missing-dependency:<id>`，并提示缺哪个 id；不会停在「已启用但启动失败」 |
+| 停用 | 没有处于 `active` 的依赖方 | 拒绝停用，提示「以下插件正在使用它，请先停用对方」并列出这些插件 |
+| 卸载 | 同停用 | 拒绝卸载，原因 `depended-on` |
+
+停用被拒时 `deactivate()` 返回 `{ ok: false, reason: 'depended-on', dependents: [...] }`，成功返回 `{ ok: true }`，记录本就不处于启用状态时返回 `{ ok: false, reason: 'not-active' }`。第二个参数 `options.force` 表示用户明确要求强行停用，结论同样是拒绝：引擎不连带停用依赖方，关联停用由用户先停用对方后再做。
+
+反方向由引擎自动收敛：插件被停用、卸载或启动失败后，依赖它的已启用插件不再满足依赖，引擎按 `inactive` 自动停用它们并逐个提示（`pluginDependencyAutoStopped`），错误字段同样写入 `missing-dependency:<id>`。停用、卸载、启用失败与启动恢复收尾都会执行这次收敛，因此不存在「正在运行但依赖不可用」的记录。
+
+已安装列表的两种徽标由 `dependencies.ts` 算出，与上表共用同一份判定：`dependencyMissing`（依赖未满足，启用按钮据此置灰并在悬停说明缺哪个 id）与 `dependentBlocked`（被依赖阻塞，意味着停用与卸载都会被拒绝）。
 
 ### 能力与限流
 
@@ -197,7 +279,7 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 | 主机 | 转小写 |
 | 端口 | 去掉默认端口（https 的 443、http 的 80） |
 | 路径 | 去掉尾斜杠 |
-| 拒绝 | 带 query、hash 或内嵌用户名密码的地址直接拒绝；非 https 且非本机回环的 http 同样拒绝 |
+| 拒绝 | 带 query、hash 或内嵌用户名密码的地址直接拒绝；非 https 且非本机回环的 http 默认拒绝，宿主打开「允许局域网 http 供应端点」后放行 |
 
 合并与冲突：
 
@@ -213,7 +295,7 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 `engine.sourceRegistry()` 返回合并后的端点描述、端点 id 到声明方的 `owners`、能力矩阵与冲突列表，供设置界面展示。能力矩阵对九个端点能力逐项给出提供它的端点 id，没有端点提供时为空数组。停用或卸载插件时撤销该插件的全部声明。
 
-`credentials.ts` 只给引擎的执行路径使用：读 `readSourceCredential(sourceId, baseUrl)`、写 `writeSourceCredential(sourceId, baseUrl, apiKey)`，与安装记录分库（`<APP_NAME>-plugin-sources`），键是「端点 id + 规范化后的基址」，IndexedDB 不可用时降级为内存镜像。读取结论有三态：`ok` 可用；`missing` 没有记录；`stale` 同一端点 id 还存在别的基址的记录，说明端点换过主机，必须重新填写，不能把旧 Key 发到新主机。它不从引擎门面再导出，插件既拿不到读写入口，也拿不到任何凭证值。
+`credentials.ts` 只给引擎的执行路径使用：读 `readSourceCredential(sourceId, baseUrl, policy?)`、写 `writeSourceCredential(sourceId, baseUrl, apiKey, policy?)`，基址规范化与声明期同源——引擎传入宿主的局域网 http 开关，夹具不传时保持默认的严格口径——与安装记录分库（`<APP_NAME>-plugin-sources`），键是「端点 id + 规范化后的基址」，IndexedDB 不可用时降级为内存镜像。读取结论有三态：`ok` 可用；`missing` 没有记录；`stale` 同一端点 id 还存在别的基址的记录，说明端点换过主机，必须重新填写，不能把旧 Key 发到新主机。它不从引擎门面再导出，插件既拿不到读写入口，也拿不到任何凭证值。
 
 示例只声明一条端点，不执行：
 
@@ -246,7 +328,7 @@ export const activate = (context) => {
 | 步骤 | 位置 | 做的事 |
 |:---:|:---:|:---:|
 | 选端点 | `sources.ts` 的 `selectedSource` | 取该能力在注册表里的第一个端点；本版不做用户选择 |
-| 读凭证 | `credentials.ts` 的 `readSourceCredential` | 按「端点 id + 规范化后的基址」读取，读到 `stale` 直接拒绝 |
+| 读凭证 | `credentials.ts` 的 `readSourceCredential` | 按「端点 id + 规范化后的基址」读取，基址按宿主的局域网 http 开关规范化，读到 `stale` 直接拒绝 |
 | 执行 | `dsc-core` 的 `source:run` | 带描述、能力标识、载荷与凭证调用一次；凭证只用于这一次 |
 | 归类 | `providerRun.ts` | 回流原样透传；失败换成可判定的错误码再抛出 |
 
@@ -341,7 +423,7 @@ export const listModels = async (context) => {
 
 ### 持久化与启动恢复
 
-安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库(版本 1,对象仓库 `plugins`,主键 `id`),与聊天历史库分开建库,互不影响。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`data_base`、`plugin_base`、`eec`、`eec_anchored`、`sig`、`author_pub`、`author_sig`、`code`、`enabled`、`installed_at`,校验失败的记录另带 `trusted: false`。
+安装记录写入 IndexedDB 的 `<APP_NAME>-plugins` 库(版本 2,对象仓库 `plugins`,主键 `id`),与聊天历史库分开建库,互不影响;版本 2 只是多建一个 `conflict-groups` 仓库用来存待决定冲突组,不改动已有的安装记录。每条记录包含 `id`、`manifest`、`source_type`、`source_url`、`data_base`、`plugin_base`、`eec`、`eec_anchored`、`sig`、`author_pub`、`author_sig`、`code`、`enabled`、`installed_at`,校验失败的记录另带 `trusted: false`。
 
 `source_type` 取 `inner`(随本体分发)、`awesome`(精选合集)、`outer`(其他在线来源)、`local`(用户上传)之一。
 
@@ -374,7 +456,9 @@ export const listModels = async (context) => {
 
 `code` 保存插件代码文本,在线与本地插件都写:在线插件在安装阶段下载 `plugin.js` 后按 UTF-8 文本存入,本地插件取离线包内的 `plugin.js`。启动恢复只用它重建 Blob URL 再 `import()`,不再为启动拉取网络;网络不可达时插件照常启动。写入前已确认代码文本可以还原成原始字节,签名针对原始字节计算,因此重建后的字节与验签时一致。单个插件代码上限 2 MB(见 `types.ts` 的 `MAX_PLUGIN_CODE_BYTES`),在线与本地共用这一上限,超限时拒绝安装并给出原因。
 
-安装、卸载、启用与停用都立即落盘;落盘失败只写入 `engineLogs()`,不影响内存状态。IndexedDB 不可用时降级为内存存储,同样只记引擎日志,不抛错。
+安装、卸载、启用与停用都立即落盘;依赖未满足导致的自动停用同样落盘。落盘失败只写入 `engineLogs()`,不影响内存状态。IndexedDB 不可用时降级为内存存储,同样只记引擎日志,不抛错。
+
+待决定冲突组单独落在同一库的 `conflict-groups` 仓库(主键 `id`),每次变更整体覆盖写入,由引擎在检测到冲突、用户做出选择、插件卸载与启动恢复四处同步;读取时按冲突对重建组 id 与插件清单,单条损坏只丢弃该条,两条指向同一组时保留检测时间较新的一条。引擎内存里保留一份副本,界面用 `engine.pendingConflicts()` 直接读取,不必等待 IndexedDB。
 
 旧版 localStorage 键 `<APP_NAME>:plugins` 在首次启动时迁移一次：`source.kind === 'url'` 的记录转为 `outer` 并保留地址,`builtin` 转为 `inner`,`eec`、`sig` 与作者材料全部留空;迁移成功后删除旧键,失败只记日志、不阻断启动。
 
@@ -395,7 +479,7 @@ installPluginEngine()   # 同步：建凭证、打开核心、登记内置 id、
 
 ### 运行时加载与跨源
 
-`installFromUrl()` 先 `fetch` 产物字节,再按 UTF-8 文本存进安装记录,然后用 `loadPluginModuleFromCode()` 建 Blob URL 加载模块;安装阶段与启动阶段走同一条加载路径,启动阶段不再请求网络。`fetch` 跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`,缺失时字节拉不到,引擎按 `artifact-unreachable` 拒绝安装,原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机,不介入 CORS;`installFromUrl` 在拉取前用同一判定拒绝非 https 且非本机回环的地址。
+`installFromUrl()` 先 `fetch` 产物字节,再按 UTF-8 文本存进安装记录,然后用 `loadPluginModuleFromCode()` 建 Blob URL 加载模块;安装阶段与启动阶段走同一条加载路径,启动阶段不再请求网络。安装成功后自动启用:与已安装插件的冲突在 `checkInstallable` 阶段就按两个方向拒绝,不会走到自动启用;若启用被依赖拒绝,安装本身仍成功,结果里的 `activation` 记录启用的结构化结论,供界面避免用「安装完成」覆盖启用被拒的提示。`fetch` 跨源时浏览器要求托管方返回 `Access-Control-Allow-Origin`,缺失时字节拉不到,引擎按 `artifact-unreachable` 拒绝安装,原始错误只写入 `engineLogs()`。`loader.ts` 只判定协议与主机,不介入 CORS;`installFromUrl` 在拉取前用同一判定拒绝非 https 且非本机回环的地址。
 
 ### 签名校验
 
@@ -475,6 +559,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 - 能力调用失败不会破坏核心状态：核心侧只做只读视图转换或既有 store 方法调用。
 - 插件日志按插件保存在内存,上限 100 条,经 `engine.logs(id)` 读取,不写控制台;引擎自身日志经 `engine.engineLogs()` 读取。
 - 启动恢复逐个插件隔离,单个插件加载失败不影响其余插件与宿主渲染。
+- 启用期冲突按保守策略处置:先把冲突双方全部停用并写入待决定记录,再由用户在插件页选择保留哪一个;结构化冲突列表写进引擎日志与插件日志,界面按单向与双向两条成对文案警告。
 
 ## dsh 映射表
 
@@ -483,7 +568,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 插件声明与清单 | 包 `package.json` 的 `dsh` 字段、`cordis.yml` 条目、配置目录 | `PluginManifest` 内联声明,安装时校验 | `types.ts`、`registry.ts` |
 | 注册与加载 | `plugin-manager` 的安装操作、`cordis-plugin-loader`、`client/modules` 的懒注册表 | `install()` 注册实例;`installFromUrl()` 运行时 `import` | `index.ts`、`loader.ts` |
 | 生命周期 | Cordis fiber 的挂载、激活与 `ctx.effect` 释放 | `registered` / `active` / `inactive` / `failed`,停用时执行 disposers | `index.ts`、`registry.ts` |
-| 服务与依赖注入 | `ctx.<key>` 服务与 `inject` 依赖 | `PluginContext` 能力对象与 `dependencies` 校验 | `capabilities.ts`、`registry.ts` |
+| 服务与依赖注入 | `ctx.<key>` 服务与 `inject` 依赖 | `PluginContext` 能力对象与 `dependencies` 校验（安装、启用、停用、卸载四处） | `capabilities.ts`、`registry.ts`、`dependencies.ts` |
 | 能力/挂载点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册挂载点并返回释放函数 | `capabilities.ts` |
 | 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;联网只经 `context.net`(第三方插件不可用)与 `context.assets`(只读远端资产);插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |

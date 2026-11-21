@@ -11,6 +11,7 @@ import {
   type CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import { sourceEndpointPolicy } from '../../services/settings.js'
 import { readSourceCredential } from './credentials.js'
 import { runProviderCapability, type ProviderRunDeps } from './providerRun.js'
 import { isBuiltinPlugin, type PluginRecord } from './registry.js'
@@ -218,7 +219,9 @@ export const createPluginContext = ({
    */
   const providerDeps: ProviderRunDeps = {
     selectedSource,
-    readCredential: readSourceCredential,
+    // 凭证与端点基址绑定, 基址的放行策略与声明期同源, 否则开关打开后仍读不到局域网端点的 Key
+    readCredential: (sourceId, baseUrl) =>
+      readSourceCredential(sourceId, baseUrl, sourceEndpointPolicy()),
     execute: (request) => core.executeSource(newCall('source:run'), request),
   }
 
@@ -332,7 +335,7 @@ export const createPluginContext = ({
     registerSource: (descriptor) => {
       ensureGranted('provider:source')
       takeToken('provider:source')
-      const problem = checkSourceDescriptor(descriptor)
+      const problem = checkSourceDescriptor(descriptor, sourceEndpointPolicy())
       const declaredId = typeof descriptor?.id === 'string' ? descriptor.id : ''
       if (problem !== null) {
         report('pluginSourceRejected', {

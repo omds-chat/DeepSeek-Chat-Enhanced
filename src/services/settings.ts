@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { APP_NAME } from '../brand.js'
+import type { HttpEndpointPolicy } from '../utils/url.js'
 import type { TtsVoice } from './api/speech.js'
 import { normalizeLocation, type UserLocation } from './location.js'
 
@@ -8,7 +9,10 @@ export type Locale = 'zh-CN' | 'en-US'
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
-/** 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、深度思考与智能搜索开关、侧边栏收起状态 */
+/**
+ * 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、
+ * 深度思考与智能搜索开关、供应端点的局域网 http 开关、侧边栏收起状态
+ */
 type Settings = {
   apiKey: string | null
   locale: Locale
@@ -17,6 +21,8 @@ type Settings = {
   ttsVoice: TtsVoice
   thinking: boolean
   search: boolean
+  /** 允许 http 的局域网地址作为供应端点；默认关闭，只影响供应端点校验 */
+  allowLanHttp: boolean
   siderCollapsed: boolean
 }
 
@@ -28,6 +34,7 @@ const KEYS = {
   ttsVoice: `${APP_NAME}:tts-voice`,
   thinking: `${APP_NAME}:thinking`,
   search: `${APP_NAME}:search`,
+  allowLanHttp: `${APP_NAME}:allow-lan-http`,
   siderCollapsed: `${APP_NAME}:sider-collapsed`,
 } as const
 
@@ -96,6 +103,7 @@ export const useSettings = create<Settings>(() => ({
   ttsVoice: initialTtsVoice(),
   thinking: read(KEYS.thinking) === 'true',
   search: read(KEYS.search) === 'true',
+  allowLanHttp: read(KEYS.allowLanHttp) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
 
@@ -134,6 +142,19 @@ export const setSearch = (search: boolean) => {
   write(KEYS.search, String(search))
   useSettings.setState({ search })
 }
+
+export const setAllowLanHttp = (allowLanHttp: boolean) => {
+  write(KEYS.allowLanHttp, String(allowLanHttp))
+  useSettings.setState({ allowLanHttp })
+}
+
+/**
+ * 供应端点的 http 放行策略：只有供应端点校验取这一份，
+ * net:fetch、assets:read 等其余通道仍按 url 工具的默认口径。
+ */
+export const sourceEndpointPolicy = (): HttpEndpointPolicy => ({
+  allowLanHttp: useSettings.getState().allowLanHttp,
+})
 
 export const setSiderCollapsed = (siderCollapsed: boolean) => {
   write(KEYS.siderCollapsed, String(siderCollapsed))

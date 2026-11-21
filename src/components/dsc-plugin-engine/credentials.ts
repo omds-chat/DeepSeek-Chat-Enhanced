@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { APP_NAME } from '../../brand.js'
+import type { HttpEndpointPolicy } from '../../utils/url.js'
 import { isSourceId, normalizeSourceBaseUrl } from '../dsc-core/source-catalog.js'
 
 /**
@@ -162,13 +163,14 @@ const readFromMemory = (
 
 /**
  * 读取某个端点基址对应的凭证。
- * 基址先规范化再比对; 记录不存在时区分 missing 与 stale, 后者表示端点换过主机、需要重新填写。
+ * 基址先按宿主的放行策略规范化再比对; 记录不存在时区分 missing 与 stale, 后者表示端点换过主机、需要重新填写。
  */
 export const readSourceCredential = async (
   sourceId: string,
-  baseUrl: string
+  baseUrl: string,
+  policy?: HttpEndpointPolicy
 ): Promise<ReadCredentialResult> => {
-  const normalized = normalizeSourceBaseUrl(baseUrl)
+  const normalized = normalizeSourceBaseUrl(baseUrl, policy)
   if (!isSourceId(sourceId) || normalized === null) {
     return { status: 'missing', credential: null, problem: 'source id or base url is invalid' }
   }
@@ -202,9 +204,10 @@ export const readSourceCredential = async (
 export const writeSourceCredential = async (
   sourceId: string,
   baseUrl: string,
-  apiKey: string
+  apiKey: string,
+  policy?: HttpEndpointPolicy
 ): Promise<WriteCredentialResult> => {
-  const normalized = normalizeSourceBaseUrl(baseUrl)
+  const normalized = normalizeSourceBaseUrl(baseUrl, policy)
   if (!isSourceId(sourceId) || normalized === null) {
     return { ok: false, reason: 'source id or base url is invalid' }
   }

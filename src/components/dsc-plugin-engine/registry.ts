@@ -1,8 +1,11 @@
 import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
+import { detectInstallConflicts, installConflictVerdict } from './installConflicts.js'
 import { RANGE_PATTERN } from './versionRange.js'
 import {
   MOUNT_POINTS,
+  type ActivateResult,
+  type ActivationConflict,
   type BeforeRequestHandler,
   type DscPlugin,
   type InstallRejection,
@@ -254,7 +257,11 @@ const validateManifest = (manifest: PluginManifest): InstallRejection | null => 
   return null
 }
 
-/** 安装前校验：清单、重名、版本兼容、冲突与依赖 */
+/**
+ * 安装前校验：清单、重名、版本兼容、冲突与依赖。
+ * 冲突与启用期同口径地看两个方向：新插件声明的 conflicts，以及已安装插件里声明排斥它的。
+ * 判的是「能否共存」，因此已安装记录不分启停都参与；启用期只看 active，判的是「能否同时运行」。
+ */
 export const checkInstallable = (manifest: PluginManifest, coreVersion: string): InstallResult => {
   const problem = validateManifest(manifest)
   if (problem) {
@@ -268,15 +275,46 @@ export const checkInstallable = (manifest: PluginManifest, coreVersion: string):
   if (manifest.engines && !satisfiesRange(manifest.engines, coreVersion)) {
     return { ok: false, reason: 'incompatible-version', detail: manifest.engines }
   }
-  for (const id of manifest.conflicts ?? []) {
-    if (records.has(id)) {
-      return { ok: false, reason: 'conflict', detail: id }
+  const conflicts = detectInstallConflicts(
+    manifest,
+    [...records.values()].map((record) => ({
+      id: record.manifest.id,
+      conflicts: record.manifest.conflicts ?? [],
+    }))
+  )
+  if (conflicts.length > 0) {
+    const verdict = installConflictVerdict(manifest.id, conflicts)
+    return {
+      ok: false,
+      reason: verdict.reason,
+      detail: verdict.ids.join(','),
+      conflicts,
     }
   }
   for (const id of manifest.dependencies ?? []) {
     if (!records.has(id)) {
       return { ok: false, reason: 'missing-dependency', detail: id }
     }
+  }
+  return { ok: true }
+}
+
+/**
+ * 恢复既有记录时的校验：与安装期同一份清单与版本校验，但不判冲突。
+ * 冲突判的是「新插件能否与已有记录共存」，恢复的是库里已经存在的记录：
+ * 按冲突把其中一方拦下来，等于把用户的插件丢掉。共存的冲突由启用期处置
+ * （checkActivatable 与待决定记录），恢复阶段只负责把记录放回注册表。
+ */
+export const checkRestorable = (
+  manifest: PluginManifest,
+  coreVersion: string
+): InstallResult => {
+  const problem = validateManifest(manifest)
+  if (problem) {
+    return { ok: false, reason: problem }
+  }
+  if (manifest.engines && !satisfiesRange(manifest.engines, coreVersion)) {
+    return { ok: false, reason: 'incompatible-version', detail: manifest.engines }
   }
   return { ok: true }
 }
@@ -400,3 +438,64 @@ export const activeDependents = (id: string): string[] =>
         record.state === 'active' && (record.manifest.dependencies ?? []).includes(id)
     )
     .map((record) => record.manifest.id)
+
+/**
+ * 启用期冲突：本插件声明排斥的已运行插件，加上声明排斥本插件的已运行插件。
+ * 两边互相声明时合并成一条 mutual，只声明一边时按声明方向给出 single。
+ * 只看 state 为 active 的记录：已停用与启动失败的插件不占用运行位。
+ */
+export const activationConflicts = (id: string): ActivationConflict[] => {
+  const record = records.get(id)
+  if (!record) {
+    return []
+  }
+  const declared = new Set(record.manifest.conflicts ?? [])
+  const conflicts: ActivationConflict[] = []
+  for (const other of records.values()) {
+    const otherId = other.manifest.id
+    if (otherId === id || other.state !== 'active') {
+      continue
+    }
+    const forward = declared.has(otherId)
+    const backward = (other.manifest.conflicts ?? []).includes(id)
+    if (!forward && !backward) {
+      continue
+    }
+    if (forward && backward) {
+      conflicts.push({ kind: 'mutual', declarer: id, target: otherId })
+    } else if (forward) {
+      conflicts.push({ kind: 'single', declarer: id, target: otherId })
+    } else {
+      conflicts.push({ kind: 'single', declarer: otherId, target: id })
+    }
+  }
+  return conflicts
+}
+
+/**
+ * 启用前校验：记录存在、有插件实例、依赖已激活、且与运行中的插件不冲突。
+ * 冲突不改变任何记录：启用被拒后列表状态保持原样，由用户决定关闭哪一方。
+ */
+export const checkActivatable = (id: string): ActivateResult => {
+  const record = records.get(id)
+  if (!record) {
+    return { ok: false, reason: 'not-installed' }
+  }
+  if (!record.plugin) {
+    return { ok: false, reason: 'no-plugin-instance' }
+  }
+  const pending = pendingDependencies(record)
+  if (pending.length > 0) {
+    return { ok: false, reason: 'missing-dependency', detail: pending.join(',') }
+  }
+  const conflicts = activationConflicts(id)
+  if (conflicts.length > 0) {
+    return {
+      ok: false,
+      reason: 'conflict',
+      detail: conflicts.map((conflict) => conflict.declarer + '->' + conflict.target).join(','),
+      conflicts,
+    }
+  }
+  return { ok: true }
+}

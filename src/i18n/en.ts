@@ -98,6 +98,9 @@ export const en = {
   settingsLocationProvince: 'Select province/region',
   settingsLocationCity: 'Select city',
   settingsLocationRegion: 'Select country or region',
+  settingsSourceLanHttp: 'Allow LAN http provider endpoints',
+  settingsSourceLanHttpDescription:
+    'Browsers may block mixed content: on an https page, requests to LAN http endpoints are blocked outright, so this only works for local development or http pages',
   settingDialogAsideGeneralOptionLabel: 'General',
   settingDialogAsideDataOptionLabel: 'Data',
   avatarMenuSettingsDialogThemeItemLabel: 'Theme',
@@ -193,6 +196,14 @@ export const en = {
   pluginBypassDetected: 'A call bypassed the plugin engine to reach the core; blocked: {capability}',
   pluginInstallRejected: 'Plugin {id} failed to install: {reason}',
   pluginActivateFailed: 'Plugin {id} failed to start: {reason}',
+  pluginActivateMissingDependency:
+    'Plugin {id} was not enabled and is now marked as disabled: {reason}',
+  pluginDependencyAutoStopped:
+    'Plugin {id} was disabled automatically: plugin {dependency} it depends on is not enabled',
+  pluginConflictSuspendedSingle:
+    'Plugin {declarer} conflicts with plugin {target}: {declarer} requires {target} to be disabled. All {count} plugins in this conflict were disabled ({ids}); choose which one to keep in the plugin panel',
+  pluginConflictSuspendedMutual:
+    'Plugins {declarer} and {target} each require the other to be disabled. All {count} plugins in this conflict were disabled ({ids}); choose which one to keep in the plugin panel',
   pluginCapabilityDenied: 'Plugin {id} was not granted {capability}',
   pluginCallRateLimited: 'Plugin {id} called {capability} too often',
   pluginCallTimeout: 'Plugin {id} timed out calling {capability}',
@@ -206,6 +217,18 @@ export const en = {
   pluginIndexFetchFailed: 'Plugin index fetch failed',
   pluginIndexInvalid: 'Plugin index structure is invalid',
   pluginPanelTitle: 'Plugins',
+  pluginConflictPendingTitle: 'Plugin conflicts awaiting a decision',
+  pluginConflictPendingHint:
+    'Every plugin in these conflicts is disabled. Only one plugin can be kept per conflict group; the rest stay disabled and plugins depending on them are not enabled automatically.',
+  pluginConflictPendingGroup: '{count} conflicts involving {names}',
+  pluginConflictPendingPairSingle: '{declarer} requires {target} to be disabled',
+  pluginConflictPendingPairMutual: '{declarer} and {target} each require the other to be disabled',
+  pluginConflictPendingExpand: 'Show details ({count})',
+  pluginConflictPendingCollapse: 'Hide details',
+  pluginConflictPendingKeep: 'Keep {name}',
+  pluginConflictPendingKept: 'Plugin {name} was kept; the others stay disabled',
+  pluginConflictPendingKeptFailed: 'Plugin {name} could not be enabled: {reason}',
+  pluginConflictPendingGone: 'This conflict group no longer exists; the list was refreshed',
   pluginRefresh: 'Refresh',
   pluginTabInstalled: 'Installed',
   pluginTabMarket: 'Plugin market',
@@ -260,6 +283,12 @@ export const en = {
     'Plugin uninstalled. Its local data has been kept; to clean it up, use Settings -> Data.',
   pluginUninstallFailed: 'Plugin {id} could not be uninstalled',
   pluginUninstallRejected: 'Plugin {id} could not be uninstalled: {reason}',
+  pluginDeactivateRejected: 'Plugin {id} could not be disabled: {reason}',
+  pluginBadgeDependencyMissing: 'Missing dependency',
+  pluginBadgeDependentBlocked: 'Blocked by dependents',
+  pluginBadgeDependencyMissingHint: 'Missing dependencies: {id}',
+  pluginBadgeDependentBlockedHint: 'In use by: {id}',
+  pluginEnableBlockedHint: 'Missing dependency {id}; install and enable it first',
   pluginReasonInvalidManifest: 'The plugin manifest is not valid',
   pluginReasonUnknownCapability: 'The plugin requested a capability the engine does not support',
   pluginReasonUnknownMount:
@@ -267,8 +296,14 @@ export const en = {
   pluginReasonIncompatibleVersion: 'The plugin is not compatible with this dsc version',
   pluginReasonDuplicate: 'A plugin with the same id is already installed',
   pluginReasonConflict: 'The plugin conflicts with an installed plugin',
+  pluginReasonInstallConflictDeclared:
+    'Conflict with installed plugins: this plugin declares {id} as incompatible',
+  pluginReasonInstallConflictRequired:
+    'Conflict with installed plugins: {id} declares this plugin as incompatible',
+  pluginReasonInstallConflictMutual:
+    'Conflict with installed plugins: this plugin and {id} declare each other incompatible',
   pluginReasonMissingDependency: 'Install the required plugin first: {id}',
-  pluginReasonDependedOn: 'Still required by an enabled plugin: {id}',
+  pluginReasonDependedOn: 'In use by the following enabled plugin(s) ({id}); disable them first',
   pluginReasonLoadFailed:
     'The plugin artifact could not be loaded; check the URL and network, and allow CORS when hosted cross-origin',
   pluginReasonArtifactUnreachable:

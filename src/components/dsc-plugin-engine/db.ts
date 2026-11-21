@@ -1,9 +1,11 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import { APP_NAME } from '../../brand.js'
 import type { ManifestRevisions } from '../../services/integrity/manifest.js'
+import { readPendingConflict } from './pendingConflicts.js'
 import { readManifest } from './registry.js'
 import { clearLegacyInstalled, readLegacyInstalled, type LegacyPlugin } from './storage.js'
 import type {
+  PendingConflict,
   PluginManifest,
   PluginSourceType,
   SourceTrustFailure,
@@ -12,8 +14,11 @@ import type {
 
 /** 独立数据库名，避免与聊天历史库冲突 */
 const DB_NAME = `${APP_NAME}-plugins`
-const DB_VERSION = 1
+/** 版本 2 增加待决定冲突组的存储；升级只为建库，不改动已有的安装记录 */
+const DB_VERSION = 2
 const STORE = 'plugins'
+/** 待决定冲突组的存储名；放在引擎自己的库，不混进插件存储 */
+const CONFLICT_STORE = 'conflict-groups'
 
 /** 合法的来源类型 */
 const SOURCE_TYPES: readonly string[] = ['inner', 'awesome', 'outer', 'local']
@@ -65,6 +70,7 @@ export type StoredPluginRecord = {
 
 interface PluginDB extends DBSchema {
   plugins: { key: string; value: StoredPluginRecord }
+  'conflict-groups': { key: string; value: PendingConflict }
 }
 
 /** 落盘结果；失败不抛错，由调用方记日志 */
@@ -230,6 +236,9 @@ const openPluginDB = (): Promise<IDBPDatabase<PluginDB> | null> => {
           if (!db.objectStoreNames.contains(STORE)) {
             db.createObjectStore(STORE, { keyPath: 'id' })
           }
+          if (!db.objectStoreNames.contains(CONFLICT_STORE)) {
+            db.createObjectStore(CONFLICT_STORE, { keyPath: 'id' })
+          }
         },
       })
     } catch {
@@ -297,6 +306,83 @@ export const writePluginRecords = async (
     // 先清空再写入，避免已卸载的记录残留
     const cleared = tx.store.clear()
     const writes = records.map((record) => tx.store.put(record))
+    await Promise.all([cleared, ...writes, tx.done])
+    return { ok: true }
+  } catch (error) {
+    degraded = true
+    mirror()
+    return { ok: false, reason: describe(error) }
+  }
+}
+
+/** 待决定记录的读取结果；problem 描述读取与清理过程中丢弃的内容 */
+export type LoadConflictsResult = { groups: PendingConflict[]; problem: string | null }
+
+/** IndexedDB 不可用时待决定记录的镜像；只在本次页面生命周期内有效 */
+const conflictMemory = new Map<string, PendingConflict>()
+
+/**
+ * 读取全部待决定记录。
+ * 单条损坏只丢弃该条；同一组插件因旧 id 散成两条时保留检测时间较新的一条。
+ * IndexedDB 不可用时读内存镜像，与安装记录的降级口径一致。
+ */
+export const readPendingConflicts = async (): Promise<LoadConflictsResult> => {
+  const db = await openPluginDB()
+  if (!db) {
+    return {
+      groups: [...conflictMemory.values()],
+      problem: 'IndexedDB is not available; pending conflicts live in memory only',
+    }
+  }
+  try {
+    const rows = await db.getAll(CONFLICT_STORE)
+    const byId = new Map<string, PendingConflict>()
+    let dropped = 0
+    for (const row of rows) {
+      const group = readPendingConflict(row)
+      if (!group) {
+        dropped += 1
+        continue
+      }
+      const previous = byId.get(group.id)
+      if (previous && previous.at > group.at) {
+        continue
+      }
+      byId.set(group.id, group)
+    }
+    return {
+      groups: [...byId.values()],
+      problem: dropped > 0 ? `${dropped} stored pending conflicts were dropped` : null,
+    }
+  } catch (error) {
+    degraded = true
+    return {
+      groups: [...conflictMemory.values()],
+      problem: `pending conflict read failed: ${describe(error)}`,
+    }
+  }
+}
+
+/** 整体覆盖待决定记录；写入失败时同步镜像到内存，保证本次会话仍可读写 */
+export const writePendingConflicts = async (
+  groups: readonly PendingConflict[]
+): Promise<SaveResult> => {
+  const mirror = () => {
+    conflictMemory.clear()
+    for (const group of groups) {
+      conflictMemory.set(group.id, group)
+    }
+  }
+  const db = await openPluginDB()
+  if (!db) {
+    mirror()
+    return { ok: true }
+  }
+  try {
+    const tx = db.transaction(CONFLICT_STORE, 'readwrite')
+    // 先清空再写入，避免已处理的记录残留
+    const cleared = tx.store.clear()
+    const writes = groups.map((group) => tx.store.put(group))
     await Promise.all([cleared, ...writes, tx.done])
     return { ok: true }
   } catch (error) {

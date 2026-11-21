@@ -1,6 +1,7 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import type { ManifestRevisions } from '../../services/integrity/manifest.js'
+import { sourceEndpointPolicy } from '../../services/settings.js'
 import { showToast } from '../base/toastState.js'
 import {
   CORE_VERSION,
@@ -24,6 +25,8 @@ import { createPluginContext, runWithTimeout } from './capabilities.js'
 import {
   isLegacyInstallRecord,
   loadPluginRecords,
+  readPendingConflicts,
+  writePendingConflicts,
   writePluginRecords,
   type StoredPluginRecord,
 } from './db.js'
@@ -33,7 +36,19 @@ import {
   readLocalPackage,
   type PackageInspection,
 } from './localPackage.js'
+import {
+  checkDeactivatable,
+  dependencyNodes as buildDependencyIndex,
+  missingDependencies,
+  type DependencyNode,
+} from './dependencies.js'
 import { isPluginSourceAllowed, loadPluginModuleFromCode, resolvePluginModule } from './loader.js'
+import {
+  isPendingConflictPlugin,
+  mergePendingConflicts,
+  prunePendingConflicts,
+  samePendingConflicts,
+} from './pendingConflicts.js'
 import { convergePatch, mergePatch, REQUEST_PATCH_BUDGET_MS } from './requestPatch.js'
 import { toPluginId } from './pluginId.js'
 import * as store from './registry.js'
@@ -52,11 +67,17 @@ import {
 } from './signature.js'
 import { MAX_PLUGIN_CODE_BYTES } from './types.js'
 import type {
+  ActivateResult,
+  ActivationConflict,
+  ConflictDecisionResult,
+  DeactivateOptions,
+  DeactivateResult,
   DscPlugin,
   InstallResult,
   LoadedPlugin,
   LocalPackageInfo,
   LocalPackageInspection,
+  PendingConflict,
   PluginManifest,
   PluginSource,
   PluginSourceType,
@@ -174,9 +195,25 @@ export type PluginEngine = {
   inspectLocalPackage(file: File): Promise<LocalPackageInspection>
   /** 从本地离线包安装：预检通过后直接提交，不包含界面确认 */
   installFromLocalFile(file: File): Promise<InstallResult>
-  activate(id: string): Promise<boolean>
-  deactivate(id: string): Promise<boolean>
+  /** 启用插件；依赖未满足或与运行中的插件冲突时拒绝，并返回结构化原因 */
+  activate(id: string): Promise<ActivateResult>
+  /**
+   * 停用插件；存在处于启用状态、依赖本插件的插件时拒绝，返回这些插件 id。
+   * options.force 表示用户明确要求强行停用，结论同样是拒绝，引擎不连带停用依赖方。
+   */
+  deactivate(id: string, options?: DeactivateOptions): Promise<DeactivateResult>
   unload(id: string): Promise<UnloadResult>
+  /**
+   * 待决定的冲突组。
+   * 冲突检测时引擎已把涉及的启用插件全部停用并写入记录；记录随插件卸载清理，
+   * 涉及已卸载插件的冲突对不会出现在结果里。
+   */
+  pendingConflicts(): PendingConflict[]
+  /**
+   * 对待决定冲突组做选择：删除该组记录，按选择启用保留的那一个，其余保持停用。
+   * 不连带启用依赖保留方的插件，依赖仍需用户自己满足。
+   */
+  resolvePendingConflict(groupId: string, keepId: string): Promise<ConflictDecisionResult>
   list(): PluginStateView[]
   logs(id: string): readonly string[]
   /** 引擎自身的日志，例如落盘与恢复失败 */
@@ -226,7 +263,7 @@ export const installPluginEngine = (): PluginEngine => {
     pluginId: string,
     descriptor: CoreSourceDescriptor
   ): ReturnType<typeof declareSource> => {
-    const conflicts = declareSource(pluginId, descriptor)
+    const conflicts = declareSource(pluginId, descriptor, sourceEndpointPolicy())
     for (const conflict of conflicts) {
       pushEngineLog(
         'source ' +
@@ -436,6 +473,19 @@ export const installPluginEngine = (): PluginEngine => {
   ): InstallResult => {
     const check = store.checkInstallable(manifest, CORE_VERSION)
     if (!check.ok) {
+      // 冲突的两侧与声明方向只进引擎日志；界面按原因码与 detail 提示涉及哪些 id
+      for (const conflict of check.conflicts ?? []) {
+        pushEngineLog(
+          'install ' +
+            manifest.id +
+            ' rejected: ' +
+            conflict.kind +
+            ' conflict ' +
+            conflict.declarer +
+            ' -> ' +
+            conflict.target
+        )
+      }
       // 拒绝原因转成可读文案；原始代码留在 check.reason 与插件日志里
       report('pluginInstallRejected', {
         id: manifest.id,
@@ -449,6 +499,30 @@ export const installPluginEngine = (): PluginEngine => {
 
   const install = (manifest: PluginManifest, plugin: DscPlugin): InstallResult =>
     register(manifest, plugin, null)
+
+  /**
+   * 恢复既有记录：与安装期同一份清单与版本校验，但不判冲突。
+   * 冲突判的是「新插件能否与已有记录共存」，恢复的是库里已经存在的记录：
+   * 按冲突把其中一方拦下来等于把用户的插件丢掉；共存的冲突交给启用期与待决定记录处置。
+   */
+  const registerRestored = (
+    manifest: PluginManifest,
+    plugin: DscPlugin,
+    source: PluginSource | null,
+    options: store.RecordOptions = {}
+  ): InstallResult => {
+    const check = store.checkRestorable(manifest, CORE_VERSION)
+    if (!check.ok) {
+      pushEngineLog('restore ' + manifest.id + ' rejected: ' + check.reason)
+      report('pluginRestoreFailed', {
+        id: manifest.id,
+        reason: pluginReasonText(check.reason, check.detail),
+      })
+      return check
+    }
+    store.add(manifest, plugin, source, options)
+    return { ok: true }
+  }
 
   /**
    * 同一插件的生命周期操作串行执行。
@@ -469,30 +543,131 @@ export const installPluginEngine = (): PluginEngine => {
     return current
   }
 
-  const activateNow = async (id: string): Promise<boolean> => {
+  /** 待决定冲突组的内存副本；每次变更同步落盘，界面读它不必等 IndexedDB */
+  let pending: PendingConflict[] = []
+
+  /** 落盘待决定记录；失败只记日志，内存副本照常服务界面 */
+  const persistPending = (): void => {
+    void writePendingConflicts(pending).then((result) => {
+      if (!result.ok) {
+        pushEngineLog('pending conflict persist failed: ' + result.reason)
+      }
+    })
+  }
+
+  /** 已安装插件 id 集合；待决定记录按它清理已卸载的插件 */
+  const installedIds = (): Set<string> =>
+    new Set(store.all().map((record) => record.manifest.id))
+
+  /**
+   * 按已卸载插件清理待决定记录，有改动时回写。
+   * 卸载与启动恢复都走这里：记录里的插件卸载后「保留哪一个」已无从选择，冲突对随卸载失效。
+   */
+  const prunePending = (): void => {
+    const pruned = prunePendingConflicts(pending, installedIds())
+    if (samePendingConflicts(pending, pruned.groups)) {
+      return
+    }
+    pending = pruned.groups
+    pushEngineLog(
+      'pending conflicts cleaned: ' +
+        String(pruned.droppedGroups) +
+        ' group(s) and ' +
+        String(pruned.droppedPairs) +
+        ' pair(s) dropped for uninstalled plugins'
+    )
+    persistPending()
+  }
+
+  /**
+   * 保守的冲突处理：先停用，再写入待决定记录，最后由用户决定保留哪一个。
+   * 涉及的已启用插件全部停用（含正在运行的一方），本次要启用的插件同样保持停用：
+   * 引擎不替用户选边，也不保留任何一方的启用意图。停用后依赖它们的插件按已有的依赖口径自动停用。
+   * 逐条冲突写进引擎日志与本次插件的日志，并发一条警告说明冲突双方与方向。
+   */
+  const suspendForConflict = async (
+    record: store.PluginRecord,
+    conflicts: readonly ActivationConflict[]
+  ): Promise<void> => {
+    for (const conflict of conflicts) {
+      const detail = conflict.declarer + ' -> ' + conflict.target
+      pushEngineLog(
+        'activate ' + record.manifest.id + ' suspended: ' + conflict.kind + ' conflict ' + detail
+      )
+      store.pushLog(record, 'activation-conflict: ' + conflict.kind + ' ' + detail)
+    }
+    const involved = new Set<string>([record.manifest.id])
+    for (const conflict of conflicts) {
+      involved.add(conflict.declarer)
+      involved.add(conflict.target)
+    }
+    for (const id of [...involved].sort()) {
+      const other = store.get(id)
+      if (!other || other.state !== 'active') {
+        continue
+      }
+      await stopRecord(other)
+      store.pushLog(other, 'deactivate: conflict with ' + record.manifest.id)
+      pushEngineLog('conflict: deactivated ' + id + ' (conflict with ' + record.manifest.id + ')')
+    }
+    // 冲突方停用后依赖它的插件失去依赖，按依赖未满足的既有口径自动停用
+    await stopOrphanDependents()
+    pending = mergePendingConflicts(pending, conflicts, Date.now())
+    persistPending()
+    persist()
+    const first = conflicts[0]
+    if (!first) {
+      return
+    }
+    warn(
+      first.kind === 'mutual' ? 'pluginConflictSuspendedMutual' : 'pluginConflictSuspendedSingle',
+      {
+        declarer: first.declarer,
+        target: first.target,
+        ids: [...involved].sort().join(', '),
+        count: involved.size,
+      }
+    )
+  }
+
+  const activateNow = async (id: string): Promise<ActivateResult> => {
     const record = store.get(id)
     if (!record) {
-      return false
+      return { ok: false, reason: 'not-installed' }
     }
     if (record.state === 'active') {
-      return true
+      return { ok: true }
     }
     if (!record.plugin) {
       report('pluginRestoreFailed', {
         id,
         reason: pluginReasonText(record.error ?? 'no-plugin-instance'),
       })
-      return false
+      return { ok: false, reason: 'no-plugin-instance', detail: record.error }
     }
-    const pending = store.pendingDependencies(record)
-    if (pending.length > 0) {
-      store.markFailed(record, `missing-dependency:${pending.join(',')}`)
-      report('pluginActivateFailed', {
+    // 启用期校验与安装期同一份清单：依赖须已激活，conflicts 中的插件不得正在运行
+    const check = store.checkActivatable(id)
+    if (!check.ok) {
+      if (check.reason === 'conflict') {
+        // 保守处理：冲突双方全部停用并写入待决定记录，由用户在插件面板选择保留哪一个
+        await suspendForConflict(record, check.conflicts)
+        return check
+      }
+      // 依赖未满足时不留下「已启用但坏了」的记录：直接按停用落盘，原因写进错误字段供列表展示
+      const pending = check.detail ?? ''
+      const detail = pending.split(',').join(', ')
+      store.markInactive(record)
+      record.error = `missing-dependency:${pending}`
+      store.pushLog(record, 'activate-skipped: missing-dependency ' + detail)
+      pushEngineLog('activate ' + id + ' skipped: dependencies not enabled: ' + detail)
+      report('pluginActivateMissingDependency', {
         id,
-        reason: pluginReasonText(`missing-dependency:${pending[0]}`),
+        reason: pluginReasonText(`missing-dependency:${detail}`),
       })
+      // 停用后它自己的依赖方同样拿不到依赖，一并按规定自动停用
+      await stopOrphanDependents()
       persist()
-      return false
+      return check
     }
     try {
       const context = createPluginContext({
@@ -508,7 +683,7 @@ export const installPluginEngine = (): PluginEngine => {
       })
       store.markActive(record)
       persist()
-      return true
+      return { ok: true }
     } catch (error) {
       // 激活中途失败时同样要撤销已注册的处理器与端点声明，避免残留订阅与端点
       store.clearMounts(record)
@@ -518,18 +693,28 @@ export const installPluginEngine = (): PluginEngine => {
       // 原始错误只进插件日志，界面用可读文案
       store.pushLog(record, describeError(error))
       report('pluginActivateFailed', { id, reason: pluginReasonText(describeError(error)) })
+      // 启动失败等同于依赖不可用，依赖它的插件据此自动停用
+      await stopOrphanDependents()
       persist()
-      return false
+      return { ok: false, reason: 'activate-failed', detail: describeError(error) }
     }
   }
 
-  const deactivateNow = async (id: string): Promise<boolean> => {
-    const record = store.get(id)
-    if (!record || record.state !== 'active' || !record.plugin) {
-      return false
-    }
+  /**
+   * 依赖关系判定用的节点快照：注册表记录与插件视图同形，判定只落在 dependencies.ts 一处。
+   */
+  const dependencyNodeSnapshot = (): DependencyNode[] =>
+    store.all().map((record) => ({
+      id: record.manifest.id,
+      state: record.state,
+      dependencies: record.manifest.dependencies ?? [],
+    }))
+
+  /** 真正执行停用：先调插件的 deactivate，再清挂载点、释放函数与端点声明 */
+  const stopRecord = async (record: store.PluginRecord): Promise<void> => {
+    const id = record.manifest.id
     try {
-      if (record.plugin.deactivate) {
+      if (record.plugin?.deactivate) {
         await runWithTimeout(Promise.resolve(record.plugin.deactivate()), DEACTIVATE_TIMEOUT, {
           onTimeout: () => report('pluginCallTimeout', { id, capability: 'deactivate' }),
         })
@@ -543,8 +728,72 @@ export const installPluginEngine = (): PluginEngine => {
       forgetSources(id)
       store.markInactive(record)
     }
+  }
+
+  /**
+   * 依赖不可用后自动停用依赖方。
+   * 已激活的插件若依赖的插件不再处于启用状态（被停用、被卸载或启动失败），
+   * 就先停用它，再逐轮停用它自己的已激活依赖方，直到没有插件的依赖未满足为止。
+   * 每次自动停用都按「依赖未满足」写进该插件的错误与日志，并提示用户，方便事后在列表里看到原因。
+   */
+  const stopOrphanDependents = async (): Promise<void> => {
+    for (;;) {
+      const nodes = dependencyNodeSnapshot()
+      const index = buildDependencyIndex(nodes)
+      const orphan = nodes.find(
+        (node) => node.state === 'active' && missingDependencies(node, index).length > 0
+      )
+      if (!orphan) {
+        return
+      }
+      const record = store.get(orphan.id)
+      if (!record) {
+        return
+      }
+      const detail = missingDependencies(orphan, index).join(', ')
+      await stopRecord(record)
+      record.error = 'missing-dependency:' + detail
+      store.pushLog(record, 'deactivate: dependency-missing ' + detail)
+      pushEngineLog('auto-deactivate ' + orphan.id + ': dependencies not enabled: ' + detail)
+      report('pluginDependencyAutoStopped', { id: orphan.id, dependency: detail })
+    }
+  }
+
+  /**
+   * 停用：先做依赖前置检查，仍有处于启用状态的插件依赖它时拒绝，并列出这些插件。
+   * 强制标志只表示用户明确要求强行停用，同样按拒绝处理：引擎不自动连带停用依赖方，
+   * 关联停用由用户先停用对方后再做。
+   */
+  const deactivateNow = async (
+    id: string,
+    options: DeactivateOptions = {}
+  ): Promise<DeactivateResult> => {
+    const record = store.get(id)
+    if (!record || record.state !== 'active' || !record.plugin) {
+      return { ok: false, reason: 'not-active' }
+    }
+    const check = checkDeactivatable(id, dependencyNodeSnapshot(), options)
+    if (!check.ok) {
+      const dependents = check.dependents.join(', ')
+      pushEngineLog(
+        'deactivate ' +
+          id +
+          ' rejected: still used by ' +
+          dependents +
+          (check.forced ? ', force requested but dependencies are not stopped' : '')
+      )
+      store.pushLog(record, 'deactivate-rejected: depended-on ' + dependents)
+      report('pluginDeactivateRejected', {
+        id,
+        reason: pluginReasonText('depended-on:' + dependents),
+      })
+      return { ok: false, reason: 'depended-on', dependents: check.dependents, forced: check.forced }
+    }
+    await stopRecord(record)
+    // 停用后依赖它的插件不再有可用的依赖，按依赖未满足自动停用并提示
+    await stopOrphanDependents()
     persist()
-    return true
+    return { ok: true }
   }
 
   const unloadNow = async (id: string): Promise<UnloadResult> => {
@@ -572,14 +821,89 @@ export const installPluginEngine = (): PluginEngine => {
     forgetSources(id)
     patchNotices.delete(id + ':timeout')
     patchNotices.delete(id + ':clamped')
+    // 记录移除后依赖它的插件拿不到依赖，按依赖未满足自动停用并提示
+    await stopOrphanDependents()
+    // 记录里的插件已卸载时「保留哪一个」无从选择，冲突对随卸载清理
+    prunePending()
     persist()
     return { removed: true, hasLeftoverData: leftover }
   }
 
   /** 生命周期入口：同一插件的操作排队执行，后一次等前一次结束后再读状态 */
-  const activate = (id: string): Promise<boolean> => serialize(id, () => activateNow(id))
-  const deactivate = (id: string): Promise<boolean> => serialize(id, () => deactivateNow(id))
+  const activate = (id: string): Promise<ActivateResult> => serialize(id, () => activateNow(id))
+  const deactivate = (id: string, options?: DeactivateOptions): Promise<DeactivateResult> =>
+    serialize(id, () => deactivateNow(id, options))
   const unload = (id: string): Promise<UnloadResult> => serialize(id, () => unloadNow(id))
+
+  /**
+   * 待决定冲突的只读快照。
+   * 返回副本：界面按组渲染并可能过滤与排序，不应改动引擎里的事实。
+   */
+  const pendingConflicts = (): PendingConflict[] =>
+    pending.map((group) => ({
+      id: group.id,
+      plugins: [...group.plugins],
+      pairs: group.pairs.map((pair) => ({ ...pair })),
+      at: group.at,
+    }))
+
+  /**
+   * 用户对一条待决定冲突做出选择：先删记录，再按选择启用保留的那一个，其余保持停用。
+   * 记录先删的理由是用户已经做了决定：启用失败时这组冲突不再待决定，失败原因由引擎提示，
+   * 其余插件同样保持停用。不连带启用依赖方：保留方启用后，依赖它的插件仍需用户自己启用。
+   */
+  const resolvePendingConflict = async (
+    groupId: string,
+    keepId: string
+  ): Promise<ConflictDecisionResult> => {
+    const group = pending.find((item) => item.id === groupId)
+    if (!group) {
+      return { ok: false, reason: 'not-found' }
+    }
+    if (!group.plugins.includes(keepId)) {
+      return { ok: false, reason: 'not-in-group' }
+    }
+    const kept = store.get(keepId)
+    if (!kept) {
+      return { ok: false, reason: 'not-installed' }
+    }
+    if (!kept.plugin) {
+      return { ok: false, reason: 'no-plugin-instance' }
+    }
+    const stopped = group.plugins.filter((id) => id !== keepId)
+    pending = pending.filter((item) => item.id !== groupId)
+    persistPending()
+    pushEngineLog(
+      'pending conflict ' + groupId + ' resolved: keep ' + keepId + ', stop ' + stopped.join(',')
+    )
+    // 其余插件保持停用：待决定期间用户可能手动启用过其中一方，这里按选择统一停用。
+    // 没在运行的也要清掉期望启用的标记：标记残留会让下次刷新自动启用它，
+    // 与保留方再起冲突，刚处理完的待决定组又回到列表。
+    for (const id of stopped) {
+      const other = store.get(id)
+      if (!other) {
+        continue
+      }
+      if (other.state === 'active') {
+        await stopRecord(other)
+        store.pushLog(other, 'deactivate: conflict decision kept ' + keepId)
+        pushEngineLog('conflict decision: deactivated ' + id + ' (kept ' + keepId + ')')
+      } else if (other.enabled) {
+        store.markInactive(other)
+        store.pushLog(other, 'intent-cleared: conflict decision kept ' + keepId)
+        pushEngineLog('conflict decision: ' + id + ' kept disabled (kept ' + keepId + ')')
+      }
+    }
+    await stopOrphanDependents()
+    const result = await activate(keepId)
+    if (!result.ok) {
+      return result.reason === 'conflict'
+        ? { ok: false, reason: 'conflict', detail: result.detail }
+        : { ok: false, reason: result.reason, ...(result.detail === undefined ? {} : { detail: result.detail }) }
+    }
+    persist()
+    return { ok: true, kept: keepId, stopped }
+  }
 
   /** 各层 revision 的键；与三层清单一一对应 */
   const REVISION_LAYERS = ['l1', 'l2', 'l3'] as const
@@ -733,9 +1057,10 @@ export const installPluginEngine = (): PluginEngine => {
     if (!result.ok) {
       return result
     }
-    await activate(resolved.id)
+    // 安装后自动启用；启用被拒时安装仍算成功，结论交给界面决定提示哪一条
+    const activation = await activate(resolved.id)
     persist()
-    return result
+    return { ok: true, activation }
   }
 
   /**
@@ -809,9 +1134,10 @@ export const installPluginEngine = (): PluginEngine => {
     if (!result.ok) {
       return result
     }
-    await activate(resolved.id)
+    // 与在线安装同一口径：启用被拒不影响安装结论，activation 带回拒绝原因
+    const activation = await activate(resolved.id)
     persist()
-    return result
+    return { ok: true, activation }
   }
 
   /** 离线包预检：只读文件并校验，不改动注册表与安装记录 */
@@ -944,6 +1270,25 @@ export const installPluginEngine = (): PluginEngine => {
   }
 
   /**
+   * 启动恢复时的自动启用。
+   * 待决定冲突涉及的插件一律不自动启用：先按停用落盘并写日志，等用户在插件面板做出选择。
+   * 不自动启用任何一方是这条策略的核心：记录里的双方都在用户选择前保持停用。
+   */
+  const autoActivate = async (id: string): Promise<void> => {
+    const record = store.get(id)
+    if (!record || !record.enabled) {
+      return
+    }
+    if (isPendingConflictPlugin(pending, id)) {
+      store.markInactive(record)
+      store.pushLog(record, 'activate-skipped: pending-conflict')
+      pushEngineLog('activate ' + id + ' skipped: waiting for the conflict decision')
+      return
+    }
+    await activate(id)
+  }
+
+  /**
    * 恢复单个外部插件。
    * 只用存储的代码重建 Blob 模块,启动阶段不访问网络,离线也能激活;source_url 只用于检查更新。
    * 有签名材料时先对存储的代码字节验签,不通过只提示用户并把记录标记为不可信,仍然加载并激活。
@@ -1011,7 +1356,7 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginRestoreFailed', { id, reason: pluginReasonText(reason) })
       return
     }
-    const result = register(entry.manifest, loaded.plugin, source, {
+    const result = registerRestored(entry.manifest, loaded.plugin, source, {
       origin,
       signature,
       verdict,
@@ -1025,9 +1370,7 @@ export const installPluginEngine = (): PluginEngine => {
     if (signature === 'failed') {
       store.pushLog(record, 'signature-invalid')
     }
-    if (record.enabled) {
-      await activate(id)
-    }
+    await autoActivate(id)
   }
 
   /**
@@ -1041,6 +1384,24 @@ export const installPluginEngine = (): PluginEngine => {
       pushEngineLog(`restore: ${loaded.problem}`)
     }
     const byId = new Map(loaded.records.map((entry) => [entry.id, entry]))
+    // 待决定记录先读出来：涉及其中任何一个插件都不自动启用，等用户选择；
+    // 记录里的插件若已卸载（存储里没有这一条），这里按已装载的存储记录清理该条
+    const storedConflicts = await readPendingConflicts()
+    if (storedConflicts.problem) {
+      pushEngineLog(`restore: ${storedConflicts.problem}`)
+    }
+    const prunedConflicts = prunePendingConflicts(storedConflicts.groups, new Set(byId.keys()))
+    pending = prunedConflicts.groups
+    if (prunedConflicts.droppedGroups > 0 || prunedConflicts.droppedPairs > 0) {
+      pushEngineLog(
+        'restore: cleaned ' +
+          String(prunedConflicts.droppedGroups) +
+          ' pending conflict group(s) and ' +
+          String(prunedConflicts.droppedPairs) +
+          ' pair(s) for uninstalled plugins'
+      )
+      persistPending()
+    }
     for (const builtin of BUILTIN_PLUGINS) {
       const id = builtin.manifest.id
       const stored = byId.get(id)
@@ -1057,14 +1418,14 @@ export const installPluginEngine = (): PluginEngine => {
       }
       // 首次出现的内置插件默认启用
       record.enabled = stored ? stored.enabled : true
-      if (record.enabled) {
-        await activate(id)
-      }
+      await autoActivate(id)
     }
     const externals = loaded.records.filter((entry) => !BUILTIN_PLUGIN_IDS.includes(entry.id))
     for (const entry of externals) {
       await restoreExternal(entry)
     }
+    // 恢复顺序可能让某个插件先于它的依赖启用，收尾时按依赖未满足统一自动停用
+    await stopOrphanDependents()
     restoring = false
     persist()
   }
@@ -1121,6 +1482,8 @@ export const installPluginEngine = (): PluginEngine => {
     activate,
     deactivate,
     unload,
+    pendingConflicts,
+    resolvePendingConflict,
     list,
     logs: (id) => store.get(id)?.logs ?? [],
     engineLogs: () => engineLogs,
@@ -1144,6 +1507,10 @@ export const installPluginEngine = (): PluginEngine => {
 export const getPluginEngine = (): PluginEngine | null => engine
 
 export type {
+  ActivateRejection,
+  ActivateResult,
+  ActivationConflict,
+  ConflictDecisionResult,
   AssetBytesResult,
   AssetTextResult,
   AssetsCapability,
@@ -1151,6 +1518,8 @@ export type {
   BeforeRequestPreview,
   CallOptions,
   ChatCapability,
+  DeactivateOptions,
+  DeactivateResult,
   DscPlugin,
   EventsCapability,
   InstallResult,
@@ -1161,6 +1530,8 @@ export type {
   MountPoint,
   NetCapability,
   NetResponse,
+  PendingConflict,
+  PendingConflictPair,
   PluginContext,
   PluginManifest,
   PluginModule,

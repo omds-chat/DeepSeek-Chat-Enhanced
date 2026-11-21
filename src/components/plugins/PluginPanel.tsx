@@ -15,6 +15,7 @@ import { InstalledPlugins } from './InstalledPlugins.js'
 import { judgeInstallFailure } from './installFailure.js'
 import { LocalInstall } from './LocalInstall.js'
 import { MarketPlugins } from './MarketPlugins.js'
+import { PendingConflicts } from './PendingConflicts.js'
 import { MobileHeader } from '../session/MobileHeader.js'
 import { usePluginPanel, type PluginPanelTab } from './pluginPanelState.js'
 import { usePluginList } from './usePluginList.js'
@@ -97,6 +98,7 @@ export const PluginPanel = () => {
       <div className={styles.body} role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
         {tab === 'installed' ? (
           <div className={styles.scroll}>
+            <PendingConflicts plugins={plugins} refresh={refresh} />
             <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
           </div>
         ) : (
@@ -151,7 +153,10 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
     try {
       const result = await engine.installFromUrl(target)
       if (result.ok) {
-        showToast({ key: 'pluginInstallDone' })
+        // 自动启用被拒时引擎已经提示原因，这里不再用安装完成盖掉它
+        if (result.activation?.ok !== false) {
+          showToast({ key: 'pluginInstallDone' })
+        }
         setUrl('')
       } else {
         // 只有取不到产物时才看链接是否指向已被来源移除的插件，其余失败原因与清单无关

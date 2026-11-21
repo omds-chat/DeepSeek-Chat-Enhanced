@@ -1,4 +1,4 @@
-import { isHttpsOrLocalUrl } from '../../utils/url.js'
+import { isHttpsOrLocalUrl, type HttpEndpointPolicy } from '../../utils/url.js'
 
 /**
  * 供应端点的能力标识表与描述形态约束。
@@ -115,7 +115,10 @@ export type CoreSourceDescriptor = {
   readonly label: string
   /** 线上协议格式 */
   readonly format: SourceFormat
-  /** 规范化后的端点基址, 例如 https://api.deepseek.com; 只允许 https 与本机回环的 http */
+  /**
+   * 规范化后的端点基址, 例如 https://api.deepseek.com。
+   * 默认只允许 https 与本机回环的 http; 宿主的局域网开关打开后, 其它主机的 http 也接受。
+   */
   readonly baseUrl: string
   /** 该供应端点可提供的能力清单; 注册表按并集合并, 执行前再校验一次 */
   readonly capabilities: readonly SourceCapabilityId[]
@@ -142,14 +145,18 @@ const MAX_LABEL_LENGTH = 40
 /**
  * 规范化端点基址。
  * 规则: 去首尾空白、主机转小写、去默认端口、去尾斜杠; 带 query、hash 或内嵌用户名密码的地址直接拒绝。
+ * 协议与主机按 policy 判定: 缺省为 https 加本机回环 http, allowLanHttp 打开后额外放行局域网 http。
  * 注册表的定义比对与执行期的地址拼接都只用规范化后的值, 两处看到同一个字符串。
  */
-export const normalizeSourceBaseUrl = (value: unknown): string | null => {
+export const normalizeSourceBaseUrl = (
+  value: unknown,
+  policy?: HttpEndpointPolicy
+): string | null => {
   if (typeof value !== 'string') {
     return null
   }
   const trimmed = value.trim()
-  if (trimmed === '' || !isHttpsOrLocalUrl(trimmed)) {
+  if (trimmed === '' || !isHttpsOrLocalUrl(trimmed, policy)) {
     return null
   }
   let target: URL
@@ -219,7 +226,10 @@ const normalizeEndpoints = (endpoints: SourceEndpointOverrides): SourceEndpointO
  * 检查一份供应端点描述。
  * 只做形态与取值判定, 不做注册表层面的合并与冲突判断, 冲突由引擎的注册表判定。
  */
-export const checkSourceDescriptor = (value: unknown): SourceProblem | null => {
+export const checkSourceDescriptor = (
+  value: unknown,
+  policy?: HttpEndpointPolicy
+): SourceProblem | null => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return 'id'
   }
@@ -236,7 +246,7 @@ export const checkSourceDescriptor = (value: unknown): SourceProblem | null => {
   if (!isSourceFormat(raw.format)) {
     return 'format'
   }
-  if (normalizeSourceBaseUrl(raw.baseUrl) === null) {
+  if (normalizeSourceBaseUrl(raw.baseUrl, policy) === null) {
     return 'baseUrl'
   }
   const capabilities = readCapabilities(raw.capabilities)
@@ -253,12 +263,15 @@ export const checkSourceDescriptor = (value: unknown): SourceProblem | null => {
  * 校验并规范化一份供应端点描述; 不合法时返回 null。
  * 登记前必须走这一步: 注册表里保存、比对与执行的都是规范化之后的值。
  */
-export const normalizeSourceDescriptor = (value: unknown): CoreSourceDescriptor | null => {
-  if (checkSourceDescriptor(value) !== null) {
+export const normalizeSourceDescriptor = (
+  value: unknown,
+  policy?: HttpEndpointPolicy
+): CoreSourceDescriptor | null => {
+  if (checkSourceDescriptor(value, policy) !== null) {
     return null
   }
   const raw = value as CoreSourceDescriptor
-  const baseUrl = normalizeSourceBaseUrl(raw.baseUrl)
+  const baseUrl = normalizeSourceBaseUrl(raw.baseUrl, policy)
   if (baseUrl === null) {
     return null
   }

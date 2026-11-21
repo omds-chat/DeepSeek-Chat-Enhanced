@@ -308,12 +308,15 @@ export const MarketPlugins = ({
       })
       if (result.ok) {
         instance.countInstall(selectedId, plugin)
-        showToast({ key: 'pluginInstalled', params: { id: plugin.name } })
+        // 自动启用被拒时引擎已经提示原因，这里不再用安装完成盖掉它
+        if (result.activation?.ok !== false) {
+          showToast({ key: 'pluginInstalled', params: { id: plugin.name } })
+        }
       } else {
         showToast({
           type: 'error',
           key: 'pluginInstallRejected',
-          params: { id: plugin.name, reason: pluginReasonText(result.reason) },
+          params: { id: plugin.name, reason: pluginReasonText(result.reason, result.detail) },
         })
       }
       onInstalled()

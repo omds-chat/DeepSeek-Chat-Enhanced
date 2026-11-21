@@ -73,7 +73,10 @@ export const LocalInstall = ({ onInstalled }: { onInstalled: () => void }) => {
     try {
       const result = await inspection.commit()
       if (result.ok) {
-        showToast({ key: 'pluginInstallDone' })
+        // 自动启用被拒时引擎已经提示原因，这里不再用安装完成盖掉它
+        if (result.activation?.ok !== false) {
+          showToast({ key: 'pluginInstallDone' })
+        }
         setState(null)
       } else {
         setFailure(pluginReasonText(result.reason, result.detail))

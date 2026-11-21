@@ -4,6 +4,7 @@ import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { isUnlistedTrust, verdictTextKey } from '../../i18n/pluginVerdicts.js'
 import { market, readRecordDataBase, type ReinstallPlan, type UpdateCheck } from '../dsc-market/index.js'
+import { dependencyStatusMap } from '../dsc-plugin-engine/dependencies.js'
 import {
   getPluginEngine,
   type InstallSource,
@@ -82,6 +83,12 @@ export const InstalledPlugins = ({
   const confirmTimer = useRef(0)
   const running = busy !== null
 
+  /**
+   * 依赖关系状态：两枚徽标与启用按钮的可用性都从这里取值。
+   * 徽标常驻，随列表刷新重算，不依赖任何一次操作失败。
+   */
+  const dependency = useMemo(() => dependencyStatusMap(plugins), [plugins])
+
   /** 更新检查的目标：优先取记录里的数据基址，缺失时由来源地址推导 */
   const targets = useMemo(
     () =>
@@ -151,9 +158,13 @@ export const InstalledPlugins = ({
   }
 
   const toggle = async (plugin: PluginStateView) => {
-    await run(plugin.id, 'toggle', (engine) =>
-      plugin.state === 'active' ? engine.deactivate(plugin.id) : engine.activate(plugin.id)
-    )
+    await run(plugin.id, 'toggle', async (engine) => {
+      if (plugin.state === 'active') {
+        await engine.deactivate(plugin.id)
+        return
+      }
+      await engine.activate(plugin.id)
+    })
   }
 
   /** 已启用且声明依赖该插件的插件；卸载被拒的原因由引擎提示，这里只用来避免重复提示 */
@@ -258,11 +269,14 @@ export const InstalledPlugins = ({
         installSourceOf(next)
       )
       if (result.ok) {
-        showToast(
-          kind === 'update'
-            ? { key: 'pluginUpdated', params: { name: plugin.name, version } }
-            : { key: 'pluginReinstalled', params: { name: plugin.name } }
-        )
+        // 自动启用被拒时引擎已经提示原因，这里不再用更新完成盖掉它
+        if (result.activation?.ok !== false) {
+          showToast(
+            kind === 'update'
+              ? { key: 'pluginUpdated', params: { name: plugin.name, version } }
+              : { key: 'pluginReinstalled', params: { name: plugin.name } }
+          )
+        }
         return
       }
       const previous = client.reinstallPlan(target, plugin.version)
@@ -330,11 +344,40 @@ export const InstalledPlugins = ({
           const confirmingReinstall = pending?.id === plugin.id && pending.kind === 'reinstall'
           const updating = busy?.id === plugin.id && busy.action === 'update'
           const reinstalling = busy?.id === plugin.id && busy.action === 'reinstall'
+          const status = dependency.get(plugin.id)
+          const missing = status?.missing ?? []
+          // 依赖未满足时启用会被引擎拒绝，按钮直接置灰；停用按钮不置灰，被依赖时按拒绝处理
+          const enableBlocked = !active && missing.length > 0
+          const toggleHint = active
+            ? status?.dependentBlocked
+              ? t('pluginBadgeDependentBlockedHint', { id: (status?.dependents ?? []).join(', ') })
+              : undefined
+            : enableBlocked
+              ? t('pluginEnableBlockedHint', { id: missing.join(', ') })
+              : undefined
           return (
             <div key={plugin.id} className={styles.row} role="row" aria-busy={busy?.id === plugin.id}>
               <div className={styles.nameCell} role="cell">
                 <span className={styles.name}>{plugin.name}</span>
                 <span className={styles.caption}>{plugin.id}</span>
+                {status?.dependencyMissing ? (
+                  <span
+                    className={clsx(styles.dependencyBadge, styles.dependencyBadgeUnmet)}
+                    title={t('pluginBadgeDependencyMissingHint', { id: missing.join(', ') })}
+                  >
+                    {t('pluginBadgeDependencyMissing')}
+                  </span>
+                ) : null}
+                {status?.dependentBlocked ? (
+                  <span
+                    className={styles.dependencyBadge}
+                    title={t('pluginBadgeDependentBlockedHint', {
+                      id: (status?.dependents ?? []).join(', '),
+                    })}
+                  >
+                    {t('pluginBadgeDependentBlocked')}
+                  </span>
+                ) : null}
                 {plugin.sourceType === 'inner' && plugin.source?.kind === 'url' ? (
                   <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
                 ) : null}
@@ -438,7 +481,8 @@ export const InstalledPlugins = ({
                 <Button
                   variant="outlined"
                   size="s"
-                  disabled={running}
+                  disabled={running || enableBlocked}
+                  title={toggleHint}
                   onClick={() => void toggle(plugin)}
                 >
                   {toggling

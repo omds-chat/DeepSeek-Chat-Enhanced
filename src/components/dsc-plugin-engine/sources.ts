@@ -1,3 +1,4 @@
+import type { HttpEndpointPolicy } from '../../utils/url.js'
 import {
   normalizeSourceDescriptor,
   SOURCE_CAPABILITY_IDS,
@@ -221,15 +222,17 @@ export const selectedSource = (
 /**
  * 登记一条供应端点声明。
  * 登记前统一规范化: 描述里的 baseUrl 先过 normalizeSourceDescriptor, 注册表里保存与比对的都是规范化后的值。
+ * 基址的 http 放行策略由调用方传入: 引擎按宿主的局域网开关给, 夹具不传时保持默认的严格口径。
  * 完全相同的重复声明按无操作处理; 与已生效的定义不一致时不生效, 返回这条冲突供调用方记日志。
  */
 export const declareSource = (
   owner: string,
-  descriptor: CoreSourceDescriptor
+  descriptor: CoreSourceDescriptor,
+  policy?: HttpEndpointPolicy
 ): readonly SourceConflict[] => {
-  const normalized = normalizeSourceDescriptor(descriptor)
+  const normalized = normalizeSourceDescriptor(descriptor, policy)
   if (!normalized) {
-    throw new PluginSourceError(checkSourceDescriptor(descriptor) ?? 'endpoints')
+    throw new PluginSourceError(checkSourceDescriptor(descriptor, policy) ?? 'endpoints')
   }
   const owned = declarations.get(owner) ?? []
   if (owned.some((item) => sameDeclaration(item, normalized))) {

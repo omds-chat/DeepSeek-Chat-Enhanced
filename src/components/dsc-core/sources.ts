@@ -1,5 +1,6 @@
 import { fetchModelList, streamMessageAt } from '../../services/api/client.js'
 import { serverTools } from '../../services/api/tools.js'
+import { sourceEndpointPolicy } from '../../services/settings.js'
 import type {
   CreateMessageRequest,
   FileBlockParam,
@@ -126,7 +127,7 @@ export type CoreSourceRejectReason =
   | 'capability'
   /** 凭证为空 */
   | 'credential'
-  /** 端点基址不可用: 规范化失败 */
+  /** 端点基址不可用: 规范化失败, 或局域网 http 未获宿主放行 */
   | 'endpoint'
   /** 该能力尚未落地 */
   | 'unsupported'
@@ -279,8 +280,9 @@ export const executeSource = async (
       `source ${source.id} does not declare ${capability}`
     )
   }
-  // 执行期只用规范化后的基址: 调用方传入的字符串可能带空白或尾斜杠, 与注册表里的值不是同一个
-  const baseUrl = normalizeSourceBaseUrl(source.baseUrl)
+  // 执行期只用规范化后的基址: 调用方传入的字符串可能带空白或尾斜杠, 与注册表里的值不是同一个。
+  // 放行策略取宿主当前的开关: 开关关闭时局域网 http 的老声明在执行期同样被拒绝。
+  const baseUrl = normalizeSourceBaseUrl(source.baseUrl, sourceEndpointPolicy())
   if (baseUrl === null) {
     throw new CoreSourceError('endpoint', `source ${source.id} has an unusable base url`)
   }

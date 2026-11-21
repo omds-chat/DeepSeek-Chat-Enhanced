@@ -69,7 +69,7 @@ dsc-core/
 
 描述字段见 `source-catalog.ts`:`id`、`label`、`format`、`baseUrl`、`capabilities`,以及按能力覆盖端点路径的 `endpoints`。端点路径缺省按 `format` 推导:`anthropic-messages` 用 `/anthropic/v1/messages` 与 `/models`,`openai-chat` 用 `/v1/chat/completions` 与 `/v1/models`。
 
-基址由 `normalizeSourceBaseUrl` 规范化后再用于比对与拼接:去首尾空白、主机转小写、去默认端口、去尾斜杠,带 query、hash 或内嵌用户名密码的地址直接拒绝。执行入口对传入的基址再规范化一次,因此调用方给的字符串与注册表里的值不会分叉成两个地址。
+基址由 `normalizeSourceBaseUrl` 规范化后再用于比对与拼接:去首尾空白、主机转小写、去默认端口、去尾斜杠,带 query、hash 或内嵌用户名密码的地址直接拒绝。协议与主机按可选策略判定:缺省只接受 https 与本机回环的 http,宿主打开「允许局域网 http 供应端点」后额外放行私有网段与其它非回环主机的 http;执行入口按当前开关对传入的基址再规范化一次,因此调用方给的字符串与注册表里的值不会分叉成两个地址。这份策略只给供应端点用,`net:fetch` 与 `assets:read` 仍按 `utils/url` 的默认口径。
 
 | 能力标识 | 形态 | 已落地 | 说明 |
 |:---:|:---:|:---:|:---:|

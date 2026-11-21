@@ -20,6 +20,7 @@ import { useChatStore } from '../../services/chat/store.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
   isChineseBrowser,
+  setAllowLanHttp,
   setLocale,
   setLocation,
   setThemePreference,
@@ -44,7 +45,7 @@ import { closeSettings, useSettingsDialog, type SettingsSection } from './settin
 import styles from './Settings.module.css'
 
 /**
- * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置）与「数据管理」（API Key、导入、导出、删除）。
+ * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置、局域网 http 供应端点开关）与「数据管理」（API Key、导入、导出、删除）。
  * 桌面端为居中弹窗、左侧导航；移动端为底部弹层、导航横排在内容上方
  */
 export const SettingsDialog = () => {
@@ -107,6 +108,7 @@ const SettingsContent = () => {
               <LocaleSetting />
               <TtsVoiceSetting />
               <LocationSetting />
+              <SourceLanHttpSetting />
             </>
           ) : (
             <>
@@ -388,6 +390,35 @@ const LocationSetting = () => {
             />
           )}
         </div>
+      }
+    />
+  )
+}
+
+/**
+ * 供应端点的局域网 http 开关：默认关闭，打开后端点基址不再限于 https 与本机回环。
+ * 只影响供应端点校验，资产读取与插件来源仍按原口径拒绝局域网 http。
+ */
+const SourceLanHttpSetting = () => {
+  const t = useTranslate()
+  const allowLanHttp = useSettings((state) => state.allowLanHttp)
+  const label = t('settingsSourceLanHttp')
+  return (
+    <SettingCell
+      label={label}
+      description={t('settingsSourceLanHttpDescription')}
+      status={null}
+      action={
+        <button
+          type="button"
+          role="switch"
+          aria-checked={allowLanHttp}
+          aria-label={label}
+          className={clsx(styles.switch, allowLanHttp && styles.switchOn)}
+          onClick={() => setAllowLanHttp(!allowLanHttp)}
+        >
+          <span className={styles.switchThumb} />
+        </button>
       }
     />
   )
