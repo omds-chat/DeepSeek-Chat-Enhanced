@@ -5,6 +5,7 @@ import { renameSession, useChatStore } from '../../services/chat/store.js'
 import type { Message, ReplyBlock, Session, SessionSummary, TextPart } from '../../services/chat/types.js'
 import { useSettings, type Locale } from '../../services/settings.js'
 import { isCredential, recordBypass, type CoreCredential } from './guard.js'
+import { readAssetBytes, readAssetText } from './assets.js'
 import { fetchText, postJson } from './net.js'
 import {
   clearPluginData,
@@ -124,6 +125,7 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     registerCoreService('settings:locale', currentLocale)
     registerCoreService('net:fetch', fetchText)
     registerCoreService('net:fetch-post', postJson)
+    registerCoreService('assets:read', { text: readAssetText, bytes: readAssetBytes })
     registerCoreService('plugins:storage', pluginDataService)
     registerCoreService('plugins:data-clear', clearPluginData)
     registerCoreService('chat:request-source', registerRequestPatchSource)
@@ -140,6 +142,10 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     fetchText: (call, url, signal) => requireCoreService(call, 'net:fetch')(url, signal),
     postJson: (call, url, body, signal) =>
       requireCoreService(call, 'net:fetch-post')(url, body, signal),
+    readAssetText: (call, url, signal) =>
+      requireCoreService(call, 'assets:read').text(url, signal),
+    readAssetBytes: (call, url, signal) =>
+      requireCoreService(call, 'assets:read').bytes(url, signal),
     readPluginEntry: (call, pluginId, key) =>
       requireCoreService(call, 'plugins:storage')({
         op: 'read',
@@ -162,6 +168,8 @@ export const openCore = (credential: CoreCredential): CoreApi => {
 export { CORE_CAPABILITIES, CORE_VERSION } from './types.js'
 export type {
   CoreApi,
+  CoreAssetBytesResult,
+  CoreAssetTextResult,
   CoreAttachmentView,
   CoreCapabilityId,
   CoreEvent,
@@ -184,6 +192,8 @@ export {
 } from './request-patch.js'
 export { PluginFetchError } from './net.js'
 export type { FetchRejectReason, FetchTextResult } from './net.js'
+export { PluginAssetError } from './assets.js'
+export type { AssetBytesResult, AssetRejectReason, AssetTextResult } from './assets.js'
 export { PluginDataError } from './plugin-data.js'
 export type {
   PluginDataRejectReason,

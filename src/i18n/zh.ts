@@ -189,6 +189,7 @@ export const zh = {
   pluginCallRateLimited: '插件 {id} 调用 {capability} 过于频繁',
   pluginCallTimeout: '插件 {id} 调用 {capability} 超时',
   pluginRequestPatchClamped: '插件 {id} 的请求补丁超出范围，已按边界裁剪',
+  pluginAssetSourceFirstUse: '插件 {id} 开始读取 {origin} 的远端资产',
   pluginRestoreFailed: '插件 {id} 恢复失败：{reason}',
   pluginDataQuotaExceeded: '插件 {id} 的本地数据超过 64KB 上限',
   pluginDataInvalid: '插件 {id} 写入的数据无法序列化',

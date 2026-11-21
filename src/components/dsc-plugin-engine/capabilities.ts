@@ -1,6 +1,8 @@
 import {
   PluginDataError,
   issueTicket,
+  type AssetBytesResult,
+  type AssetTextResult,
   type CoreApi,
   type CoreCall,
   type CoreCapabilityId,
@@ -9,6 +11,7 @@ import {
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { isBuiltinPlugin, type PluginRecord } from './registry.js'
 import type {
+  AssetsCapability,
   CallOptions,
   ChatCapability,
   ContributionPoint,
@@ -25,7 +28,9 @@ import type {
  * 单能力策略：时间窗内的调用上限，以及异步调用的单次超时。
  * 同步成员没有超时（同步调用不适用），这几项不填 timeoutMs：
  * sessions:rename、notify、plugins:storage，以及只给引擎用的 plugins:data-clear；
- * events:session 只登记处理器、不逐次调用，同样不填。
+ * events:session 与 chat:request 是登记型成员，登记本身同步返回，同样不填。
+ * 登记型成员的限流语义是「登记次数」：每次 events.on、每次 chat.onBeforeRequest 各占一个名额，
+ * 之后的事件回调与请求前调用由引擎发起，不再占用名额。
  */
 type Policy = { limit: number; windowMs: number; timeoutMs?: number }
 
@@ -33,6 +38,7 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'sessions:list': { limit: 30, windowMs: 10000, timeoutMs: 3000 },
   'sessions:read': { limit: 30, windowMs: 10000, timeoutMs: 3000 },
   'sessions:rename': { limit: 5, windowMs: 10000 },
+  // 限制的是登记次数：每次 events.on 占一个名额，事件回调本身不再占用
   'events:session': { limit: 5, windowMs: 10000 },
   notify: { limit: 10, windowMs: 10000 },
   'settings:locale': { limit: 60, windowMs: 10000, timeoutMs: 3000 },
@@ -40,6 +46,8 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'net:fetch': { limit: 10, windowMs: 10000, timeoutMs: 12000 },
   // 内层 5 秒超时由 dsc-core 的计数请求自己中止，POST 与 GET 各用一个窗口，避免互相挤占
   'net:fetch-post': { limit: 10, windowMs: 10000, timeoutMs: 7000 },
+  // 内层 10 秒超时由 dsc-core 的资产读取自己中止请求，这里只做外层兜底
+  'assets:read': { limit: 20, windowMs: 10000, timeoutMs: 12000 },
   'plugins:storage': { limit: 100, windowMs: 10000 },
   // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
   'plugins:data-clear': { limit: 0, windowMs: 10000 },
@@ -122,6 +130,8 @@ export type ContextDeps = {
   core: CoreApi
   credential: CoreCredential
   report: (key: TranslationKey, params?: TranslationParams) => void
+  /** 首次使用资产来源时的提示出口；由引擎按「插件 + 来源」去重后调用 */
+  announceAsset: (pluginId: string, url: string) => void
 }
 
 /** 把核心内部接口封装成受限能力对象 */
@@ -130,9 +140,18 @@ export const createPluginContext = ({
   core,
   credential,
   report,
+  announceAsset,
 }: ContextDeps): PluginContext => {
   const { manifest } = record
   const windows = new Map<CoreCapabilityId, number[]>()
+
+  /** 插件日志上限；上下文日志与引擎内部记录共用这一份实现 */
+  const pushLog = (message: string) => {
+    record.logs.push(message)
+    if (record.logs.length > 100) {
+      record.logs.shift()
+    }
+  }
 
   const ensureGranted = (capability: CoreCapabilityId) => {
     if (!manifest.capabilities.includes(capability)) {
@@ -178,7 +197,8 @@ export const createPluginContext = ({
   const invoke = async <T>(
     capability: CoreCapabilityId,
     options: CallOptions | undefined,
-    run: () => Promise<T>
+    run: () => Promise<T>,
+    hooks: { onTimeout?: () => void } = {}
   ): Promise<T> => {
     ensureGranted(capability)
     takeToken(capability)
@@ -191,7 +211,8 @@ export const createPluginContext = ({
       return await run()
     }
     return await runWithTimeout(run(), timeoutMs, {
-      onTimeout: () => report('pluginCallTimeout', { id: manifest.id, capability }),
+      onTimeout:
+        hooks.onTimeout ?? (() => report('pluginCallTimeout', { id: manifest.id, capability })),
       signal: options?.signal,
       abortError: () => new PluginAbortError(capability),
       timeoutError: () => new PluginTimeoutError(capability),
@@ -233,9 +254,14 @@ export const createPluginContext = ({
   }
 
   const events: EventsCapability = {
+    /**
+     * 登记事件处理器；与 chat.onBeforeRequest 一样只登记、不逐次调用，
+     * 因此每次 on 占用一次限流名额，事件分发不占用。
+     */
     on: (point, handler) => {
       ensureGranted('events:session')
       ensureContribution('events:session', point)
+      takeToken('events:session')
       const handlers = record.contributions.get(point) ?? new Set()
       handlers.add(handler)
       record.contributions.set(point, handlers)
@@ -292,6 +318,53 @@ export const createPluginContext = ({
       }),
   }
 
+  /**
+   * 资产读取的公共入口。
+   * 首次使用某个来源地址时经 announceAsset 报告一次；之后的失败只写该插件的插件日志，不再打扰用户。
+   * 三态结果原样返回；引擎侧能够确定的拒绝（地址、协议、体积、超时）按错误抛出。
+   */
+  const readAsset = async <T extends AssetTextResult | AssetBytesResult>(
+    url: string,
+    options: CallOptions | undefined,
+    read: (signal?: AbortSignal) => Promise<T>
+  ): Promise<T> =>
+    invoke(
+      'assets:read',
+      options,
+      async () => {
+        announceAsset(manifest.id, url)
+        try {
+          const result = await read(options?.signal)
+          if (result.kind === 'status') {
+            pushLog('assets:read: status ' + String(result.status) + ' ' + result.url)
+          } else if (result.kind === 'no-status') {
+            pushLog('assets:read: no status from ' + result.url)
+          }
+          return result
+        } catch (error) {
+          pushLog(
+            'assets:read: failed ' +
+              (error instanceof Error ? error.message : String(error)) +
+              ' ' +
+              url
+          )
+          throw error
+        }
+      },
+      { onTimeout: () => pushLog('assets:read: timed out ' + url) }
+    )
+
+  const assets: AssetsCapability = {
+    readText: (url, options) =>
+      readAsset(url, options, (signal) =>
+        core.readAssetText(newCall('assets:read'), url, signal)
+      ),
+    readBytes: (url, options) =>
+      readAsset(url, options, (signal) =>
+        core.readAssetBytes(newCall('assets:read'), url, signal)
+      ),
+  }
+
   const storage: StorageCapability = {
     get: (key) =>
       invokeSync('plugins:storage', () =>
@@ -322,13 +395,9 @@ export const createPluginContext = ({
     ui,
     settings,
     net,
+    assets,
     storage,
     chat,
-    log: (message) => {
-      record.logs.push(message)
-      if (record.logs.length > 100) {
-        record.logs.shift()
-      }
-    },
+    log: pushLog,
   }
 }

@@ -41,6 +41,8 @@ dsc-plugin-engine/
 
 清单可以随产物一起导出：`export const manifest = {...}`,也可以挂在 `default` 导出对象上,模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`;两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
+调用方传入清单时以传入的为准,但 `contributions` 允许后补:传入的清单没有该字段(即 `undefined`,不是空数组)时,安装阶段用产物导出清单的 `contributions` 补齐;传入清单已声明该字段(含空数组)时保持原样,产物多出来的贡献点不会越过调用方的声明。插件市场与离线包都由 `meta.json` 推导清单,`meta.json` 可能没写 `contributions`,这条补齐规则让两种渠道装出的插件照样能登记事件处理器与请求前处理器。
+
 `installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型、来源信任判定与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一,缺省按 `outer` 处理;`trust` 与 `trustFailure` 是插件市场给出的信任清单判定,只用于界面展示来源是否被官方认可,不参与来源结论。签名材料共五项：`eec` 是信任清单登记的合集 EEC 证书 PEM,`eecUrls` 是来源自带的证书地址列表,按顺序为 `<base>/certs/<合集 id>/<合集 id>-eec.crt`、`<base>/certs/<合集 id>-eec.crt` 与兜底的 `<base>/eec.pem`: 第一档是当前公开发布布局,优先取它;第二档的扁平路径只在旧站点存在,留作兼容;第三档是最早的布局,只作最后兜底;三档都取不到才算拿不到证书。前两档的取舍在于兼容范围: 保留扁平路径是为了不必逼迫旧站点与仓库同时迁移,代价是新旧两种布局都要尝试,新来源只应提供嵌套路径。`eec` 与 `eecUrls` 都有时优先用 `eec`,省一次请求;拿到证书后先用内置根 CA 校验证书链,通过才做合集 CMS 分离验签,链不通过时结论为 `failed` 且不发起 CMS 验签。`sigUrl` 是 `plugin.js.sig` 地址(缺省为 `<url>.sig`);`authorPubUrl` 与 `authorSigUrl` 是作者公钥与作者签名地址(后者缺省为 `<url>.author.sig`),两者齐全时做作者裸签名验签;作者签名是可选材料,缺其中任一项或验签不通过都不阻断安装。安装阶段先校验产物签名,不通过只提示用户,仍照常安装,签名状态标记为 `failed`。
 
 `source` 还可携带目录数据的三层清单结论：`catalogVerified` 是 L1 清单的结论,`metaVerified` 是该版本 L3 清单的结论,`revisions` 是各层 `revision`,`authorPubSha512` 是 L2 清单登记的 `author_pub.pem` 哈希。前三项只写进安装记录,不参与来源结论;`authorPubSha512` 用于把关作者公钥:引擎拉到的公钥字节与该哈希不一致时不采用该公钥,作者签名按未校验处理,合集 CMS 验签不受影响。
@@ -63,15 +65,18 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 | `sessions:list` | 30 次 / 10 秒 | 3 秒 | `context.sessions.list` |
 | `sessions:read` | 30 次 / 10 秒 | 3 秒 | `context.sessions.read` |
 | `sessions:rename` | 5 次 / 10 秒 | 同步调用 | `context.sessions.rename` |
-| `events:session` | 5 次 / 10 秒 | 同步调用 | `context.events.on` |
+| `events:session` | 5 次 / 10 秒(仅登记) | 同步调用 | `context.events.on` |
 | `notify` | 10 次 / 10 秒 | 同步调用 | `context.ui.notify` |
 | `settings:locale` | 60 次 / 10 秒 | 3 秒 | `context.settings.locale` |
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
 | `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
+| `assets:read` | 20 次 / 10 秒 | 内层 10 秒后中止请求 | `context.assets.readText`、`context.assets.readBytes` |
 | `plugins:storage` | 100 次 / 10 秒 | 同步调用 | `context.storage.get`、`set`、`remove` |
 | `chat:request` | 10 次 / 10 秒(仅登记) | 同步调用,单次预算 10 毫秒 | `context.chat.onBeforeRequest` |
 
-表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session` 只登记处理器、不逐次调用,同样没有超时。超时只对异步成员生效。
+表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session` 与 `chat:request` 只登记处理器、不逐次调用,同样没有超时。超时只对异步成员生效。
+
+登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
 
 超限抛 `PluginRateLimitError`,未授予抛 `PluginCapabilityError`,超时抛 `PluginTimeoutError`,取消抛 `PluginAbortError`;限流与超时同时用既有 Toast 提示。
 
@@ -81,11 +86,36 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 `net:fetch` 只对内置插件开放。引擎启动时把 `builtin.ts` 里的插件 id 登记进注册表;安装校验时若清单申请了 `net:fetch` 而 id 不在集合内,直接返回 `unknown-capability`,第三方插件无法把它与一个不存在的能力区分开。能力调用层会再校验一次,防止绕过安装校验直接拿到 `context.net`。
 
-联网受引擎管控:插件对外发起请求的通道就是 `context.net`,第三方插件当前拿不到 `net:fetch`,需要联网时由宿主决定是否开放。这条口径是契约约束,不是技术隔离:插件产物与宿主同源运行在页面主线程里,引擎无法从技术上阻止同源代码直接调用浏览器全局的 `fetch`,直接调用属于不合规,不能作为插件可以自行联网的依据。
+联网受引擎管控:插件对外取数的通道只有 `context.net`(第三方当前拿不到)与 `context.assets`(只读远端资产)。第三方插件需要网页级联网时由宿主决定是否开放。这条口径是契约约束,不是技术隔离:插件产物与宿主同源运行在页面主线程里,引擎无法从技术上阻止同源代码直接调用浏览器全局的 `fetch`,直接调用属于不合规,不能作为插件可以自行联网的依据。
 
 请求约束全部由 `dsc-core` 的 `net.ts` 落实：只允许 https 与 GET,不发送 Cookie 与自定义请求头(`credentials: 'omit'`),只接受 `text/*` 与 `application/json` 响应,响应体上限 512KB,超时 10 秒并用 `AbortController` 真正中止请求。网络失败与解析失败由插件自行降级,引擎不弹宿主提示。
 
 `context.net.postJson` 面向不计结果的计数请求：只允许 https 与 JSON 请求体,请求体与响应体上限各 4KB,超时 5 秒,不跟随重定向,响应体丢弃只回传状态码。它复用 `net:fetch` 的授予口径,但用自己的限流窗口,避免计数请求挤占读取预算。
+
+### assets:read
+
+`context.assets.readText(url)` 与 `context.assets.readBytes(url)` 共用一个能力标识 `assets:read`,面向需要按地址读取远端资产包的插件(例如 https 地址上的 JSON、图片或其他二进制资产)。它与 `net:fetch` 的差别在授权口径:`assets:read` 对全部插件可见,在清单里申请即可;`net:fetch` 仍只对内置插件开放。两者都不是通用联网通道。
+
+约束全部由 `dsc-core` 的 `assets.ts` 落实：
+
+| 约束 | 规定 |
+|:---:|:---:|
+| 协议 | 只允许 https;本机回环主机(`localhost`、`127.0.0.1`、`[::1]`)允许 http;重定向后的最终地址同样校验 |
+| 凭证 | 不携带 Cookie,不发送自定义请求头;地址内嵌用户名或密码直接拒绝 |
+| 方法 | 只允许 GET |
+| 响应类型 | 不做限制,由插件判断内容是否可用 |
+| 响应体 | 上限 512KB,流式读取中超限立即中止并抛错 |
+| 超时 | 10 秒,超时用 `AbortController` 真正中止请求 |
+
+结果按观察到的事实分三态原样交给插件,引擎不猜测:
+
+| `kind` | 含义 | 插件可以据此判断 |
+|:---:|:---:|:---:|
+| `content` | 取到内容,带最终地址、响应类型与 `text` 或 `bytes` | 正常消费内容 |
+| `status` | 拿到明确的 HTTP 状态码,没有内容 | 对方已放行跨域,状态码就是对方给出的结论 |
+| `no-status` | 只有网络层失败,没有任何状态码 | 地址无效或对方未开启跨域,两种可能无法在引擎侧区分 |
+
+首次使用某个来源地址时,引擎向用户提示一次 `pluginAssetSourceFirstUse`(普通提示,不带错误图标)。去重键是「插件 + 来源」:同一插件重复读取同一站点只报一次,另一个插件读取同一站点仍各自报一次。提示只说明哪个插件在访问哪个站点,不替用户判断该站点是否可信。首次提示之后不再打扰用户:状态码、无状态码、读取错误与读取超时都只写该插件的插件日志;未授予与限流属于插件用法问题,仍按引擎统一口径提示。
 
 ### 请求前补丁
 
@@ -246,7 +276,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 
 只有一半签名材料时,引擎日志会记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
 
-提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝。安装记录写入 `source_type: "local"`、留空 `source_url`、`data_base` 与 `plugin_base`,按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
+提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝;`meta.json` 没写 `contributions` 时,用产物导出清单的贡献点补齐,规则与在线安装一致。安装记录写入 `source_type: "local"`、留空 `source_url`、`data_base` 与 `plugin_base`,按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
 
 ### 内置插件
 
@@ -270,7 +300,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 生命周期 | Cordis fiber 的挂载、激活与 `ctx.effect` 释放 | `registered` / `active` / `inactive` / `failed`,停用时执行 disposers | `index.ts`、`registry.ts` |
 | 服务与依赖注入 | `ctx.<key>` 服务与 `inject` 依赖 | `PluginContext` 能力对象与 `dependencies` 校验 | `capabilities.ts`、`registry.ts` |
 | 能力/贡献点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册贡献点并返回释放函数 | `capabilities.ts` |
-| 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;联网只经 `context.net`,第三方插件不可用;插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
+| 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;联网只经 `context.net`(第三方插件不可用)与 `context.assets`(只读远端资产);插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
 | 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 IndexedDB `<APP_NAME>-plugins` 的 `plugins` 仓库,插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>` | `db.ts`、`../dsc-core/plugin-data.ts` |
 | 内置插件 | dsh 自带插件包与内置 bundle | `builtin.ts` 清单,启动时先于外部插件装载 | `builtin.ts` |

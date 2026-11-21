@@ -35,6 +35,8 @@ dsc 插件在运行阶段就是一个符合 [dsc 插件产物规范](../basic/pl
 
 第三方插件当前拿不到这项能力:清单里申请 `net:fetch` 会被拒绝,与申请一个不存在的能力表现一致。需要联网的第三方插件应向宿主说明用途,由宿主决定是否开放。
 
+资产读取是另一条通道:第三方插件可以申请 `assets:read`,用 `context.assets.readText` 或 `readBytes` 按地址读取远端文本或字节。它不是通用联网:只允许 GET、只允许 https(本机回环可用 http)、不带凭证,并且有体积上限与超时。
+
 这条口径是契约约束,不是技术隔离:插件产物与宿主同源运行在同一个页面里,引擎无法在技术上阻止同源代码直接调用浏览器全局的 `fetch`。直接调用属于不合规,不能作为插件可以自行联网的依据。
 
 ## 最小可运行示例
@@ -119,22 +121,62 @@ export const activate = (context) => {
 | `sessions:list` | 全部插件 | `context.sessions.list` | 30 次 / 10 秒 |
 | `sessions:read` | 全部插件 | `context.sessions.read` | 30 次 / 10 秒 |
 | `sessions:rename` | 全部插件 | `context.sessions.rename` | 5 次 / 10 秒 |
-| `events:session` | 全部插件 | `context.events.on` | 5 次 / 10 秒 |
+| `events:session` | 全部插件 | `context.events.on` | 5 次 / 10 秒(仅登记) |
 | `notify` | 全部插件 | `context.ui.notify` | 10 次 / 10 秒 |
 | `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
 | `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
+| `assets:read` | 全部插件 | `context.assets.readText`、`context.assets.readBytes` | 20 次 / 10 秒 |
 | `net:fetch` | 仅内置插件 | `context.net.getText`、`context.net.postJson` | 10 次 / 10 秒 |
 
 `context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
 
-上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时。
+上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止;`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时。
 
-`chat:request` 的限流只算登记次数,引擎每次请求前调用处理器不再占用名额;处理器本身有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
+`events:session` 与 `chat:request` 的限流只算登记次数:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError` 并提示 `pluginCallRateLimited`,窗口滚过之后可以继续登记。请求前处理器另有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
 
 `net:fetch` 只对内置插件开放。第三方插件在清单里申请它时,安装结果为 `unknown-capability`,与申请一个不存在的能力表现一致;调用层还会再校验一次。第三方插件需要联网时由宿主决定是否开放,口径见上文「[联网](#联网)」。
 
 `context.net.postJson` 只发一次 JSON 请求体,不等待响应内容:只允许 https,请求体与响应体上限各 4KB,超时 5 秒,不跟随重定向,响应体被丢弃。它面向不计结果的计数类请求,插件清单仍然只声明 `net:fetch`。
+
+### 资产读取
+
+申请 `assets:read` 后,插件可以按地址读取远端资产包的文本或字节,适合读取托管在 https 地址上的 JSON、图片等资产:
+
+```js
+export const manifest = {
+  id: 'dsc-demo-asset',
+  name: 'Demo Asset',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['assets:read'],
+}
+
+export const activate = async (context) => {
+  const result = await context.assets.readText('https://example.com/assets/persona.json')
+  if (result.kind === 'content') {
+    context.log('内容长度: ' + result.text.length)
+  } else if (result.kind === 'status') {
+    context.log('对方返回状态码: ' + result.status)
+  } else {
+    context.log('没有拿到状态码,地址或跨域配置需要确认')
+  }
+}
+```
+
+约束:只允许 GET;协议只允许 https,本机回环主机(`localhost`、`127.0.0.1`、`[::1]`)允许 http;不携带 Cookie,不发送自定义请求头,地址内嵌用户名或密码会被拒绝;响应体上限 512KB;超时 10 秒。
+
+结果按观察到的事实分三态原样返回,引擎不猜测原因:
+
+| `kind` | 含义 | 能据此判断什么 |
+|:---:|:---:|:---:|
+| `content` | 取到内容 | 正常消费 `text` 或 `bytes` |
+| `status` | 拿到明确的 HTTP 状态码,没有内容 | 对方已放行跨域,状态码是对方给出的结论 |
+| `no-status` | 只有网络层失败,没有任何状态码 | 地址无效或对方未开启跨域,两种可能无法区分 |
+
+引擎侧能够确定的拒绝(地址不是绝对地址、协议不符、地址内嵌凭证、体积超限、超时、取消)抛 `PluginAssetError`,`reason` 取值为 `url`、`protocol`、`credential`、`too-large`、`timeout`、`aborted`。
+
+该插件首次访问某个来源地址时,宿主会提示用户一次(同一插件与同一来源只提示一次),提示只说明哪个插件在访问哪个站点,不替用户判断站点是否可信;之后的失败只写入该插件的插件日志。
 
 各能力的完整签名与可见数据范围见 [dsc 插件开发规范](../basic/plugin-develop-spec.md)。
 
@@ -240,7 +282,7 @@ npm 包的要点:
 - `package.json` 的 `files` 需要包含 `dist`,否则产物不会进包。
 - `package/` 下的其他内容被忽略,只安装 `package/dist/` 下的文件。
 
-`meta.json` 是安装依据:预检先确认包内有 `meta.json` 与 `plugin.js`,再确认 `plugin.js` 不超过 2 MB,然后把 `meta.json` 按 UTF-8 解码并解析。`meta.json` 不是合法 UTF-8 时按 `invalid-meta` 拒绝;解码成功后要求 `name`、`version`、`author` 非空且版本号为三段数字。清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。`dependencies.dsc` 会被当作清单的 `engines` 使用,必须写成单段版本范围,例如 `^1.0.0`;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检同样按 `invalid-meta` 拒绝,原因说明指向 `dependencies.dsc`。
+`meta.json` 是安装依据:预检先确认包内有 `meta.json` 与 `plugin.js`,再确认 `plugin.js` 不超过 2 MB,然后把 `meta.json` 按 UTF-8 解码并解析。`meta.json` 不是合法 UTF-8 时按 `invalid-meta` 拒绝;解码成功后要求 `name`、`version`、`author` 非空且版本号为三段数字。清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。`contributions` 不影响能否推导清单:`meta.json` 写了就原样带进清单,没写时由引擎用产物导出的 `manifest.contributions` 补齐,因此同一份产物经离线包与经市场安装得到同一份贡献点。`dependencies.dsc` 会被当作清单的 `engines` 使用,必须写成单段版本范围,例如 `^1.0.0`;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检同样按 `invalid-meta` 拒绝,原因说明指向 `dependencies.dsc`。
 
 带作者签名的离线包:
 
@@ -255,8 +297,8 @@ npm 包的要点:
 | 方式 | 入口 | 清单来源 |
 |:---:|:---:|:---:|
 | 从地址安装 | 插件面板底部的「从地址安装」 | 产物自带的 `manifest` 导出 |
-| 从本地安装 | 插件面板底部的「从本地安装」 | `meta.json` 的 `capabilities`,缺该字段时用产物自带的 `manifest` |
-| 插件市场 | 插件面板的「插件市场」标签页 | 索引条目内联的清单优先,否则用产物自带的 `manifest` |
+| 从本地安装 | 插件面板底部的「从本地安装」 | `meta.json` 的 `capabilities`;缺该字段时用产物自带的 `manifest`;`contributions` 缺失时同样用产物自带的 `manifest` 补齐 |
+| 插件市场 | 插件面板的「插件市场」标签页 | 由该版本 `meta.json` 推导的清单优先,否则用产物自带的 `manifest`;`contributions` 缺失时用产物自带的 `manifest` 补齐 |
 | 宿主注册 | 宿主代码调用 `engine.install(manifest, plugin)` | 调用方传入 |
 
 - 通过地址安装成功后插件自动激活;安装记录写入浏览器本地,下次打开页面时自动恢复。

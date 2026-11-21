@@ -31,6 +31,7 @@
 | 引擎安装接口与离线包的两步安装 | 本仓库 `dsc-plugin-engine` 的宿主接口 |
 | 错误与降级的原因代码与用户可见文案 | 与本仓库的 `i18n` 文案键配套 |
 | 请求前补丁(`chat:request` 与贡献点 `chat:before-request`) | 模板规范尚未覆盖,补丁字段、范围裁剪与合并规则由本仓库引擎实现界定,写入路径在 `dsc-core` 的发送路径上 |
+| 资产读取(`assets:read` 的三态结果与首次使用提示) | 模板规范尚未覆盖;三态口径、体积与超时上限、去重提示都由本仓库实现界定 |
 
 ## 引擎安装接口
 
@@ -180,11 +181,14 @@
 | 未声明 `chat:before-request` 却登记请求前处理器 | 抛 `PluginCapabilityError`,并提示 `pluginCapabilityDenied` |
 | 请求前补丁越界 | 按边界裁剪后生效,首次提示 `pluginRequestPatchClamped` |
 | 请求前处理器超时或抛错 | 整份补丁作废,请求按原参数发出,原因写入引擎日志 |
-| 超出限流 | 抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited` |
+| 超出限流 | 抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;`events.on` 与 `chat.onBeforeRequest` 按登记次数计,事件回调与请求前调用不占用名额 |
 | 调用超时或被取消 | 抛 `PluginTimeoutError` 或 `PluginAbortError` |
 | 事件处理器抛错 | 只写入该插件日志,不影响其他处理器 |
 | `net:fetch` 违反协议、方法或响应类型 | 抛 `PluginFetchError`,`reason` 为 `protocol`、`content-type` 等 |
 | `net:fetch` 超时或响应体超过 512KB | 真正中止请求并抛 `PluginFetchError`,`reason` 为 `timeout` 或 `too-large` |
+| `assets:read` 违反协议、超时或响应体超过 512KB | 拒绝或中止请求并抛 `PluginAssetError`,`reason` 为 `protocol`、`timeout`、`too-large` 等 |
+| `assets:read` 拿到 HTTP 状态码或没有状态码 | 不抛错,按三态结果交给插件;`status` 与 `no-status` 的区别由插件自行处理 |
+| 插件首次读取某个来源地址 | 提示用户一次 `pluginAssetSourceFirstUse`;之后的读取失败只写该插件的插件日志 |
 | 插件数据超过 64KB 或无法序列化 | 抛 `PluginDataError`,并提示 `pluginDataQuotaExceeded` 或 `pluginDataInvalid` |
 
 所有用户可见提示复用宿主 `i18n` 文案,插件不自行拼接中文文案。

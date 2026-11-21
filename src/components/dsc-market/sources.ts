@@ -1,25 +1,12 @@
+import { isHttpsOrLocalUrl } from '../../utils/url.js'
 import type { StorageCapability } from '../dsc-plugin-engine/types.js'
 import type { MarketSource } from './types.js'
 
 /** plugins:storage 中保存来源配置的键 */
 export const KEY_SOURCES = 'market-sources'
 
-/** 允许走 http 的本机回环主机，与引擎的插件来源判定保持一致 */
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-
-/** 来源地址判定：https 任意主机，或 http 的本机回环地址 */
-export const isSourceUrl = (value: string): boolean => {
-  let target: URL
-  try {
-    target = new URL(value)
-  } catch {
-    return false
-  }
-  if (target.protocol === 'https:') {
-    return true
-  }
-  return target.protocol === 'http:' && LOCAL_HOSTS.has(target.hostname)
-}
+/** 来源地址判定：https 任意主机，或 http 的本机回环地址；规则与引擎的插件来源判定共用 */
+export const isSourceUrl = (value: string): boolean => isHttpsOrLocalUrl(value)
 
 /** 规范化 base_url：去掉查询与哈希，补齐尾部斜杠；非法地址返回 null */
 export const normalizeBaseUrl = (value: string): string | null => {

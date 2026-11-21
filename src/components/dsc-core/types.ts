@@ -1,4 +1,5 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import type { AssetBytesResult, AssetTextResult } from './assets.js'
 import type { CoreCall } from './guard.js'
 
 /** dsc-core 版本；与 package.json 的 version 保持一致 */
@@ -13,6 +14,8 @@ export type CoreCapabilityId =
   | 'notify'
   | 'settings:locale'
   | 'net:fetch'
+  // 资产读取对全部插件可见，与 net:fetch 的内置限定相互独立
+  | 'assets:read'
   | 'plugins:storage'
   | 'chat:request'
   // 引擎管理专用，不在 CORE_CAPABILITIES 内，插件申请时按未知能力拒绝
@@ -29,6 +32,7 @@ export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
   'notify',
   'settings:locale',
   'net:fetch',
+  'assets:read',
   'plugins:storage',
   'chat:request',
 ]
@@ -76,6 +80,12 @@ export type CorePostResult = {
   status: number
 }
 
+/** 资产文本读取结果；三态原样交给引擎，不做二次归类 */
+export type CoreAssetTextResult = AssetTextResult
+
+/** 资产字节读取结果；三态原样交给引擎，不做二次归类 */
+export type CoreAssetBytesResult = AssetBytesResult
+
 /** 请求前的只读切片；只给最后一条用户消息文本，不给整段会话 */
 export type CoreRequestPreview = { readonly lastUserMessage: string }
 
@@ -111,6 +121,16 @@ export type CoreApi = {
   notify(call: CoreCall, key: TranslationKey, params?: TranslationParams): void
   subscribe(call: CoreCall, listener: (event: CoreEvent) => void): () => void
   fetchText(call: CoreCall, url: string, signal?: AbortSignal): Promise<CoreFetchResult>
+  readAssetText(
+    call: CoreCall,
+    url: string,
+    signal?: AbortSignal
+  ): Promise<CoreAssetTextResult>
+  readAssetBytes(
+    call: CoreCall,
+    url: string,
+    signal?: AbortSignal
+  ): Promise<CoreAssetBytesResult>
   postJson(
     call: CoreCall,
     url: string,

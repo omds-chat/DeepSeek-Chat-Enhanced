@@ -1,28 +1,15 @@
+import { isHttpsOrLocalUrl } from '../../utils/url.js'
 import { readManifest } from './registry.js'
 import type { DscPlugin, LoadedPlugin, PluginFactory, PluginManifest } from './types.js'
 
 /** 运行时加载的默认超时（毫秒） */
 const DEFAULT_TIMEOUT = 10000
 
-/** 允许走 http 的本机回环主机 */
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-
 /**
  * 插件来源地址判定：https 任意主机，或 http 的本机回环地址。
- * 面板与加载器共用同一判定，避免两处规则漂移。
+ * 规则收敛在 utils 里，面板、加载器、市场与资产读取共用同一份实现，避免多处复制后漂移。
  */
-export const isPluginSourceAllowed = (value: string): boolean => {
-  let target: URL
-  try {
-    target = new URL(value)
-  } catch {
-    return false
-  }
-  if (target.protocol === 'https:') {
-    return true
-  }
-  return target.protocol === 'http:' && LOCAL_HOSTS.has(target.hostname)
-}
+export const isPluginSourceAllowed = (value: string): boolean => isHttpsOrLocalUrl(value)
 
 const isPlugin = (value: unknown): value is DscPlugin =>
   typeof value === 'object' &&

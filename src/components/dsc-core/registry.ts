@@ -1,6 +1,8 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { consumeTicket, isCredential, recordBypass, type CoreCall } from './guard.js'
 import type {
+  CoreAssetBytesResult,
+  CoreAssetTextResult,
   CoreCapabilityId,
   CoreEvent,
   CoreFetchResult,
@@ -10,6 +12,15 @@ import type {
   CoreSessionView,
   CoreStorageCall,
 } from './types.js'
+
+/**
+ * 资产读取服务；文本与字节两种形态共用一个能力标识。
+ * 与插件数据的三个成员同一做法：授权单位是这一项能力，core 侧按形态分派实现。
+ */
+export type CoreAssetService = {
+  text(url: string, signal?: AbortSignal): Promise<CoreAssetTextResult>
+  bytes(url: string, signal?: AbortSignal): Promise<CoreAssetBytesResult>
+}
 
 /**
  * 能力标识到核心实现签名的映射。
@@ -24,6 +35,7 @@ export type CoreServiceTable = {
   'settings:locale': () => 'zh-CN' | 'en-US'
   'net:fetch': (url: string, signal?: AbortSignal) => Promise<CoreFetchResult>
   'net:fetch-post': (url: string, body: unknown, signal?: AbortSignal) => Promise<CorePostResult>
+  'assets:read': CoreAssetService
   'plugins:storage': (call: CoreStorageCall) => unknown
   'plugins:data-clear': (pluginId: string) => void
   'chat:request-source': (source: CoreRequestPatchSource | null) => void

@@ -19,13 +19,16 @@ import {
   type SiteManifestFetch,
 } from '../../services/integrity/site.js'
 import { collectionCertPaths, normalizeCollectionId } from '../../services/trust/collection.js'
+import { isHttpsOrLocalUrl } from '../../utils/url.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/types.js'
 import { toPluginId } from '../dsc-plugin-engine/pluginId.js'
-import type {
-  NetCapability,
-  PluginManifest,
-  PluginSourceType,
-  StorageCapability,
+import {
+  CONTRIBUTION_POINTS,
+  type ContributionPoint,
+  type NetCapability,
+  type PluginManifest,
+  type PluginSourceType,
+  type StorageCapability,
 } from '../dsc-plugin-engine/types.js'
 import { createDownloadReporter } from './count.js'
 import { detectSourceModel, type SourceModel } from './model.js'
@@ -187,21 +190,7 @@ export const parseSourceMeta = (text: string): SourceMeta | null => {
 }
 
 /** 计数接口地址只接受 https 或本机回环，与来源地址同一判定 */
-const isApiUrl = (value: string): boolean => {
-  let target: URL
-  try {
-    target = new URL(value)
-  } catch {
-    return false
-  }
-  if (target.protocol === 'https:') {
-    return true
-  }
-  return (
-    target.protocol === 'http:' &&
-    (target.hostname === 'localhost' || target.hostname === '127.0.0.1' || target.hostname === '[::1]')
-  )
-}
+const isApiUrl = (value: string): boolean => isHttpsOrLocalUrl(value)
 
 /** 解析插件目录索引 plugins.json；不合格条目跳过并计数 */
 export const parsePluginsIndex = (text: string): { entries: CatalogEntry[]; skipped: number } | null => {
@@ -307,6 +296,28 @@ const readCapabilities = (value: unknown): CoreCapabilityId[] | null => {
   return capabilities
 }
 
+/**
+ * 读清单里的贡献点声明；缺字段或含未知贡献点时返回 null。
+ * 返回 null 时清单不带 contributions 字段，由引擎在安装阶段用产物导出的 manifest 补齐，
+ * 与能力的回落口径一致：市场侧不猜、也不丢弃产物自己的声明。
+ */
+const readContributions = (value: unknown): ContributionPoint[] | null => {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const contributions: ContributionPoint[] = []
+  for (const item of value) {
+    if (typeof item !== 'string' || !CONTRIBUTION_POINTS.includes(item as ContributionPoint)) {
+      return null
+    }
+    const point = item as ContributionPoint
+    if (!contributions.includes(point)) {
+      contributions.push(point)
+    }
+  }
+  return contributions
+}
+
 /** 解析运行时 meta.json；name 与 version 必填 */
 export const parseRuntimeMeta = (
   text: string
@@ -333,9 +344,15 @@ export const parseRuntimeMeta = (
   }
   let manifest: PluginManifest | null = null
   const capabilities = readCapabilities(parsed.capabilities)
+  const contributions = readContributions(parsed.contributions)
   const id = toPluginId(meta.name)
   if (capabilities && id) {
     manifest = { id, name: meta.name, version: meta.version, capabilities }
+    // 贡献点是请求前能力与事件订阅的登记前置条件，缺它会让市场渠道装出的插件什么都登记不了；
+    // meta.json 没声明时留空，由引擎在安装阶段用产物导出的 manifest 补齐
+    if (contributions !== null) {
+      manifest.contributions = contributions
+    }
     const dependencies = parsed.dependencies
     if (isRecord(dependencies) && typeof dependencies.dsc === 'string' && dependencies.dsc !== '') {
       manifest.engines = dependencies.dsc

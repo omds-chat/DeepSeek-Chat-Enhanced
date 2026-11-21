@@ -1,10 +1,15 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import type {
+  AssetBytesResult,
+  AssetTextResult,
   CoreCapabilityId,
   CoreEvent,
   CoreSessionSummary,
   CoreSessionView,
 } from '../dsc-core/index.js'
+
+/** 资产读取结果的两种形态；类型定义在 core，引擎原样转交给插件 */
+export type { AssetBytesResult, AssetTextResult } from '../dsc-core/index.js'
 
 /**
  * 单个插件的代码上限(字节)。
@@ -81,9 +86,15 @@ export type PluginManifest = {
   dependencies?: string[]
   /** 冲突的插件 id；同时安装会被拒绝 */
   conflicts?: string[]
-  /** 申请的能力；必须在核心能力表内 */
+  /**
+   * 申请的能力；必须在核心能力表内。
+   * `net:fetch` 只对内置插件开放，`assets:read` 对全部插件开放。
+   */
   capabilities: CoreCapabilityId[]
-  /** 订阅的贡献点；必须在贡献点表内 */
+  /**
+   * 订阅的贡献点；必须在贡献点表内。
+   * 由 meta.json 推导的安装清单可以缺该字段，安装阶段会用产物导出的 manifest 补齐。
+   */
   contributions?: ContributionPoint[]
 }
 
@@ -126,6 +137,16 @@ export type NetPostResponse = {
 export type NetCapability = {
   getText(url: string, options?: CallOptions): Promise<NetResponse>
   postJson(url: string, body: unknown, options?: CallOptions): Promise<NetPostResponse>
+}
+
+/**
+ * 资产读取能力；按地址取远端资产包的文本或字节。
+ * 结果三态原样交给插件：取到内容、拿到明确 HTTP 状态码、只有网络层失败而无状态码。
+ * 引擎不猜测失败原因，也不把状态码当异常抛出。
+ */
+export type AssetsCapability = {
+  readText(url: string, options?: CallOptions): Promise<AssetTextResult>
+  readBytes(url: string, options?: CallOptions): Promise<AssetBytesResult>
 }
 
 /** 插件数据能力；值必须可 JSON 序列化 */
@@ -176,6 +197,7 @@ export type PluginContext = {
   readonly ui: UiCapability
   readonly settings: SettingsCapability
   readonly net: NetCapability
+  readonly assets: AssetsCapability
   readonly storage: StorageCapability
   readonly chat: ChatCapability
   readonly log: (message: string) => void

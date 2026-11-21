@@ -17,6 +17,7 @@ import {
   type CoreRequestPatch,
   type CoreRequestPreview,
 } from '../dsc-core/index.js'
+import { createAssetAnnouncer } from './assetAccess.js'
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
 import {
@@ -201,6 +202,8 @@ export const installPluginEngine = (): PluginEngine => {
     showToast({ key, params })
   }
   setAlertSink((message) => report(message.key, message.params))
+  // 资产来源的首次使用提示按「插件 + 来源」去重，去重状态与引擎同寿命
+  const announceAsset = createAssetAnnouncer(warn)
 
   const engineLogs: string[] = []
   const pushEngineLog = (message: string) => {
@@ -458,7 +461,7 @@ export const installPluginEngine = (): PluginEngine => {
       return false
     }
     try {
-      const context = createPluginContext({ record, core, credential, report })
+      const context = createPluginContext({ record, core, credential, report, announceAsset })
       await runWithTimeout(Promise.resolve(record.plugin.activate(context)), ACTIVATE_TIMEOUT, {
         onTimeout: () => report('pluginCallTimeout', { id, capability: 'activate' }),
       })
@@ -560,8 +563,8 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，
-   * 两者都没有则按清单非法拒绝。安装阶段下载产物字节并保存代码文本，
-   * 带签名材料时先对原始字节验签，通过后才加载模块。
+   * 传入的清单缺 contributions 时用产物导出清单的贡献点补齐，两者都没有则按清单非法拒绝。
+   * 安装阶段下载产物字节并保存代码文本，带签名材料时先对原始字节验签，通过后才加载模块。
    */
   const installFromUrl = async (
     url: string,
@@ -646,7 +649,9 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id: target, reason: pluginReasonText('invalid-plugin') })
       return { ok: false, reason: 'invalid-plugin', detail }
     }
-    const resolved = manifest ?? loaded.manifest
+    // 清单以调用方传入的为准；meta.json 推导的清单可能没有 contributions，用产物导出的清单补齐
+    const resolved =
+      manifest === undefined ? loaded.manifest : store.withArtifactContributions(manifest, loaded.manifest)
     if (!resolved) {
       report('pluginManifestMissing', { id: url })
       return { ok: false, reason: 'invalid-manifest' }
@@ -689,6 +694,7 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 提交离线包：用包内代码建模块并注册。
+   * 包内 meta.json 推导的清单缺 contributions 时，用产物导出的清单补齐。
    * 同 id 已存在时直接拒绝，不覆盖已有记录。
    */
   const commitLocalPackage = async (inspection: PackageInspection): Promise<InstallResult> => {
@@ -708,7 +714,11 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id: fallbackId, reason: pluginReasonText('load-failed') })
       return { ok: false, reason: 'load-failed', detail }
     }
-    const resolved = inspection.manifest ?? loaded.manifest
+    // 离线包由 meta.json 推导的清单同样可能缺 contributions，按同一口径用产物导出的清单补齐
+    const resolved =
+      inspection.manifest === null
+        ? loaded.manifest
+        : store.withArtifactContributions(inspection.manifest, loaded.manifest)
     if (!resolved) {
       // 插件名收敛不出合规 id 时，把原因指向命名而不是笼统的清单非法
       if (inspection.manifestProblem) {
@@ -1087,6 +1097,9 @@ export const installPluginEngine = (): PluginEngine => {
 export const getPluginEngine = (): PluginEngine | null => engine
 
 export type {
+  AssetBytesResult,
+  AssetTextResult,
+  AssetsCapability,
   BeforeRequestHandler,
   BeforeRequestPreview,
   CallOptions,

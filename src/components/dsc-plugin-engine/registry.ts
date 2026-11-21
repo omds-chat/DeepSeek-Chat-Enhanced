@@ -210,6 +210,21 @@ export const readManifest = (value: unknown): PluginManifest | null => {
   return manifest
 }
 
+/**
+ * 用产物导出的清单补齐安装清单缺少的贡献点。
+ * 市场与离线包由 meta.json 推导的清单可能没有 contributions 字段，安装阶段能拿到产物的 manifest 时用它补齐；
+ * 清单已声明该字段（含空数组）时以清单为准，产物多出来的贡献点不会越过清单的声明。
+ */
+export const withArtifactContributions = (
+  manifest: PluginManifest,
+  artifact: PluginManifest | undefined
+): PluginManifest => {
+  if (manifest.contributions !== undefined || artifact?.contributions === undefined) {
+    return manifest
+  }
+  return { ...manifest, contributions: [...artifact.contributions] }
+}
+
 const validateManifest = (manifest: PluginManifest): InstallRejection | null => {
   const name = manifest.name.trim()
   if (!ID_PATTERN.test(manifest.id) || name === '' || !VERSION_PATTERN.test(manifest.version)) {

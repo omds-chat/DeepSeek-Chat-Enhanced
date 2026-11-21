@@ -32,6 +32,7 @@ dsc-core/
 ├── request-patch.ts # 请求补丁的落点：取切片、向引擎索取、写进请求
 ├── guard.ts       # 调用凭证与绕过检测
 ├── net.ts         # net:fetch 的唯一实现：https GET 读文本与受限 POST、体积与超时约束
+├── assets.ts      # assets:read 的唯一实现：按地址取文本或字节、三态结果、体积与超时约束
 ├── plugin-data.ts # plugins:storage 的唯一实现：localStorage 与 64KB 配额
 └── README.md      # 归属边界与接口说明
 ```
@@ -50,13 +51,14 @@ dsc-core/
 | `settings:locale` | `currentLocale` | 只读当前语言 | 可开放 |
 | `net:fetch` | `fetchText` | 读取外源文本资源,只有 https 与 GET | 需限流 |
 | `net:fetch-post` | `postJson` | 发送一次 JSON POST,响应体丢弃,只回传状态码 | 仅引擎 |
+| `assets:read` | `readAssetText`、`readAssetBytes` | 按地址取远端文本或字节,三态结果原样返回,只有 https 与本机回环 | 需限流 |
 | `plugins:storage` | `readPluginEntry`、`writePluginEntry`、`removePluginEntry` | 插件自身的键值数据,单插件 64KB | 需限流 |
 | `plugins:data-clear` | `clearPluginData` | 清除单个插件的全部数据,只供宿主设置的数据管理调用 | 仅宿主 |
 | `chat:request-source` | `setRequestPatchSource` | 登记请求补丁来源,登记与撤销都只由引擎发起 | 仅引擎 |
 
 `chat:request` 是插件可见能力,但它在 core 侧没有对应方法:登记与调用都在引擎内完成,core 只在发送路径上向引擎索取一次补丁。同一份补丁的字段白名单与范围裁剪也只由引擎实现,core 不重复判定。
 
-永久不开放：API Key、`zustand` store 原始句柄、IndexedDB 句柄与事务、附件上传与原件、任意网络请求(`net:fetch` 是唯一例外,且只对内置插件开放)、任意 DOM 操作。
+永久不开放：API Key、`zustand` store 原始句柄、IndexedDB 句柄与事务、附件上传与原件、任意网络请求(`net:fetch` 与 `assets:read` 是两条受限例外:前者只对内置插件开放,后者只按地址读取资产且仅 https 与本机回环)、任意 DOM 操作。
 
 ## 外源请求约束
 
@@ -86,6 +88,31 @@ dsc-core/
 | 超时 | 5 秒,超时用 `AbortController` 真正中止请求 |
 
 失败统一抛 `PluginFetchError`,`reason` 取值为 `url`、`protocol`、`timeout`、`aborted`、`status`、`content-type`、`too-large`、`body`、`redirect`、`network`。
+
+## 资产读取约束
+
+`assets.ts` 是 `assets:read` 的唯一实现,为需要按地址读取远端资产包的插件提供只读通道。它与 `net:fetch` 共用约束思路,但授权口径不同:`assets:read` 对全部插件可见,`net:fetch` 只对内置插件开放,因此两者分开实现、分开限流。
+
+| 约束 | 规定 |
+|:---:|:---:|
+| 协议 | 只允许 `https:`;本机回环主机(`localhost`、`127.0.0.1`、`[::1]`)允许 `http:`;重定向后的最终地址按同一规则再校验 |
+| 凭证 | 不携带 Cookie(`credentials: 'omit'`),不发送自定义请求头;地址里内嵌用户名或密码时直接拒绝 |
+| 方法 | 只允许 GET |
+| 响应类型 | 不做限制,内容是否可用由插件判断 |
+| 响应体 | 上限 512KB,流式读取中超限立即中止并抛错 |
+| 超时 | 10 秒,超时用 `AbortController` 真正中止请求 |
+
+### 三态结果
+
+失败原因在半途无法归类,因此读取结果按观察到的事实分三态原样返回,引擎不做二次归类:
+
+| 形态 | 含义 | 典型成因 |
+|:---:|:---:|:---:|
+| `content` | 取到内容,带最终地址、响应类型与文本或字节 | 对方放行跨域且返回 2xx |
+| `status` | 拿到明确的 HTTP 状态码,没有内容 | 对方放行跨域但返回非 2xx;或响应头已到达而读体中断 |
+| `no-status` | 只有网络层失败,没有任何状态码 | 地址无效、连接失败,或对方未放行跨域 |
+
+`status` 与 `no-status` 的分界是“有没有拿到状态码”:拿到状态码说明对方已放行跨域,没有状态码时既可能是地址无效,也可能是对方未开启跨域;引擎不猜是哪一种,把两种可能原样交给插件。引擎侧能够确定的拒绝(地址不是绝对地址、协议不符、地址内嵌凭证、体积超限、超时、取消)统一抛 `PluginAssetError`,`reason` 取值为 `url`、`protocol`、`credential`、`too-large`、`timeout`、`aborted`。
 
 ## 插件数据约束
 

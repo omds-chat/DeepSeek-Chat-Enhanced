@@ -58,10 +58,30 @@ dsc-market/
 4. 识别目录数据模型:先探测合集模型的特征文件 `manifest.json` 与 `plugins.json`,再探测整站模型的特征文件 `web_files.json` 与证书;两种都不成立时按未确认处理,不报错。见下节「目录数据的两种模型」。
 5. 取 `<base_url>/plugins.json` 得到插件目录索引,每条包含 `plugin_name`、`author`、`tag`。该文件在识别模型时已取回一次,不重复请求。
 6. 校验根目录材料并据此确定目录结论:合集模型取 `<base_url>/manifest.json` 与 `manifest.json.sig` 按 L1 验签,再用它校验根 `meta.json` 与 `plugins.json` 的哈希;整站模型取 `web_files.json` 与签名,先在本机校验证书链,再用证书验清单签名,最后按清单逐文件验签 `meta.json` 与 `plugins.json`。
-7. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/` 的校验材料并校验 `versions.json` 与该版本 `meta.json`:合集模型用 L3 清单,整站模型用这两个文件各自的 `<文件>.sig`。合集模型另取 `<base_url>/plugins/<author>/manifest.json` 按 L2 清单验签,取出 `author_pub.pem` 登记的哈希;整站模型没有 L2 清单,该哈希缺省,引擎按未校验作者公钥哈希处理。拿到 `versions.json` 的 `latest` 后取该版本 `meta.json` 作为展示信息。
+7. 对每个插件取 `<base_url>/plugins/<author>/<plugin>/` 的校验材料并校验 `versions.json` 与该版本 `meta.json`:合集模型用 L3 清单,整站模型用这两个文件各自的 `<文件>.sig`。合集模型另取 `<base_url>/plugins/<author>/manifest.json` 按 L2 清单验签,取出 `author_pub.pem` 登记的哈希;整站模型没有 L2 清单,该哈希缺省,引擎按未校验作者公钥哈希处理。拿到 `versions.json` 的 `latest` 后取该版本 `meta.json` 作为展示信息,并由同一份 `meta.json` 推导安装清单(见下节)。
 8. 安装时用 `<base_url>/plugins/<author>/<plugin>/<latest>/plugin.js` 作为产物地址,并把该版本目录 `dataBase` 与插件目录 `pluginBase` 一并交给引擎入库,后续检查更新直接按 `dataBase` 请求,不必再从 `plugins.json` 反查。目录数据结论与各层 revision 随安装来源交给引擎(整站模型没有清单 revision,该字段为空)。签名材料的地址同样交给引擎:合集证书有两个来源,清单已登记时把 `eec` 一起交给引擎(优先使用,省一次请求),同时给出 `eecUrls` 即来源自带的地址列表,按顺序为 `<base_url>/certs/<合集 id>/<合集 id>-eec.crt`、`<base_url>/certs/<合集 id>-eec.crt` 与兜底的 `<base_url>/eec.pem`(嵌套布局是当前公开发布布局,扁平路径只在旧站点存在、留作兼容,`eec.pem` 最后兜底);引擎先用内置根 CA 校验证书链,通过后才验签,链不通过时结论为 `failed` 且不发起 CMS 验签。CMS 签名取同版本目录的 `plugin.js.sig`,作者签名取 `plugin.js.author.sig` 与 `plugins/<author>/author_pub.pem`。
 
 合集的可信性由「根 CA 签发的 EEC」证明,没有额外的合集信任签名(旧结构见 [信任链与 PKI 签名](../../../docs/user/develop/basic/trust-chain.md))。同一个来源的信任材料必须同址取用,避免把 A 地址的签名与 B 地址的证书拼在一起。
+
+### meta.json 与安装清单
+
+市场只把 `meta.json` 里能直接对应清单的字段带进安装计划,其余字段不猜:
+
+| meta.json 字段 | 清单字段 | 缺失或不合规时 |
+|:---:|:---:|:---:|
+| `name` | `id`、`name` | `name` 收敛不出合规 id 时整份清单为 null |
+| `version` | `version` | 不是三段数字时整份清单为 null |
+| `capabilities` | `capabilities` | 缺字段或含能力表外的名字时整份清单为 null;重复项自动去重 |
+| `contributions` | `contributions` | 缺字段或含贡献点表外的名字时清单不带该字段;重复项自动去重 |
+| `dependencies.dsc` | `engines` | 缺字段时不填 |
+
+能力与贡献点的关系是「能力必须齐全、贡献点可以后补」:
+
+- `capabilities` 决定清单能否由 `meta.json` 推出来。它缺失或不合规时市场不给清单,安装时由引擎整份使用产物导出的 `manifest`。
+- `contributions` 是独立字段。`meta.json` 声明了就原样带进清单,并且显式空数组按「不订阅任何贡献点」处理;没声明时清单不带该字段,由引擎在安装阶段用产物导出的 `manifest.contributions` 补齐。因此市场里尚未补 `contributions` 的旧条目仍能登记事件处理器与请求前处理器;想让市场侧解析结果直接反映贡献点,在 `meta.json` 里补上即可。
+- 清单里的贡献点仍然要过引擎的安装校验:名字必须在贡献点表内,否则安装被拒,原因为 `unknown-contribution`。
+
+市场与离线包共用同一条清单规则:两处都由 `meta.json` 推导清单,都靠引擎在安装阶段补齐 `contributions`,因此同一份 `meta.json` 经两条安装路径得到同一份贡献点。
 
 ### 三层清单校验
 
@@ -223,7 +243,7 @@ client?.addSource('自定义', ['https://example.com/plugins/'])
 client?.setBaseUrls('awesome-dsc-plugin', ['https://cdn.example.com/'])
 client?.moveSource('dsc-inner-plugin', -1)
 client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
-client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(嵌套路径优先,旧站点的扁平路径兼容,最旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单
+client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(嵌套路径优先,旧站点的扁平路径兼容,最旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单;manifest 由该版本 meta.json 推导,缺 contributions 时由引擎在安装阶段用产物导出的 manifest 补齐
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 await client?.checkUpdates([{ id: 'demo', version: '1.0.0', sourceUrl: 'https://example.com/plugins/a/demo/1.0.0/plugin.js' }]) // 更新检查：Map<id, { status: 'outdated' | 'latest', latest }>
 client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trust, trustFailure }，地址结构不符时为 null
