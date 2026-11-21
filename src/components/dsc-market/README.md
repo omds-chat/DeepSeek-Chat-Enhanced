@@ -42,7 +42,7 @@ dsc-market/
 
 本地开发时来源地址可由 .env 覆盖,线上地址不变: 上表的 Pages 地址在 dev 下由 .env 的 `DSC_INNER_PLUGIN_PAGES_LINK`、`AWESOME_DSC_PLUGIN_PAGES_LINK` 注入值替代,注入为空或非法时仍用线上地址,地址判定与信任校验不分开发与线上。
 
-来源 id 与合集目录名一致,因此可以直接命中 online-data 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。来源类型仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
+来源 id 与合集目录名一致,因此可以直接命中 trusted-manifest 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。来源类型仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
 
 内置来源不可删除,可以改 `base_url` 列表与顺序;用户还可以新增、删除、排序自定义来源。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。界面默认选中列表第一个来源。
 
@@ -53,7 +53,7 @@ dsc-market/
 对每个来源依次执行:
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
-2. 在 online-data 的 `index.json` 里按来源 id 与名称查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用内置根证书校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未登记。这一步只给出「是否被官方认可」的展示结论,来源结论由引擎按本机链校验与验签给出。
+2. 在 trusted-manifest 的 `index.json` 里按来源 id 与名称查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用内置根证书校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未登记。这一步只给出「是否被官方认可」的展示结论,来源结论由引擎按本机链校验与验签给出。
 3. 取来源证书,三档顺序见下节;清单已登记时直接用清单里的那份,省一次请求。
 4. 识别目录数据模型:先探测合集模型的特征文件 `manifest.json` 与 `plugins.json`,再探测整站模型的特征文件 `web_files.json` 与证书;两种都不成立时按未确认处理,不报错。见下节「目录数据的两种模型」。
 5. 取 `<base_url>/plugins.json` 得到插件目录索引,每条包含 `plugin_name`、`author`、`tag`。该文件在识别模型时已取回一次,不重复请求。
@@ -125,7 +125,7 @@ dsc-market/
 | `trusted` | 信任清单里该来源的 EEC 证书链校验通过 | 允许浏览与安装 |
 | `endorsed` | 来源由 dsc 直接背书,即内置的 `dsc-inner-plugin` 内部插件索引;信任清单里登记了它的 EEC 时仍按证书链校验,两种判定都通过才记为背书,链校验不通过仍记为不可信 | 显示「dsc 官方维护」标识,与社区合集的「可信」区分;安装与验签流程与其他来源完全一致,不跳过任何校验 |
 | `untrusted` | 清单里有该来源,但证书链校验不通过或证书文件缺失 | 仍列出目录并保留「不可信」标识与警告;安装仍可进行,第一次点击转为 3 秒确认态 |
-| `unverified` | online-data 信任清单里没有该来源,或构建未注入根证书 `__ROOT_CA_PEM__` | 中性标注「未在官方清单登记」;安装前仍需二次确认,不按不可信处理 |
+| `unverified` | trusted-manifest 信任清单里没有该来源,或构建未注入根证书 `__ROOT_CA_PEM__` | 中性标注「未在官方清单登记」;安装前仍需二次确认,不按不可信处理 |
 
 `dsc-inner-plugin` 是 dsc 直接签名的内部插件索引,由 dsc 背书而不是由合集 EEC 链证明,因此单列 `endorsed` 状态。背书来源仍走与外部来源相同的安装通道：验签、落库与启动校验全部由 `dsc-plugin-engine` 完成,市场侧不为 inner 提供任何跳过校验的分支。用户自建的来源即使 id 与内部索引相同也不按背书处理,`isEndorsedSource` 要求来源是内置来源。
 

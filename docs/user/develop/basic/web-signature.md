@@ -11,7 +11,7 @@
 | 证书落盘 | `pnpm run pki -- sign-web` | 写出 `dist/certs/ds-chat-pages/ds-chat-pages-eec.crt` |
 | 信任锚 | `rspack.config.ts` | 构建时把根证书 PEM 注入为 `__ROOT_CA_PEM__` |
 | 离线验签证书 | `rspack.config.ts` | 构建时把网页签名 EEC 证书 PEM 注入为 `__PAGES_EEC_PEM__` |
-| 信任数据分发 | online-data 分支 | 提供 `certs/ds-chat/ds-chat-root-ca.crt` 与 `certs/ds-chat-pages/ds-chat-pages-eec.crt` |
+| 信任数据分发 | `certs` 分支 | 提供 `certs/ds-chat/ds-chat-root-ca.crt` 与 `certs/ds-chat-pages/ds-chat-pages-eec.crt` |
 | 运行时校验 | `src/services/integrity/` | 页面挂载后异步校验证书链与全部签名,失败只提示一条警告 |
 
 ## 签名范围
@@ -97,9 +97,9 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/ds-chat-pages/ds-chat-pa
 | 材料 | 在线 | 离线 | 判据 |
 |:---:|:---:|:---:|:---:|
 | 根证书 | 拉 `certs/ds-chat/ds-chat-root-ca.crt` 与内嵌副本逐字节比对 | 不比对,直接用内嵌 | 信任锚永远只用内嵌的那份;在线副本不参与任何决策,根证书不能用自己验证自己 |
-| 网页签名 EEC | 先取 online-data 副本,必须能在内嵌根证书下通过证书链校验 | 直接用 `__PAGES_EEC_PEM__` | 链不通过、取不到或无法解析都回退内嵌,回退时留一条控制台提示 |
+| 网页签名 EEC | 先取 `certs` 分支副本,必须能在内嵌根证书下通过证书链校验 | 直接用 `__PAGES_EEC_PEM__` | 链不通过、取不到或无法解析都回退内嵌,回退时留一条控制台提示 |
 | CRL | 按 `index.json` 的登记取并验签 | 不请求,吊销状态视为未知 | 未知时不判定任何证书已吊销,也不阻断任何操作 |
-| 网页清单与逐文件签名 | 与页面同源取 | 与页面同源取 | 属于产物自身,始终按页面地址取,不走 online-data |
+| 网页清单与逐文件签名 | 与页面同源取 | 与页面同源取 | 属于产物自身,始终按页面地址取,不走 `certs` 分支 |
 
 选取顺序固定为「在线副本 → 本机校验 → 回退内嵌」,判据只看本机能验证的事实:
 
@@ -120,7 +120,7 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/ds-chat-pages/ds-chat-pa
 |:---:|:---:|
 | 根证书为空 | 直接返回,不发起任何请求 |
 | 判定在线状态 | `navigator.onLine` 为 `false` 时不拉取根证书、EEC 与 CRL,直接用内嵌材料 |
-| 拉取 `certs/ds-chat/ds-chat-root-ca.crt` | 在线时按 online-data 的多镜像依次尝试,单个请求超时 1 秒;拉不到时只记一条提示,继续按内嵌根证书校验 |
+| 拉取 `certs/ds-chat/ds-chat-root-ca.crt` | 在线时按 `certs` 分支的多镜像依次尝试,单个请求超时 1 秒;拉不到时只记一条提示,继续按内嵌根证书校验 |
 | 核对信任锚 | 拉到的根证书必须与内嵌根证书逐字节一致,否则提示一条警告并继续用内嵌的那份 |
 | 选取网页 EEC | 在线优先取 `certs/ds-chat-pages/ds-chat-pages-eec.crt` ,并要求在内嵌根证书下通过证书链校验;取不到、无法解析或链不通过时回退 `__PAGES_EEC_PEM__` |
 | 选取吊销列表 | 在线时按 `index.json` 的 `crl` 登记取 CRL 并验签;离线、取不到、解析失败或验签不通过时吊销状态按未知处理,不阻断校验 |
@@ -159,7 +159,7 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/ds-chat-pages/ds-chat-pa
 | 产物里 `__PAGES_EEC_PEM__` 为空 | 同上,只有 `createConfig` 显式传入空串才会这样;正常构建会从 `certs/ds-chat-pages/ds-chat-pages-eec.crt` 注入 |
 | 页面提示证书链校验未通过 | 在线副本与内嵌材料都校验不过: 在线 EEC 不是内嵌根证书签发的且内嵌 EEC 也已过期,或内嵌根证书本身不在有效期内 |
 | 页面提示签名校验未通过 | 产物在签名后被改动,或签名用的 EEC 与产物内嵌的 EEC 不是同一张证书 |
-| 控制台提示改用了内嵌材料 | online-data 的 EEC 取不到、超时或链校验未通过,已按内嵌材料继续校验,属预期回退 |
+| 控制台提示改用了内嵌材料 | `certs` 分支的 EEC 取不到、超时或链校验未通过,已按内嵌材料继续校验,属预期回退 |
 | 校验始终静默 | 产物没有 `web_files.json`,或根证书为空 |
 | `sign-web` 报 EEC 证书与私钥不配对 | 传入了别的证书或私钥 |
 | `sign-web` 报目标目录存在旧布局的证书 | 产物目录仍留着 `eec.pem`,删除该文件后重新运行,证书改由 certs 布局提供 |

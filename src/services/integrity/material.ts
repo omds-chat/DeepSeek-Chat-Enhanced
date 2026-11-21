@@ -5,21 +5,21 @@
  * CRL 在线时取并验签，离线或取不到时吊销状态按未知处理，不阻断任何操作。
  */
 import type { Certificate, CertificateRevocationList } from 'pkijs'
-import { parseTrustIndex, TRUST_MIRRORS } from '../trust/fetch.js'
+import { CERT_MIRRORS, parseTrustIndex, TRUST_MANIFEST_MIRRORS } from '../trust/fetch.js'
 import { isOnline, logMaterial, requestBytes } from '../trust/net.js'
 import { derEquals, pemToDer } from './pem.js'
 
-/** online-data 上的根证书路径；与构建内嵌的是同一份，只用于比对 */
+/** certs 分支上的根证书路径；与构建内嵌的是同一份，只用于比对 */
 export const ROOT_CA_PATH = 'certs/ds-chat/ds-chat-root-ca.crt'
-/** online-data 上的网页签名 EEC 证书路径 */
+/** certs 分支上的网页签名 EEC 证书路径 */
 export const PAGES_EEC_PATH = 'certs/ds-chat-pages/ds-chat-pages-eec.crt'
-/** online-data 上的信任清单路径，只用来取吊销列表的登记 */
+/** trusted-manifest 分支上的信任清单路径，只用来取吊销列表的登记 */
 const INDEX_FILE = 'index.json'
 
 /** 材料来源：online 表示在线副本，embedded 表示构建内嵌，unavailable 表示都没有 */
 export type MaterialOrigin = 'online' | 'embedded' | 'unavailable'
 
-/** online-data 的根证书与内嵌根证书的比对结论 */
+/** certs 分支的根证书与内嵌根证书的比对结论 */
 export type PublishedRootOutcome = 'matched' | 'mismatched' | 'missing' | 'offline'
 
 /** 网页签名 EEC 的选取结果 */
@@ -35,11 +35,12 @@ export const embeddedPagesEecPem = (): string =>
 
 const decode = (bytes: Uint8Array): string => new TextDecoder().decode(bytes)
 
-/** 从 online-data 的多镜像依次取单个文件；离线、地址全失败都返回 null */
-export const fetchOnlineMaterial = async (
+/** 按镜像列表依次取单个文件；离线、地址全失败都返回 null */
+export const fetchMaterialFrom = async (
+  mirrors: readonly string[],
   path: string
 ): Promise<Uint8Array<ArrayBuffer> | null> => {
-  for (const base of TRUST_MIRRORS) {
+  for (const base of mirrors) {
     const bytes = await requestBytes(base + path)
     if (bytes !== null) {
       return bytes
@@ -49,7 +50,7 @@ export const fetchOnlineMaterial = async (
 }
 
 /**
- * 比对 online-data 的根证书与构建内嵌的根证书。
+ * 比对 certs 分支的根证书与构建内嵌的根证书。
  * 只做比对与告警：信任锚永远是构建内嵌的那份，比对结论不参与任何决策。
  * 离线时直接返回 offline，不发请求。
  */
@@ -57,19 +58,19 @@ export const comparePublishedRoot = async (
   embeddedDer: Uint8Array
 ): Promise<PublishedRootOutcome> => {
   if (!isOnline()) {
-    logMaterial('integrity', '当前离线，不拉取 online-data 的根证书副本，按构建内嵌的根证书校验')
+    logMaterial('integrity', '当前离线，不拉取 certs 分支的根证书副本，按构建内嵌的根证书校验')
     return 'offline'
   }
-  const bytes = await fetchOnlineMaterial(ROOT_CA_PATH)
+  const bytes = await fetchMaterialFrom(CERT_MIRRORS, ROOT_CA_PATH)
   if (bytes === null) {
-    logMaterial('integrity', 'online-data 缺少 ' + ROOT_CA_PATH + '，按构建内嵌的根证书校验')
+    logMaterial('integrity', 'certs 分支缺少 ' + ROOT_CA_PATH + '，按构建内嵌的根证书校验')
     return 'missing'
   }
   const publishedDer = pemToDer(decode(bytes), 'CERTIFICATE')
   if (publishedDer === null || !derEquals(embeddedDer, publishedDer)) {
     logMaterial(
       'integrity',
-      'online-data 的 ' + ROOT_CA_PATH + ' 与构建内嵌的根证书不一致，按构建内嵌的根证书校验'
+      'certs 分支的 ' + ROOT_CA_PATH + ' 与构建内嵌的根证书不一致，按构建内嵌的根证书校验'
     )
     return 'mismatched'
   }
@@ -79,7 +80,7 @@ export const comparePublishedRoot = async (
 /**
  * 选取网页签名用的 EEC 证书。
  * 离线时直接用构建内嵌的那份，一个请求都不发；
- * 在线时先取 online-data 的副本，必须能解析且能在内嵌根证书下通过证书链校验，
+ * 在线时先取 certs 分支的副本，必须能解析且能在内嵌根证书下通过证书链校验，
  * 取不到、解析失败或链不通过时回退内嵌，并留一条提示说明当前用的是内嵌材料。
  */
 export const selectPagesEec = async (anchor: Certificate): Promise<PagesEecSelection> => {
@@ -92,17 +93,17 @@ export const selectPagesEec = async (anchor: Certificate): Promise<PagesEecSelec
     logMaterial('integrity', '当前离线，网页签名使用构建内嵌的 EEC 证书')
     return { pem: embedded, origin: embedded === '' ? 'unavailable' : 'embedded' }
   }
-  const bytes = await fetchOnlineMaterial(PAGES_EEC_PATH)
+  const bytes = await fetchMaterialFrom(CERT_MIRRORS, PAGES_EEC_PATH)
   if (bytes === null) {
-    return fallback('online-data 上没有取到 ' + PAGES_EEC_PATH)
+    return fallback('certs 分支上没有取到 ' + PAGES_EEC_PATH)
   }
   const { parseCertificate, verifyCertificateChain } = await import('./x509.js')
   const online = parseCertificate(decode(bytes))
   if (online === null) {
-    return fallback('online-data 的 ' + PAGES_EEC_PATH + ' 无法解析')
+    return fallback('certs 分支的 ' + PAGES_EEC_PATH + ' 无法解析')
   }
   if (!(await verifyCertificateChain(anchor, online)).ok) {
-    return fallback('online-data 的 ' + PAGES_EEC_PATH + ' 在内嵌根证书下证书链校验未通过')
+    return fallback('certs 分支的 ' + PAGES_EEC_PATH + ' 在内嵌根证书下证书链校验未通过')
   }
   return { pem: decode(bytes), origin: 'online' }
 }
@@ -120,27 +121,27 @@ export const selectWebCrl = async (
     logMaterial('integrity', '当前离线，吊销状态未知，跳过吊销检查')
     return null
   }
-  const indexBytes = await fetchOnlineMaterial(INDEX_FILE)
+  const indexBytes = await fetchMaterialFrom(TRUST_MANIFEST_MIRRORS, INDEX_FILE)
   const crlPath = indexBytes === null ? null : (parseTrustIndex(decode(indexBytes))?.crl ?? null)
   if (crlPath === null) {
     return null
   }
-  const crlBytes = await fetchOnlineMaterial(crlPath)
+  const crlBytes = await fetchMaterialFrom(CERT_MIRRORS, crlPath)
   if (crlBytes === null) {
-    logMaterial('integrity', 'online-data 上没有取到 ' + crlPath + '，吊销状态未知，跳过吊销检查')
+    logMaterial('integrity', 'certs 分支上没有取到 ' + crlPath + '，吊销状态未知，跳过吊销检查')
     return null
   }
   const { parseCrl, verifyCrl } = await import('./x509.js')
   const crl = parseCrl(decode(crlBytes))
   if (crl === null) {
-    logMaterial('integrity', 'online-data 的 ' + crlPath + ' 无法解析，吊销状态未知，跳过吊销检查')
+    logMaterial('integrity', 'certs 分支的 ' + crlPath + ' 无法解析，吊销状态未知，跳过吊销检查')
     return null
   }
   const verdict = await verifyCrl(crl, anchor)
   if (!verdict.ok) {
     logMaterial(
       'integrity',
-      'online-data 的 ' + crlPath + ' 未通过内嵌根证书验签：' + verdict.reason + '，吊销状态未知，跳过吊销检查'
+      'certs 分支的 ' + crlPath + ' 未通过内嵌根证书验签：' + verdict.reason + '，吊销状态未知，跳过吊销检查'
     )
     return null
   }

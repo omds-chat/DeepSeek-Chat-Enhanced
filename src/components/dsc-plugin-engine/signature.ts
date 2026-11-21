@@ -255,7 +255,7 @@ export const verifyCmsSignature = async (
 /**
  * 用内置根 CA 校验证书链，取得吊销列表时一并检查吊销。
  * 未注入根证书或环境没有 WebCrypto 时返回 none，由调用方按无法确认处理；
- * 吊销列表由 online-data 分发，但吊销结论仍在本机用同一张根证书校验。
+ * 吊销列表由 certs 分支分发，但吊销结论仍在本机用同一张根证书校验。
  */
 export const verifyEecChain = async (eecPem: string): Promise<ChainState> => {
   const { ensurePkijsEngine, isRevoked, parseCertificate, verifyCertificateChain, verifyCrl } =

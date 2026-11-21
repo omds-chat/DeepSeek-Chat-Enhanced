@@ -58,7 +58,7 @@ const LEGACY_IDS: Record<string, string> = {
 }
 
 /**
- * 内置来源。id 与合集目录名一致，便于直接命中 online-data 信任清单；
+ * 内置来源。id 与合集目录名一致，便于直接命中 trusted-manifest 信任清单；
  * 列表顺序即来源优先级，dsc-inner-plugin 在前，awesome-dsc-plugin 在后。
  * 单个来源内的 base_url 也按顺序尝试：awesome-dsc-plugin 依次尝试 CDN 分发、raw 兜底与 Pages 兜底，
  * dsc-inner-plugin 只走 Pages。

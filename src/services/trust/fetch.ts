@@ -3,18 +3,28 @@ import { setTrustCrl } from './crl.js'
 import { requestText } from './net.js'
 import type { TrustCollection, TrustFailureReason, TrustList } from './types.js'
 
-/** 信任清单的镜像地址；按顺序尝试，前者失败才用后者 */
-export const TRUST_MIRRORS: readonly string[] = [
-  'https://cdn.jsdelivr.net/gh/omds-chat/DeepSeek-Chat-Enhanced@online-data/',
-  'https://raw.githubusercontent.com/omds-chat/DeepSeek-Chat-Enhanced/online-data/',
+/**
+ * 信任清单的镜像地址；按顺序尝试，前者失败才用后者。
+ * 信任清单在 trusted-manifest 分支，证书与公钥在 certs 分支，两者是两条独立的并行分支。
+ */
+export const TRUST_MANIFEST_MIRRORS: readonly string[] = [
+  'https://cdn.jsdelivr.net/gh/omds-chat/DeepSeek-Chat-Enhanced@trusted-manifest/',
+  'https://raw.githubusercontent.com/omds-chat/DeepSeek-Chat-Enhanced/trusted-manifest/',
+]
+
+/** 证书与公钥的镜像地址；与 TRUST_MANIFEST_MIRRORS 一一对应，下标相同即同一个镜像源 */
+export const CERT_MIRRORS: readonly string[] = [
+  'https://cdn.jsdelivr.net/gh/omds-chat/DeepSeek-Chat-Enhanced@certs/',
+  'https://raw.githubusercontent.com/omds-chat/DeepSeek-Chat-Enhanced/certs/',
 ]
 
 /** 合集并发校验上限 */
 const CONCURRENCY = 4
 /**
- * 信任清单文件名；固定位于 online-data 根目录。
+ * 信任清单文件名；固定位于 trusted-manifest 根目录。
  * 根证书与各合集 EEC 的路径不在这里硬编码，一律采用清单里登记的相对路径，
- * 清单按 certs 目录结构给出 certs/ds-chat/... 与 certs/<合集 id>/<合集 id>-eec.crt。
+ * 清单按 certs 目录结构给出 certs/ds-chat/... 与 certs/<合集 id>/<合集 id>-eec.crt，
+ * 这些路径相对 certs 分支根目录，与清单所在分支无关。
  */
 const INDEX_FILE = 'index.json'
 /** 信任清单结构版本 */
@@ -120,14 +130,14 @@ const untrusted = (id: string, dir: string, reason: TrustFailureReason): TrustCo
  * 两种情况都只标记为不可信，不影响其余合集。
  */
 const verifyCollection = async (
-  base: string,
+  certBase: string,
   entry: IndexCollection,
   check: ChainCheck
 ): Promise<TrustCollection> => {
   if (entry.eec === '') {
     return untrusted(entry.id, entry.dir, 'missing')
   }
-  const eecText = await requestText(base + entry.eec)
+  const eecText = await requestText(certBase + entry.eec)
   if (eecText === null || eecText.trim() === '') {
     return untrusted(entry.id, entry.dir, 'missing')
   }
@@ -158,9 +168,9 @@ const mapLimited = async <T, R>(
 }
 
 /** 空的合集清单；根证书缺失、不匹配或环境没有 WebCrypto 时使用 */
-const emptyCollections = (base: string, rootCa: string | null, crl: string | null): TrustList => ({
+const emptyCollections = (origin: string, rootCa: string | null, crl: string | null): TrustList => ({
   rootMatched: rootCa !== null,
-  origin: base,
+  origin,
   rootCa,
   crl,
   collections: [],
@@ -172,10 +182,11 @@ const emptyCollections = (base: string, rootCa: string | null, crl: string | nul
  * 根证书与内嵌根证书不一致时返回未被采信的空清单。
  */
 export const fetchTrustListFrom = async (
-  base: string,
+  manifestBase: string,
+  certBase: string,
   embeddedRootPem: string
 ): Promise<TrustList | null> => {
-  const indexText = await requestText(base + INDEX_FILE)
+  const indexText = await requestText(manifestBase + INDEX_FILE)
   if (indexText === null) {
     return null
   }
@@ -183,7 +194,7 @@ export const fetchTrustListFrom = async (
   if (!index) {
     return null
   }
-  const rootText = await requestText(base + index.rootCa)
+  const rootText = await requestText(certBase + index.rootCa)
   if (rootText === null || rootText.trim() === '') {
     return null
   }
@@ -193,7 +204,7 @@ export const fetchTrustListFrom = async (
   if (!rootMatched) {
     // eslint-disable-next-line no-console
     console.warn(
-      '[trust] online-data 的 ' + index.rootCa + ' 与构建内嵌的根证书不一致，按构建内嵌的根证书校验'
+      '[trust] certs 分支的 ' + index.rootCa + ' 与构建内嵌的根证书不一致，按构建内嵌的根证书校验'
     )
   }
   const { ensurePkijsEngine, isRevoked, parseCertificate, parseCrl, verifyCertificateChain, verifyCrl } =
@@ -202,7 +213,7 @@ export const fetchTrustListFrom = async (
   const root: Certificate | null = ensurePkijsEngine() ? parseCertificate(anchorPem) : null
   if (!root) {
     setTrustCrl(null)
-    return emptyCollections(base, rootText, index.crl)
+    return emptyCollections(manifestBase, rootText, index.crl)
   }
 
   /**
@@ -213,7 +224,7 @@ export const fetchTrustListFrom = async (
     crlPath: string,
     issuer: Certificate
   ): Promise<CertificateRevocationList | null> => {
-    const text = await requestText(base + crlPath)
+    const text = await requestText(certBase + crlPath)
     if (text === null) {
       return null
     }
@@ -232,7 +243,7 @@ export const fetchTrustListFrom = async (
   if (index.crl !== null && crl === null) {
     return {
       rootMatched,
-      origin: base,
+      origin: manifestBase,
       rootCa: rootText,
       crl: index.crl,
       collections: index.collections.map((entry) => untrusted(entry.id, entry.dir, 'chain')),
@@ -255,7 +266,7 @@ export const fetchTrustListFrom = async (
     return { ok: true, revoked: false }
   }
   const collections = await mapLimited(index.collections, CONCURRENCY, (entry) =>
-    verifyCollection(base, entry, check)
+    verifyCollection(certBase, entry, check)
   )
-  return { rootMatched, origin: base, rootCa: rootText, crl: index.crl, collections }
+  return { rootMatched, origin: manifestBase, rootCa: rootText, crl: index.crl, collections }
 }

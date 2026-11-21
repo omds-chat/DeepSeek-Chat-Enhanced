@@ -2,7 +2,7 @@
 
 本文说明 dsc 的签名体系如何按 OpenSSL PKI 组织: 三个角色各持有什么、证书与签名产物是什么、吊销怎么做、信任数据如何分发。内容与 `scripts/pki/ca.mjs`、`scripts/pki/pki.mjs`、`rspack.config.ts` 与 `src/services/` 下的证书校验模块一致,未实现的能力不写入本文。
 
-公开证书与公钥统一放在 `main` 分支的 `certs` 目录,该目录是它们的唯一来源,私钥不进入该目录。运行时看到的在线证书由 CI 把 `certs` 目录原样放进 `online-data` 分支得到,因此在线路径都是 `certs/...` 形式。
+公开证书与公钥统一放在 `main` 分支的 `certs` 目录,该目录是它们的唯一来源,私钥不进入该目录。运行时看到的在线证书由 CI 把 `certs` 目录原样放进并行的 `certs` 分支得到,因此在线路径都是 `certs/...` 形式。
 
 ## 角色
 
@@ -25,7 +25,7 @@
 | 合集签名 | CMS 分离签名,`openssl cms -sign -binary -outform DER -nocerts -noattr` | 逐字节语义,签名与验签都必须带 `-binary`;`-outform DER` 输出裸 CMS,浏览器端可直接解析 |
 | 作者签名 | 裸公钥分离签名,`openssl pkeyutl -sign -rawin`(Ed25519) | 作者不需要证书,公钥随合集分发 |
 
-EEC 证书的 CN 取合集名,与 online-data 清单里的合集 id 一致。
+EEC 证书的 CN 取合集名,与 `trusted-manifest` 分支清单里的合集 id 一致。
 
 ## 签发证书
 
@@ -207,7 +207,7 @@ openssl verify -CAfile certs/ds-chat/ds-chat-root-ca.crt certs/ds-chat-pages/ds-
 | 材料 | 在线 | 离线 | 判据 |
 |:---:|:---:|:---:|:---:|
 | 根证书 | 拉 `certs/ds-chat/ds-chat-root-ca.crt` 只做比对 | 不请求 | 与内嵌不一致时用内嵌并告警;根证书不能用自己验证自己 |
-| 网页签名 EEC | 取 online-data 副本,并在内嵌根证书下校链 | 用构建内嵌的 `__PAGES_EEC_PEM__` | 取不到、无法解析或链不通过都回退内嵌 |
+| 网页签名 EEC | 取 `certs` 分支副本,并在内嵌根证书下校链 | 用构建内嵌的 `__PAGES_EEC_PEM__` | 取不到、无法解析或链不通过都回退内嵌 |
 | 来源 EEC | 优先用信任清单所登记的那份,未登记时取来源站点的 `certs/<合集 id>/<合集 id>-eec.crt`,取不到再试旧站点的 `certs/<合集 id>-eec.crt` 与最旧的 `eec.pem` | 用安装记录里已存的 `eec` | 一律用内嵌根证书校链,链不通过不进入 CMS 验签 |
 | CRL | 按 `index.json` 的 `crl` 登记取并验签 | 吊销状态视为未知 | 未知时不判定任何证书已吊销,也不阻断任何操作 |
 
@@ -224,7 +224,7 @@ openssl verify -CAfile certs/ds-chat/ds-chat-root-ca.crt certs/ds-chat-pages/ds-
 
 ### 信任清单的角色
 
-信任清单(online-data 的 `index.json`)降级为策略层,不再是验签的必要条件:
+信任清单(`trusted-manifest` 分支的 `index.json`)降级为策略层,不再是验签的必要条件:
 
 | 用途 | 说明 |
 |:---:|:---:|
@@ -284,47 +284,67 @@ CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字�
 
 ## 分发结构
 
-### online-data 分支
+### 三条并行分支
 
-`online-data` 是与 `main` 没有公共祖先的孤立分支,只存放网页与插件引擎在运行时拉取并核对的信任数据。CI 把 `main` 分支的 `certs` 目录原样放进该分支,目录结构与 `certs` 完全一致;`index.json` 与 `crl.pem` 位于分支根目录。
+`dist-history`、`certs`、`trusted-manifest` 三条分支都与 `main` 没有公共祖先,各自只承载一类数据,由发布流水线写入,不从 `main` 派生,也不合并回 `main`。命名与职责遵循组织仓库的 `repo-spec/side-branches.md`,本仓库的对应关系与工作区位置见 [并行分支的命名与布局](../../../design/side-branches.md)。
+
+| 分支 | 放什么 | 内容来源 |
+|:---:|:---:|:---:|
+| `dist-history` | 每次发布的网页产物副本,按发布 tag 分目录 | 发布流水线的构建产物 |
+| `certs` | `main` 分支 `certs` 目录的逐字节副本,保留 `certs/` 前缀 | `main` 分支的 `certs` 目录整体复制 |
+| `trusted-manifest` | 信任清单 `index.json` 与可选的 `crl.pem` | `.github/scripts/build-trust-index.mjs` 依据 `certs/manifest.json` 生成 |
+
+`certs` 分支的结构:
 
 ```
-online-data/
+certs/
+├── certs/                                  # 与 main 分支的 certs 目录逐字节一致
+│   ├── ds-chat/
+│   │   ├── ds-chat-root-ca.crt             # 根证书,与构建内嵌的是同一份
+│   │   └── ds-chat-root-ca-secret.pub      # 根证书公钥
+│   ├── ds-chat-pages/
+│   │   ├── ds-chat-pages-eec.crt           # 网页签名的终端签名证书
+│   │   └── ds-chat-pages-eec-secret.pub
+│   ├── dsc-inner-plugin/
+│   │   └── dsc-inner-plugin-eec.crt
+│   ├── awesome-dsc-plugin/
+│   │   └── awesome-dsc-plugin-eec.crt      # 该合集的终端签名证书
+│   ├── manifest.json                       # 合集证书登记清单
+│   └── schemas/
+├── README.md                               # 分支职责说明
+└── version/                                # 按发布 tag 归档的副本,保留最近 1000 个
+```
+
+`trusted-manifest` 分支的结构:
+
+```
+trusted-manifest/
 ├── index.json                              # 信任清单
+├── README.md                               # 发布流水线按模板重写
 ├── crl.pem                                 # 吊销列表(可选,生成后才有)
-└── certs/                                  # 与 main 分支的 certs 目录逐字节一致
-    ├── ds-chat/
-    │   ├── ds-chat-root-ca.crt             # 根证书,与构建内嵌的是同一份
-    │   └── ds-chat-root-ca-secret.pub      # 根证书公钥
-    ├── ds-chat-pages/
-    │   ├── ds-chat-pages-eec.crt           # 网页签名的终端签名证书
-    │   └── ds-chat-pages-eec-secret.pub
-    ├── dsc-inner-plugin/
-    │   └── dsc-inner-plugin-eec.crt
-    ├── awesome-dsc-plugin/
-    │   └── awesome-dsc-plugin-eec.crt      # 该合集的终端签名证书
-    ├── manifest.json                       # 合集证书登记清单
-    └── schemas/
+└── version/                                # 按发布 tag 归档的副本,保留最近 1000 个
 ```
 
-`index.json` 的结构(路径均相对 online-data 根目录):
+`index.json` 的结构(路径均相对 `certs` 分支根目录):
 
 ```json
 {
   "schemaVersion": 2,
   "rootCa": "certs/ds-chat/ds-chat-root-ca.crt",
-  "crl": "crl.pem",
+  "crl": null,
   "collections": [
     { "id": "<合集名>", "eec": "certs/<合集名>/<合集名>-eec.crt" }
   ]
 }
 ```
 
-没有 CRL 时 `crl` 为 `null`。清单结构由 [certs/schemas/trust-index.schema.json](../../../../certs/schemas/trust-index.schema.json) 约束,合集登记清单由 [certs/schemas/plugin-set-manifest.schema.json](../../../../certs/schemas/plugin-set-manifest.schema.json) 约束。
+当前流水线不生成吊销列表,`crl` 固定为 `null`;生成后按 `certs` 分支下的路径登记,运行时用同一个镜像前缀取用。清单结构由 [certs/schemas/trust-index.schema.json](../../../../certs/schemas/trust-index.schema.json) 约束,合集登记清单由 [certs/schemas/plugin-set-manifest.schema.json](../../../../certs/schemas/plugin-set-manifest.schema.json) 约束。
 
-代码里只硬编码 `index.json` 的位置(online-data 根目录),根证书与各合集 EEC 的路径一律取自 `index.json`,不另写一套。
+代码里只硬编码 `index.json` 的位置(`trusted-manifest` 分支根目录,即该分支镜像地址的前缀),根证书与各合集 EEC 的路径一律取自 `index.json` 并按 `certs` 分支的镜像前缀解析,不另写一套。
 
-`certs` 目录由 CI 整体复制,`index.json` 与 `crl.pem` 由同一流程写出;旧的 `pnpm run build:online-data` 写的是切分结构(`root_ca.crt`、`collections/<合集名>/eec.pem`、`web/eec.pem`),与 `certs` 布局不一致,发布流水线不再使用它。
+发布流水线在最后阶段把两条信任分支的内容合并进同一个页面包: `certs/` 与 `index.json` 都落在站点根,`version/latest` 与 `version/<tag>` 内同时有两者,同一份相对路径因此在分支镜像与页面包里写法一致。原先由单一分支同时承载证书与清单,现在按「证书本体」与「信任清单」拆成 `certs` 与 `trusted-manifest` 两条分支。
+
+`certs` 目录由 CI 整体复制,`index.json` 由同一流程写出;更早的生成器(原名 `build:online-data`,已退役)写的是切分结构(`root_ca.crt`、`collections/<合集名>/eec.pem`、`web/eec.pem`),与 `certs` 布局不一致,发布流水线不再使用它。
 
 ### 插件合集
 
@@ -416,8 +436,8 @@ dist/
 |:---:|:---:|:---:|
 | 根私钥 | 组织离线签名环境 | 仓库任何被追踪的路径、CI secrets 之外的任何位置、产物 |
 | EEC 私钥 | 合集 CI 的 secrets | 公开仓库文件、Pages 产物 |
-| 根证书 | `certs/ds-chat/`、online-data 分支、产物 | 无需保密 |
-| EEC 证书 | `certs/<合集名>/`、`certs/ds-chat-pages/`、`certs/dsc-inner-plugin/`、合集根目录的 `certs/`、online-data 分支、网页产物的 `certs/ds-chat-pages/` | 无需保密 |
+| 根证书 | `certs/ds-chat/`、`certs` 分支、产物 | 无需保密 |
+| EEC 证书 | `certs/<合集名>/`、`certs/ds-chat-pages/`、`certs/dsc-inner-plugin/`、合集根目录的 `certs/`、`certs` 分支、网页产物的 `certs/ds-chat-pages/` | 无需保密 |
 | 作者私钥 | 作者本机 | 合集仓库、产物 |
 
 根 CA 只签发 EEC,不参与日常签名;合集 CI 只用 EEC 私钥签文件,不接触根私钥。
@@ -447,13 +467,13 @@ dist/
 | `verify-web` 报某个文件 CMS 校验失败 | 该文件在签名后被改动过,或签名不是对当前字节生成的 |
 | `verify-web` 报 `certificate revoked` | EEC 已被 `gen-crl` 吊销 |
 | 生成的 `index.json` 里某个合集 `eec` 路径不对 | `certs/manifest.json` 的 `eec` 字段必须写成 `<合集 id>/<合集 id>-eec.crt` |
-| 网页运行时提示证书链校验未通过 | online-data 缺少 `certs/ds-chat-pages/ds-chat-pages-eec.crt`,或该证书不是当前根证书签发的 |
+| 网页运行时提示证书链校验未通过 | `certs` 分支缺少 `certs/ds-chat-pages/ds-chat-pages-eec.crt`,或该证书不是当前根证书签发的 |
 | 市场提示「证书已被吊销」 | 该合集的 EEC 序列号已写进 `crl.pem`,需要签发新 EEC 并重新生成 CRL,`--revoke` 只列仍需吊销的序列号 |
 | 市场把整份清单判为不可信 | `crl.pem` 拉取失败、已过期、不是当前根证书签发的,或根证书 `keyUsage` 缺 `cRLSign` |
 | 已安装插件显示「来源证书校验未通过」 | 来源提供的 `certs/<合集 id>/<合集 id>-eec.crt`、旧站点的扁平路径 `certs/<合集 id>-eec.crt`(或兜底的 `eec.pem`)不是由内置根证书签发,或已过期、已被吊销;需要来源换发证书 |
 | 已安装插件显示「来源证书缺失」 | 信任清单登记了该来源的证书,但来源站点取不到 `certs/<合集 id>/<合集 id>-eec.crt`,扁平路径与兜底的 `eec.pem` 也不存在;需要来源补发证书,或先按记录的版本重新安装 |
 | 来源已迁移到 `certs` 布局后仍提示拿不到证书 | 合集 id 与站点目录名不一致时,嵌套路径按清单登记的 id 推导;清单未登记该来源时按来源名归一化,可先用 `certs/manifest.json` 核对合集 id |
-| 已安装插件显示「来源已确认」并附「未在官方清单登记」 | 证书链与验签都已通过,只是该来源未在 online-data 清单登记,属正常状态 |
+| 已安装插件显示「来源已确认」并附「未在官方清单登记」 | 证书链与验签都已通过,只是该来源未在 `trusted-manifest` 清单登记,属正常状态 |
 | 市场显示「目录数据未校验」但插件仍可安装 | L1 或 L3 清单缺失、验签失败、哈希不一致,属预期的降级;产物仍由 `plugin.js.sig` 单独验证 |
 | 市场提示某层清单 revision 回退 | 该层清单的 `revision` 小于本机记录值,来源可能被回滚或替换;只提示,不阻断 |
 | 只发布整站签名的来源显示「目录数据未校验」但仍可安装 | 整站清单、清单签名或逐文件签名缺失,或校验未通过,属预期的降级;产物仍由 `plugin.js.sig` 单独验证 |

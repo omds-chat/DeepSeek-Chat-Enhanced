@@ -4,7 +4,7 @@ import type { PluginManifest, PluginSourceType } from '../dsc-plugin-engine/type
 import type { SourceModel } from './model.js'
 
 /**
- * 来源信任状态；只表示 online-data 信任清单是否登记并认可该来源,不参与来源结论判定。
+ * 来源信任状态；只表示 trusted-manifest 信任清单是否登记并认可该来源,不参与来源结论判定。
  * trusted 表示清单登记了该来源的 EEC 且证书链校验通过；endorsed 表示来源由 dsc 直接背书，
  * 即 dsc 内部插件索引；untrusted 表示清单登记了但证书链校验未通过；
  * unverified 表示清单里没有该来源，或构建未注入根证书。
@@ -107,7 +107,7 @@ export type SourceRuntime = {
   meta: SourceMeta | null
   /** 该来源在信任清单登记的合集 EEC 证书 PEM；未列入清单时为 null */
   eec: string | null
-  /** 证书来自 online-data 信任清单，而不是来源站点自己分发的合集证书 */
+  /** 证书来自 trusted-manifest 信任清单，而不是来源站点自己分发的合集证书 */
   eecFromTrustList: boolean
   /** 合集 EEC 证书链是否校验通过；endorsed 来源为 false 时表示只有 dsc 背书这一层判定 */
   chainVerified: boolean
@@ -145,7 +145,7 @@ export type InstallPlan = CatalogConclusions & {
   pluginBase: string
   manifest?: PluginManifest
   sourceType: PluginSourceType
-  /** 合集 EEC 证书 PEM；来自 online-data 信任清单，已登记时优先使用 */
+  /** 合集 EEC 证书 PEM；来自 trusted-manifest 信任清单，已登记时优先使用 */
   eec?: string
   /** 来源自带的合集证书地址，按顺序尝试（嵌套、扁平、eec.pem 三档）；清单未登记时由引擎依次取用 */
   eecUrls?: string[]

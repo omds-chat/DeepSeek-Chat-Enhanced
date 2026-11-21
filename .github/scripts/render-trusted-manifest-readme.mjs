@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 用 .github/scripts/online-data-README.md 模板渲染 online-data 分支的 README.md。
+ * 用 .github/scripts/trusted-manifest-README.md 模板渲染 trusted-manifest 分支的 README.md。
  *
  * 模板占位符:
  *   {{TAG}}         本次发布的 tag
@@ -8,7 +8,7 @@
  *   {{COLLECTIONS}} 本次登记的合集列表
  *
  * 用法:
- *   node .github/scripts/render-online-data-readme.mjs --template <模板> --out <README.md> --tag <tag> \
+ *   node .github/scripts/render-trusted-manifest-readme.mjs --template <模板> --out <README.md> --tag <tag> \
  *     [--index <index.json>] [--versions <tag,tag>]
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -20,9 +20,9 @@ const PLACEHOLDERS = new Set(['TAG', 'VERSIONS', 'COLLECTIONS'])
 const RESIDUAL = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
 const USAGE = [
-  '用法: node .github/scripts/render-online-data-readme.mjs --template <模板> --out <README.md> --tag <tag> [--index <index.json>] [--versions <tag,tag>]',
+  '用法: node .github/scripts/render-trusted-manifest-readme.mjs --template <模板> --out <README.md> --tag <tag> [--index <index.json>] [--versions <tag,tag>]',
   '',
-  '  --template <文件>  .github/scripts/online-data-README.md',
+  '  --template <文件>  .github/scripts/trusted-manifest-README.md',
   '  --out <文件>       输出的 README.md',
   '  --tag <tag>        本次发布的 tag',
   '  --index <文件>     信任清单,用于渲染合集列表',

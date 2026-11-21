@@ -18,7 +18,7 @@ export type SourceTrustOutcome = {
   trustFailure: TrustFailure | null
   /** 信任清单登记的 EEC 证书 PEM；未列入清单时为 null，登记时优先用它省一次请求 */
   eec: string | null
-  /** 证书来自 online-data 信任清单，而不是来源自己分发的文件 */
+  /** 证书来自 trusted-manifest 信任清单，而不是来源自己分发的文件 */
   eecFromTrustList: boolean
   /** 清单登记的 EEC 证书链是否校验通过；引擎安装时还会用内置根 CA 重做一次 */
   chainVerified: boolean
@@ -29,7 +29,7 @@ export type SourceTrustOutcome = {
 /**
  * 判定来源信任。
  * 信任清单是策略层：登记与背书只用于界面展示来源是否被官方认可，来源结论由引擎按本机证书链与验签给出。
- * 社区来源：从 online-data 的 index.json 里按来源 id 与名称查找合集，找到且证书链校验通过即可信，
+ * 社区来源：从 trusted-manifest 的 index.json 里按来源 id 与名称查找合集，找到且证书链校验通过即可信，
  * 找到但链校验不通过或证书缺失记为不可信；清单里没有该来源时记为未校验，只警告不阻断。
  * inner 来源：以「dsc 直接背书」为准，不依赖合集 EEC 链；清单里登记了它的 EEC 时仍按证书链校验，
  * 两种判定都通过才记为背书来源，链校验不通过仍记为不可信，都拿不到时退回未校验。

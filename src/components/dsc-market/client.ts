@@ -121,7 +121,7 @@ type ResolveOutcome = {
   metaText: string | null
   trust: SourceTrust
   trustFailure: TrustFailure | null
-  /** 来自 online-data 信任清单的合集 EEC 证书 PEM；未列入清单时为 null */
+  /** 来自 trusted-manifest 信任清单的合集 EEC 证书 PEM；未列入清单时为 null */
   eec: string | null
   eecFromTrustList: boolean
   /** 合集 EEC 证书链是否校验通过 */
@@ -366,7 +366,7 @@ const emptyRuntime = (id: string): SourceRuntime => ({
 })
 
 /**
- * 按顺序解析来源：先按 base_url 找到可达的 meta.json，再套用 online-data 信任清单的结论。
+ * 按顺序解析来源：先按 base_url 找到可达的 meta.json，再套用 trusted-manifest 信任清单的结论。
  * 信任结论与来源是否可达相互独立：清单里没有该来源时按未校验处理。
  */
 const resolveSource = async (net: NetCapability, source: MarketSource): Promise<ResolveOutcome> => {

@@ -1,5 +1,5 @@
 import { showToast } from '../../components/base/toastState.js'
-import { fetchTrustListFrom, TRUST_MIRRORS } from './fetch.js'
+import { CERT_MIRRORS, fetchTrustListFrom, TRUST_MANIFEST_MIRRORS } from './fetch.js'
 import type { TrustCollection, TrustList } from './types.js'
 
 /** 空清单；未拉取、未注入根证书或网络失败时都用它 */
@@ -60,10 +60,13 @@ export const fetchTrustList = async (): Promise<TrustList> => {
     return EMPTY
   }
   const task = (async (): Promise<TrustList> => {
-    for (const base of TRUST_MIRRORS) {
+    // 清单与证书分属两条并行分支，两个镜像列表按下标一一对应
+    for (let index = 0; index < TRUST_MANIFEST_MIRRORS.length; index += 1) {
+      const manifestBase = TRUST_MANIFEST_MIRRORS[index]
+      const certBase = CERT_MIRRORS[index] ?? manifestBase
       let list: TrustList | null = null
       try {
-        list = await fetchTrustListFrom(base, rootPem)
+        list = await fetchTrustListFrom(manifestBase, certBase, rootPem)
       } catch {
         list = null
       }

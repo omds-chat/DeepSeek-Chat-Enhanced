@@ -2,15 +2,22 @@ name: Deploy GitHub Pages
 
 # 发布与旧版留存的 CI 流程
 # - 触发: release published,或手动指定 tag;不再由 push 到 main 触发,避免日常提交误触发部署
-# - 三份检出: 主工作区为 release tag,dist-worktree 与 online-data-worktree 为两条归档分支
-# - 网页产物在主工作区构建并签名,签名完成的 dist 再复制到 dist 分支的三处,
+# - 四份检出: 主工作区为 release tag,dist-history / certs / trusted-manifest 三条并行分支各检出到一个工作区
+# - 归档分工(三条并行分支与 main 均无公共祖先):
+#   dist-history     发布产物与历史版本,内容来自主工作区的构建产物目录 ${BUILD_DIR}
+#   certs            可公开的证书与公钥,由主仓库 certs/ 目录整体复制并保留 certs/ 前缀
+#   trusted-manifest 信任清单 index.json,由 .github/scripts/build-trust-index.mjs 依据 certs/manifest.json 生成
+# - 旧名对照(本文件不再使用旧名;分支职责与对应关系的完整说明见 docs/design/side-branches.md):
+#   dist        -> dist-history
+#   online-data -> certs + trusted-manifest: 原来一份内容按「证书本体」与「信任清单」拆成两条分支
+# - 网页产物在主工作区构建并签名,签名完成的产物再复制到 dist-history 的三处,
 #   保证分支根目录、version/latest、version/<tag> 三份一致且各自可自校验
-# - 信任数据归档到 online-data 分支,同样复制到三处
-#   online-data 的内容由「certs 目录整体复制 + .github/scripts/build-trust-index.mjs 生成 index.json」得到
-#   (原先切分结构的 scripts/build-online-data.mjs 已退役)
-# - 预检查: 发布 tag 必须形如 dsc-主版本.次版本.修订版本;三条分支必须两两无公共祖先
-# - 版本留存: version 目录只保留最近 1000 个版本,裁剪在 commit 之前完成
-# - 组装 RUNNER_TEMP/pages 后上传并用 actions/deploy-pages 部署
+# - 预检查: 发布 tag 必须形如 dsc-主版本.次版本.修订版本;四条分支必须两两无公共祖先;
+#   并行分支缺失时报错中止,不自动创建
+# - 版本留存: 三条并行分支的 version 目录各自只保留最近 1000 个版本,裁剪在 commit 之前完成
+# - 组装 RUNNER_TEMP/pages: 构建产物在站点根,certs/ 与 index.json 同样放在站点根,
+#   使 index.json 里 certs/... 的相对路径在站点根、version/latest 与 version/<tag> 内都成立;
+#   两条归档分支的 version 目录在页面包里合并成一份历史;组装完成后上传并用 actions/deploy-pages 部署
 
 on:
   release:
@@ -34,16 +41,20 @@ concurrency:
 env:
   # 发布 tag: release 事件取 release 的 tag,手动触发取输入参数
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
-  # 主工作区的产物目录,由 pnpm build 生成并就地签名
-  DIST_DIR: dist
-  # 两条归档分支各自的标记 tag 后缀
-  # git 的 tag 位于整个仓库共用的 refs/tags 命名空间,dist 与 online-data 无法持有同名 tag:
+  # 主工作区的构建产物目录: rspack 的输出目录,也是 .gitignore 里的 dist/,与分支名无关
+  BUILD_DIR: dist
+  # 三条并行分支的归档 tag 后缀。
+  # git 的 tag 位于整个仓库共用的 refs/tags 命名空间,三条分支无法持有同名 tag:
   # 先打的 tag 会让后一步的「已发布」预检查命中并整步跳过,因此按分支加后缀。
-  # 基础 tag 即发布 tag(形如 dsc-1.0.0),归档分支的标记 tag 为基础 tag 加后缀;
-  # version 目录名使用基础 tag,即 version/dsc-1.0.0/ 这样的形式。
-  # 后缀只用于归档分支的标记,发布 tag 本身仍是 release 的 tag。
-  DIST_TAG_SUFFIX: -dist
-  ONLINE_DATA_TAG_SUFFIX: -online-data
+  # 后缀与分支名完全一致,不做另一套缩写;基础 tag 即发布 tag(形如 dsc-1.0.0),
+  # 归档分支的标记 tag 为基础 tag 加后缀,version 目录名使用基础 tag,即 version/dsc-1.0.0/。
+  DIST_HISTORY_TAG_SUFFIX: -dist-history
+  CERTS_TAG_SUFFIX: -certs
+  TRUSTED_MANIFEST_TAG_SUFFIX: -trusted-manifest
+  # 三条并行分支在 runner 上的检出目录
+  DIST_HISTORY_WORKTREE: dist-history-worktree
+  CERTS_WORKTREE: certs-worktree
+  TRUSTED_MANIFEST_WORKTREE: trusted-manifest-worktree
 
 jobs:
   build:
@@ -66,7 +77,7 @@ jobs:
           fi
           echo "发布 tag ${RELEASE_TAG} 格式符合 dsc-主版本.次版本.修订版本"
 
-      # 三份检出之一: 主工作区检出到 release tag
+      # 四份检出之一: 主工作区检出到 release tag
       - name: Check out release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,7 +86,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # 预检查: tag、两条归档分支、分支内是否已发布过本轮 tag
+      # 预检查: tag、三条并行分支、分支内是否已发布过本轮 tag
       - name: Precheck tag and archive branches
         run: |
           set -euo pipefail
@@ -91,47 +102,54 @@ jobs:
             echo "::error::主工作区不在 tag ${RELEASE_TAG} 上"
             exit 1
           fi
-          # dist 分支不存在属于预期外情况: 直接报错,不自动创建
-          if ! git ls-remote --exit-code --heads origin refs/heads/dist >/dev/null; then
-            echo "::error::远端不存在 dist 分支,归档流程中止"
-            exit 1
-          fi
-          # online-data 分支同样按预期外情况处理,不自动创建孤立分支
-          if ! git ls-remote --exit-code --heads origin refs/heads/online-data >/dev/null; then
-            echo "::error::远端不存在 online-data 分支,归档流程中止"
-            exit 1
-          fi
+          # 三条并行分支都必须已存在: 缺失属于预期外情况,直接报错中止,不代为创建空壳分支
+          for branch in dist-history certs trusted-manifest; do
+            if ! git ls-remote --exit-code --heads origin "refs/heads/${branch}" >/dev/null; then
+              echo "::error::远端不存在 ${branch} 分支,归档流程中止"
+              exit 1
+            fi
+          done
 
-      - name: Check out dist branch
+      - name: Check out dist-history branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: dist
-          path: dist-worktree
+          ref: dist-history
+          path: ${{ env.DIST_HISTORY_WORKTREE }}
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Check out online-data branch
+      - name: Check out certs branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: online-data
-          path: online-data-worktree
+          ref: certs
+          path: ${{ env.CERTS_WORKTREE }}
           fetch-depth: 0
           fetch-tags: true
 
-      # 预检查: 三条分支必须两两无公共祖先。
-      # main(发行 tag 的提交)、dist、online-data 三者互不共享历史;
+      - name: Check out trusted-manifest branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: trusted-manifest
+          path: ${{ env.TRUSTED_MANIFEST_WORKTREE }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      # 预检查: 四条分支必须两两无公共祖先。
+      # main(发行 tag 的提交)、dist-history、certs、trusted-manifest 四者互不共享历史;
       # 任意两条出现公共祖先都说明分支基线被污染,归档口径随之失真,因此直接中止。
       - name: Precheck orphan branches
         run: |
           set -euo pipefail
-          # 两条归档分支取进主工作区的仓库,使三个提交能在同一仓库内比较
+          # 三条并行分支取进主工作区的仓库,使四个提交能在同一仓库内比较
           git fetch --no-tags origin \
-            "+refs/heads/dist:refs/remotes/origin/dist" \
-            "+refs/heads/online-data:refs/remotes/origin/online-data"
+            "+refs/heads/dist-history:refs/remotes/origin/dist-history" \
+            "+refs/heads/certs:refs/remotes/origin/certs" \
+            "+refs/heads/trusted-manifest:refs/remotes/origin/trusted-manifest"
           sha_main="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-          sha_dist="$(git -C dist-worktree rev-parse HEAD)"
-          sha_online_data="$(git -C online-data-worktree rev-parse HEAD)"
-          for sha in "${sha_main}" "${sha_dist}" "${sha_online_data}"; do
+          sha_dist_history="$(git -C "${DIST_HISTORY_WORKTREE}" rev-parse HEAD)"
+          sha_certs="$(git -C "${CERTS_WORKTREE}" rev-parse HEAD)"
+          sha_trusted_manifest="$(git -C "${TRUSTED_MANIFEST_WORKTREE}" rev-parse HEAD)"
+          for sha in "${sha_main}" "${sha_dist_history}" "${sha_certs}" "${sha_trusted_manifest}"; do
             if ! git cat-file -e "${sha}^{commit}" 2>/dev/null; then
               echo "::error::主仓库中缺少提交 ${sha},无法比较公共祖先"
               exit 1
@@ -150,7 +168,7 @@ jobs:
             status=$?
             set -e
             if [ "${status}" -eq 0 ]; then
-              echo "::error::${name_a} 与 ${name_b} 存在公共祖先 ${output},三条分支必须两两无公共祖先"
+              echo "::error::${name_a} 与 ${name_b} 存在公共祖先 ${output},四条分支必须两两无公共祖先"
               exit 1
             fi
             if [ "${status}" -ne 1 ]; then
@@ -159,32 +177,36 @@ jobs:
             fi
             echo "${name_a} 与 ${name_b} 无公共祖先"
           }
-          assert_orphan main "${sha_main}" dist "${sha_dist}"
-          assert_orphan main "${sha_main}" online-data "${sha_online_data}"
-          assert_orphan dist "${sha_dist}" online-data "${sha_online_data}"
+          assert_orphan main "${sha_main}" dist-history "${sha_dist_history}"
+          assert_orphan main "${sha_main}" certs "${sha_certs}"
+          assert_orphan main "${sha_main}" trusted-manifest "${sha_trusted_manifest}"
+          assert_orphan dist-history "${sha_dist_history}" certs "${sha_certs}"
+          assert_orphan dist-history "${sha_dist_history}" trusted-manifest "${sha_trusted_manifest}"
+          assert_orphan certs "${sha_certs}" trusted-manifest "${sha_trusted_manifest}"
 
-      # 预检查: 分支内是否已有同名 tag。
-      # 判定在本轮 push 之前完成并写入步骤输出,避免 dist 步骤新打的 tag 影响 online-data 的判定。
+      # 预检查: 各分支内是否已有同名 tag。
+      # 判定在本轮 push 之前完成并写入步骤输出,避免先发布的步骤新打的 tag 影响后续判定。
       - name: Resolve archive tags
         id: archive
         run: |
           set -euo pipefail
-          dist_tag="${RELEASE_TAG}${DIST_TAG_SUFFIX}"
-          online_data_tag="${RELEASE_TAG}${ONLINE_DATA_TAG_SUFFIX}"
-          if [ -n "$(git -C dist-worktree tag --list "${dist_tag}")" ]; then
-            echo "dist 分支已有 tag ${dist_tag},跳过整个 dist 步骤"
-            echo "skip_dist=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "dist 分支没有 tag ${dist_tag},执行 dist 步骤"
-            echo "skip_dist=false" >> "${GITHUB_OUTPUT}"
-          fi
-          if [ -n "$(git -C online-data-worktree tag --list "${online_data_tag}")" ]; then
-            echo "online-data 分支已有 tag ${online_data_tag},跳过整个 online-data 步骤"
-            echo "skip_online_data=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "online-data 分支没有 tag ${online_data_tag},执行 online-data 步骤"
-            echo "skip_online_data=false" >> "${GITHUB_OUTPUT}"
-          fi
+          resolve_tag() {
+            local name="$1"
+            local worktree="$2"
+            local suffix="$3"
+            local key="$4"
+            local tag="${RELEASE_TAG}${suffix}"
+            if [ -n "$(git -C "${worktree}" tag --list "${tag}")" ]; then
+              echo "${name} 分支已有 tag ${tag},跳过整个 ${name} 步骤"
+              echo "${key}=true" >> "${GITHUB_OUTPUT}"
+            else
+              echo "${name} 分支没有 tag ${tag},执行 ${name} 步骤"
+              echo "${key}=false" >> "${GITHUB_OUTPUT}"
+            fi
+          }
+          resolve_tag dist-history "${DIST_HISTORY_WORKTREE}" "${DIST_HISTORY_TAG_SUFFIX}" skip_dist_history
+          resolve_tag certs "${CERTS_WORKTREE}" "${CERTS_TAG_SUFFIX}" skip_certs
+          resolve_tag trusted-manifest "${TRUSTED_MANIFEST_WORKTREE}" "${TRUSTED_MANIFEST_TAG_SUFFIX}" skip_trusted_manifest
 
       - name: Set up pnpm
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -224,7 +246,7 @@ jobs:
           trap 'rm -f temp/web-eec.key' EXIT
           chmod 600 temp/web-eec.key
           node scripts/pki/ca.mjs sign-web \
-            --dir "${DIST_DIR}" \
+            --dir "${BUILD_DIR}" \
             --eec certs/ds-chat-pages/ds-chat-pages-eec.crt \
             --key temp/web-eec.key
 
@@ -233,43 +255,76 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/pki/ca.mjs verify-web \
-            --dir "${DIST_DIR}" \
+            --dir "${BUILD_DIR}" \
             --root-ca certs/ds-chat/ds-chat-root-ca.crt
 
-      # dist 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> 裁剪历史版本 -> commit、打 tag、push
-      - name: Publish dist branch
-        if: steps.archive.outputs.skip_dist == 'false'
+      # dist-history 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> 裁剪历史版本 -> commit、打 tag、push
+      - name: Publish dist-history branch
+        if: steps.archive.outputs.skip_dist_history == 'false'
         run: |
           set -euo pipefail
-          archive_tag="${RELEASE_TAG}${DIST_TAG_SUFFIX}"
+          archive_tag="${RELEASE_TAG}${DIST_HISTORY_TAG_SUFFIX}"
           # 白名单在脚本内定义为常量,除 .git 与白名单外全部删除,隐藏文件一并删除
-          node .github/scripts/clean-worktree.mjs --dir dist-worktree
-          rm -rf dist-worktree/version/latest
-          mkdir -p dist-worktree/version/latest "dist-worktree/version/${RELEASE_TAG}"
+          node .github/scripts/clean-worktree.mjs --dir "${DIST_HISTORY_WORKTREE}"
+          rm -rf "${DIST_HISTORY_WORKTREE}/version/latest"
+          mkdir -p "${DIST_HISTORY_WORKTREE}/version/latest" "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
           # 分支根目录、version/latest、version/<tag> 三份内容完全一致
-          for target in dist-worktree dist-worktree/version/latest "dist-worktree/version/${RELEASE_TAG}"; do
-            cp -a "${DIST_DIR}/." "${target}/"
+          for target in "${DIST_HISTORY_WORKTREE}" "${DIST_HISTORY_WORKTREE}/version/latest" "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"; do
+            cp -a "${BUILD_DIR}/." "${target}/"
           done
           # 版本留存: 只保留最近的 MAX_VERSIONS 个版本目录(latest 不参与计数);
           # 裁剪发生在 commit 之前,删除与新增因此进入同一个 commit
-          node .github/scripts/prune-versions.mjs --dir dist-worktree/version
-          git -C dist-worktree config user.name "github-actions[bot]"
-          git -C dist-worktree config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C dist-worktree add -A
-          if git -C dist-worktree diff --cached --quiet; then
-            echo "dist 分支内容无变化,跳过 commit"
+          node .github/scripts/prune-versions.mjs --dir "${DIST_HISTORY_WORKTREE}/version"
+          git -C "${DIST_HISTORY_WORKTREE}" config user.name "github-actions[bot]"
+          git -C "${DIST_HISTORY_WORKTREE}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${DIST_HISTORY_WORKTREE}" add -A
+          if git -C "${DIST_HISTORY_WORKTREE}" diff --cached --quiet; then
+            echo "dist-history 分支内容无变化,跳过 commit"
           else
-            git -C dist-worktree commit -m "publish dist ${RELEASE_TAG}"
+            git -C "${DIST_HISTORY_WORKTREE}" commit -m "publish dist-history ${RELEASE_TAG}"
           fi
-          git -C dist-worktree tag "${archive_tag}"
+          git -C "${DIST_HISTORY_WORKTREE}" tag "${archive_tag}"
           # 不使用 --force;push 失败时由 set -e 中止整个流程
-          git -C dist-worktree push origin HEAD:dist
-          git -C dist-worktree push origin "refs/tags/${archive_tag}"
+          git -C "${DIST_HISTORY_WORKTREE}" push origin HEAD:dist-history
+          git -C "${DIST_HISTORY_WORKTREE}" push origin "refs/tags/${archive_tag}"
 
-      # online-data 分支归档: 清理 -> 重建 version 目录 -> 复制 certs、生成 index.json 与 README.md
+      # certs 分支归档: 清理 -> 重建 version 目录 -> 复制主仓库 certs/ -> 裁剪历史版本 -> commit、打 tag、push
+      # 内容来源只有主仓库 certs/ 目录,整体原样复制并保留 certs/ 这一层前缀:
+      # trusted-manifest 分支的 index.json 用 certs/... 相对路径登记证书,两条分支与合并后的页面包里路径因此一致。
+      # 本步骤不生成、不签发、不替换任何证书,只做复制。
+      - name: Publish certs branch
+        if: steps.archive.outputs.skip_certs == 'false'
+        run: |
+          set -euo pipefail
+          archive_tag="${RELEASE_TAG}${CERTS_TAG_SUFFIX}"
+          node .github/scripts/clean-worktree.mjs --dir "${CERTS_WORKTREE}"
+          rm -rf "${CERTS_WORKTREE}/version/latest"
+          mkdir -p "${CERTS_WORKTREE}/version/latest" "${CERTS_WORKTREE}/version/${RELEASE_TAG}"
+          # 证书目录整体复制,保持 certs/... 结构与主仓库一致
+          mkdir -p "${CERTS_WORKTREE}/certs"
+          cp -a certs/. "${CERTS_WORKTREE}/certs/"
+          # 根目录内容复制到 version/latest 与 version/<tag>
+          for target in "${CERTS_WORKTREE}/version/latest" "${CERTS_WORKTREE}/version/${RELEASE_TAG}"; do
+            mkdir -p "${target}/certs"
+            cp -a "${CERTS_WORKTREE}/certs/." "${target}/certs/"
+          done
+          node .github/scripts/prune-versions.mjs --dir "${CERTS_WORKTREE}/version"
+          git -C "${CERTS_WORKTREE}" config user.name "github-actions[bot]"
+          git -C "${CERTS_WORKTREE}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${CERTS_WORKTREE}" add -A
+          if git -C "${CERTS_WORKTREE}" diff --cached --quiet; then
+            echo "certs 分支内容无变化,跳过 commit"
+          else
+            git -C "${CERTS_WORKTREE}" commit -m "publish certs ${RELEASE_TAG}"
+          fi
+          git -C "${CERTS_WORKTREE}" tag "${archive_tag}"
+          git -C "${CERTS_WORKTREE}" push origin HEAD:certs
+          git -C "${CERTS_WORKTREE}" push origin "refs/tags/${archive_tag}"
+
+      # trusted-manifest 分支归档: 清理 -> 生成 index.json -> 渲染 README -> 重建 version 目录
       # -> 裁剪历史版本 -> commit、打 tag、push
-      # 内容来源: certs 目录整体原样复制(保留 certs/... 结构) + build-trust-index.mjs 依据
-      # certs/manifest.json 生成 index.json;旧的切分结构生成器 scripts/build-online-data.mjs 已退役
+      # 内容来源: build-trust-index.mjs 依据主仓库 certs/manifest.json 生成的 index.json(落点为本分支根目录);
+      # 证书本体不在本分支,由 certs 分支分发,因此 index.json 里登记的是 certs/... 相对路径而不是证书字节。
       #
       # index.json 的结构(字段固定):
       # {
@@ -281,77 +336,84 @@ jobs:
       #   ]
       # }
       #
-      # 本轮不对 online-data 产物做整体签名,理由:
-      # 该分支只分发证书与信任清单,消费方(网页运行时、插件引擎、市场)的校验口径是
+      # 本轮不对本分支产物做整体签名,理由:
+      # 该分支只分发信任清单,消费方(网页运行时、插件引擎、市场)的校验口径是
       # 「内嵌根证书 + 逐张 EEC 的证书链」,没有消费方会校验覆盖整棵目录树的签名;
-      # 整体签名还会把证书分发的完整性绑到同一张 EEC 私钥上,轮换私钥就要重签全部历史版本。
+      # 整体签名还会把清单分发的完整性绑到同一张 EEC 私钥上,轮换私钥就要重签全部历史版本。
       # 因此这里只依赖根证书内嵌与逐张 EEC 的链校验,省略整体签名。
-      - name: Publish online-data branch
-        if: steps.archive.outputs.skip_online_data == 'false'
+      - name: Publish trusted-manifest branch
+        if: steps.archive.outputs.skip_trusted_manifest == 'false'
         run: |
           set -euo pipefail
-          archive_tag="${RELEASE_TAG}${ONLINE_DATA_TAG_SUFFIX}"
-          node .github/scripts/clean-worktree.mjs --dir online-data-worktree
-          rm -rf online-data-worktree/version/latest
-          mkdir -p online-data-worktree/version/latest "online-data-worktree/version/${RELEASE_TAG}"
-          # certs 整个目录原样复制,保持 certs/... 结构与主仓库一致
-          mkdir -p online-data-worktree/certs
-          cp -a certs/. online-data-worktree/certs/
-          # 依据 certs/manifest.json 生成信任清单
+          archive_tag="${RELEASE_TAG}${TRUSTED_MANIFEST_TAG_SUFFIX}"
+          node .github/scripts/clean-worktree.mjs --dir "${TRUSTED_MANIFEST_WORKTREE}"
+          rm -rf "${TRUSTED_MANIFEST_WORKTREE}/version/latest"
+          mkdir -p "${TRUSTED_MANIFEST_WORKTREE}/version/latest" "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"
+          # 依据 certs/manifest.json 生成信任清单,落到本分支根目录
           node .github/scripts/build-trust-index.mjs \
             --manifest certs/manifest.json \
             --certs-root certs \
-            --out online-data-worktree/index.json
+            --out "${TRUSTED_MANIFEST_WORKTREE}/index.json"
           # 已归档版本列表,供 README 列出
-          versions="$(ls -1 online-data-worktree/version | grep -vx latest | sort -V | tail -n 20 | paste -sd, -)"
+          versions="$(ls -1 "${TRUSTED_MANIFEST_WORKTREE}/version" | grep -vx latest | sort -V | tail -n 20 | paste -sd, -)"
           readme_args=(
-            --template .github/scripts/online-data-README.md
-            --index online-data-worktree/index.json
-            --out online-data-worktree/README.md
+            --template .github/scripts/trusted-manifest-README.md
+            --index "${TRUSTED_MANIFEST_WORKTREE}/index.json"
+            --out "${TRUSTED_MANIFEST_WORKTREE}/README.md"
             --tag "${RELEASE_TAG}"
           )
           if [ -n "${versions}" ]; then
             readme_args+=(--versions "${versions}")
           fi
-          node .github/scripts/render-online-data-readme.mjs "${readme_args[@]}"
+          node .github/scripts/render-trusted-manifest-readme.mjs "${readme_args[@]}"
           # 根目录内容复制到 version/latest 与 version/<tag>
-          for target in version/latest "version/${RELEASE_TAG}"; do
-            mkdir -p "online-data-worktree/${target}/certs"
-            cp -a online-data-worktree/certs/. "online-data-worktree/${target}/certs/"
-            cp -a online-data-worktree/index.json "online-data-worktree/${target}/index.json"
-            cp -a online-data-worktree/README.md "online-data-worktree/${target}/README.md"
+          for target in "${TRUSTED_MANIFEST_WORKTREE}/version/latest" "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"; do
+            cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${target}/index.json"
+            cp -a "${TRUSTED_MANIFEST_WORKTREE}/README.md" "${target}/README.md"
           done
-          # 版本留存: 规则与 dist 分支一致,裁剪在 commit 之前完成
-          node .github/scripts/prune-versions.mjs --dir online-data-worktree/version
-          git -C online-data-worktree config user.name "github-actions[bot]"
-          git -C online-data-worktree config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C online-data-worktree add -A
-          if git -C online-data-worktree diff --cached --quiet; then
-            echo "online-data 分支内容无变化,跳过 commit"
+          # 版本留存: 规则与另外两条分支一致,裁剪在 commit 之前完成
+          node .github/scripts/prune-versions.mjs --dir "${TRUSTED_MANIFEST_WORKTREE}/version"
+          git -C "${TRUSTED_MANIFEST_WORKTREE}" config user.name "github-actions[bot]"
+          git -C "${TRUSTED_MANIFEST_WORKTREE}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${TRUSTED_MANIFEST_WORKTREE}" add -A
+          if git -C "${TRUSTED_MANIFEST_WORKTREE}" diff --cached --quiet; then
+            echo "trusted-manifest 分支内容无变化,跳过 commit"
           else
-            git -C online-data-worktree commit -m "publish online-data ${RELEASE_TAG}"
+            git -C "${TRUSTED_MANIFEST_WORKTREE}" commit -m "publish trusted-manifest ${RELEASE_TAG}"
           fi
-          git -C online-data-worktree tag "${archive_tag}"
-          git -C online-data-worktree push origin HEAD:online-data
-          git -C online-data-worktree push origin "refs/tags/${archive_tag}"
+          git -C "${TRUSTED_MANIFEST_WORKTREE}" tag "${archive_tag}"
+          git -C "${TRUSTED_MANIFEST_WORKTREE}" push origin HEAD:trusted-manifest
+          git -C "${TRUSTED_MANIFEST_WORKTREE}" push origin "refs/tags/${archive_tag}"
 
-      # 组装 Pages 目录
-      # - 站点根目录即 dist 产物,信任数据挂到 /online-data/
+      # 组装 Pages 目录: 三条分支的内容合成一个页面包
+      # - 站点根目录是构建产物,certs/ 与 index.json 也落在站点根
+      # - 两条信任分支的 version 目录在页面包里合并成一份历史:/version/<tag>/ 内同时有 certs/ 与 index.json,
+      #   与 index.json 里 certs/... 的相对路径口径一致
       # - 组装目录放在 RUNNER_TEMP 下,不落在任何一个工作树内,避免污染归档分支
       # - version 目录随发布线性增长,站点体积与仓库体积都随历史版本累积:
-      #   GitHub Pages 站点上限为 1 GB,单次发布同时写入 dist 与 certs 的全量副本;
-      #   保留历史版本是为了让旧版页面与旧版信任数据仍可按固定路径取用,
-      #   两条归档分支各自只保留最近 1000 个版本,裁剪由 .github/scripts/prune-versions.mjs 完成。
+      #   GitHub Pages 站点上限为 1 GB,单次发布同时写入构建产物与 certs 的全量副本;
+      #   保留历史版本是为了让旧版页面与旧版信任材料仍可按固定路径取用,
+      #   三条归档分支各自只保留最近 1000 个版本,裁剪由 .github/scripts/prune-versions.mjs 完成。
       - name: Assemble Pages directory
         run: |
           set -euo pipefail
           pages="${RUNNER_TEMP}/pages"
           rm -rf "${pages}"
-          mkdir -p "${pages}/online-data"
-          cp -a "${DIST_DIR}/." "${pages}/"
+          mkdir -p "${pages}" "${pages}/version"
+          cp -a "${BUILD_DIR}/." "${pages}/"
+          # 缺证书目录或缺清单时页面包不完整,直接中止而不是上传半份信任材料
+          if [ ! -d "${CERTS_WORKTREE}/certs" ] || [ ! -f "${TRUSTED_MANIFEST_WORKTREE}/index.json" ]; then
+            echo "::error::归档分支缺少 certs/ 目录或 index.json,页面包不完整,中止"
+            exit 1
+          fi
+          # 当前证书目录与当前信任清单
+          cp -a "${CERTS_WORKTREE}/certs" "${pages}/certs"
+          cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${pages}/index.json"
+          # 两个归档分支的历史版本合并;先证书后清单,同名说明取清单分支的 README.md
+          tar -C "${CERTS_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
+          tar -C "${TRUSTED_MANIFEST_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
           # 排除 .git;末尾的删除是兜底,确保 git 元数据不会进入站点
-          tar -C online-data-worktree --exclude=./.git -cf - . | tar -C "${pages}/online-data" -xf -
-          rm -rf "${pages}/online-data/.git"
+          rm -rf "${pages}/certs/.git" "${pages}/version/.git"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

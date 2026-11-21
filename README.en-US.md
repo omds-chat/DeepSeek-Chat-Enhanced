@@ -99,7 +99,7 @@ certs/
 - Private keys are not in this directory: the root private key stays in the organisation's offline signing environment, and EEC private keys stay in each collection's CI secrets.
 - Each source directory also holds that source's certificate public key `<source id>-eec-secret.pub`; `ds-chat/` additionally holds the root public key `ds-chat-root-ca-secret.pub`.
 - Plugin author public keys belong to each plugin collection and are not placed here.
-- Trust data for the page and for plugins is taken from `certs/` only: CI copies it verbatim into the `online-data` branch, and the published layout matches `certs/`.
+- Trust data for the page and for plugins is taken from `certs/` only: CI copies it verbatim into the parallel `certs` branch, and the published layout matches `certs/`; the trust manifest `index.json` lives in the parallel `trusted-manifest` branch.
 - The build embeds `certs/ds-chat/ds-chat-root-ca.crt` into the artifact; an offline run cannot fetch the online copy, so the embedded root certificate is what makes offline use possible.
 
 

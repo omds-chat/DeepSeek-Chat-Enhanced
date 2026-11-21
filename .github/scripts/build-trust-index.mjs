@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * 生成 online-data 分支的信任清单 index.json。
+ * 生成 trusted-manifest 分支的信任清单 index.json。
  *
  * 合集条目取自 certs/manifest.json,collections 里每项的 eec 路径相对 certs 目录,
- * 以 online-data 分支根目录为基准,前缀补 certs/ 。
+ * 以 certs 分支根目录为基准,前缀补 certs/ 。
  *
  * index.json 的结构:
  * {
@@ -23,9 +23,9 @@ import path from 'node:path'
 
 /** 输出清单的结构版本 */
 const SCHEMA_VERSION = 2
-/** 根证书在 online-data 分支内的路径,固定不变 */
+/** 根证书相对 certs 分支根目录的路径,固定不变 */
 const ROOT_CA_PATH = 'certs/ds-chat/ds-chat-root-ca.crt'
-/** 合集证书在 online-data 分支内的目录前缀 */
+/** 合集证书相对 certs 分支根目录的目录前缀 */
 const COLLECTION_PREFIX = 'certs/'
 /** 不登记进 collections 的目录: dsc-inner-plugin 不是普通合集,其 EEC 直接放在 certs/dsc-inner-plugin/ 下 */
 const NOT_A_COLLECTION = new Set(['dsc-inner-plugin'])

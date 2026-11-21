@@ -40,7 +40,7 @@ export const verdictTextKey = (
 }
 
 /**
- * 来源是否未在 online-data 信任清单登记。
+ * 来源是否未在 trusted-manifest 信任清单登记。
  * 信任清单只是策略层：未登记不等于不可信，界面只补一个中性标注。
  */
 export const isUnlistedTrust = (trust: SourceTrustState | undefined): boolean =>

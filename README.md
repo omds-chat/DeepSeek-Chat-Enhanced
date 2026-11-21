@@ -99,7 +99,7 @@ certs/
 - 私钥不在此目录: 根私钥只在组织离线签名环境,EEC 私钥只在各合集的 CI secrets。
 - 每个来源目录里同时放该来源的证书公钥 `<来源 id>-eec-secret.pub`;根目录的 `ds-chat/` 还放根证书公钥 `ds-chat-root-ca-secret.pub`。
 - 插件作者公钥属于各插件合集自身,不放进这里。
-- 网页与插件的信任数据只从 `certs/` 取: CI 把它原样放进 `online-data` 分支,发布结构与 `certs/` 保持一致。
+- 网页与插件的信任数据只从 `certs/` 取: CI 把它原样放进并行的 `certs` 分支,发布结构与 `certs/` 保持一致,信任清单 `index.json` 放在并行的 `trusted-manifest` 分支。
 - 构建时把 `certs/ds-chat/ds-chat-root-ca.crt` 内嵌进产物;离线运行拉不到在线副本,内嵌的根证书是离线可用的前提。
 
 ## 制作插件

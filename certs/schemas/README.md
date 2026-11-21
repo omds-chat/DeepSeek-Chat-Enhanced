@@ -6,8 +6,8 @@
 
 | Schema 文件 | 约束的 JSON | 所在分支与路径 | 对应代码模块 |
 |:---:|:---:|:---:|:---:|
-| `plugin-set-manifest.schema.json` | 插件合集证书登记清单 | `main` 分支 `certs/manifest.json` | 无运行时读取方;生成 online-data 的 `index.json` 时按它取合集 id 与 EEC 路径 |
-| `trust-index.schema.json` | online-data 信任清单 | `online-data` 分支根目录 `index.json` | `src/services/trust/fetch.ts` 的 `parseTrustIndex`;`src/services/integrity/index.ts` 复用它取 `crl` |
+| `plugin-set-manifest.schema.json` | 插件合集证书登记清单 | `main` 分支 `certs/manifest.json` | 无运行时读取方;生成 `trusted-manifest` 分支的 `index.json` 时按它取合集 id 与 EEC 路径 |
+| `trust-index.schema.json` | `trusted-manifest` 信任清单 | `trusted-manifest` 分支根目录 `index.json` | `src/services/trust/fetch.ts` 的 `parseTrustIndex`;`src/services/integrity/index.ts` 复用它取 `crl` |
 
 ## 路径约束
 
@@ -15,7 +15,7 @@
 
 `certs/manifest.json` 里的 `eec` 相对 `certs` 目录,形式为 `<合集 id>/<合集 id>-eec.crt`。
 
-`index.json` 里的 `rootCa`、`crl` 与各合集的 `eec` 相对 online-data 根目录。由于 CI 把 `certs` 目录原样放进 online-data 分支,这些路径形如 `certs/ds-chat/ds-chat-root-ca.crt`、`certs/<合集 id>/<合集 id>-eec.crt`;`index.json` 与 `crl.pem` 本身仍在 online-data 根目录。
+`index.json` 里的 `rootCa`、`crl` 与各合集的 `eec` 相对 `certs` 分支根目录。由于 CI 把 `certs` 目录原样放进并行的 `certs` 分支,这些路径形如 `certs/ds-chat/ds-chat-root-ca.crt`、`certs/<合集 id>/<合集 id>-eec.crt`;`index.json` 与 `crl.pem` 本身在并行的 `trusted-manifest` 分支根目录,发布流水线把两条分支的内容合并进同一个页面包后,同一份相对路径在页面包里仍成立。
 
 ## 校验方式
 
