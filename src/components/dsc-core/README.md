@@ -59,7 +59,7 @@ dsc-core/
 | `chat:request-source` | `setRequestPatchSource` | 登记请求补丁来源,登记与撤销都只由引擎发起 | 仅引擎 |
 | `source:run` | `executeSource` | 按供应端点描述执行一次能力调用,描述与凭证都由引擎在执行时给出 | 仅引擎 |
 
-`chat:request` 是插件可见能力,但它在 core 侧没有对应方法:登记与调用都在引擎内完成,core 只在发送路径上向引擎索取一次补丁。同一份补丁的字段白名单与范围裁剪也只由引擎实现,core 不重复判定。`provider:source` 同理:插件用它声明可提供的供应端点,登记与合并都在引擎的注册表里,core 侧不留空实现;真正的执行走 `source:run`,插件拿不到那个标识。
+`chat:request` 是插件可见能力,但它在 core 侧没有对应方法:登记与调用都在引擎内完成,core 只在发送路径上向引擎索取一次补丁。同一份补丁的字段白名单与范围裁剪也只由引擎实现,core 不重复判定。`provider:source` 同理:插件用它声明可提供的供应端点,登记与合并都在引擎的注册表里,core 侧不留空实现;真正的执行走 `source:run`,插件拿不到那个标识。插件侧的入口是引擎的 `provider:run`:它在引擎里选端点、读凭证,再转成一次 `source:run`;core 侧同样没有对应方法。
 
 永久不开放：API Key、`zustand` store 原始句柄、IndexedDB 句柄与事务、附件上传与原件、任意网络请求(`net:fetch` 与 `assets:read` 是两条受限例外:前者只对内置插件开放,后者只按地址读取资产且仅 https 与本机回环)、任意 DOM 操作。
 

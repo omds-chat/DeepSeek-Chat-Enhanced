@@ -1,4 +1,5 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import type { ProviderRunPayload, ProviderRunResult } from './providerRun.js'
 import type {
   AssetBytesResult,
   AssetTextResult,
@@ -7,6 +8,7 @@ import type {
   CoreSessionSummary,
   CoreSessionView,
   CoreSourceDescriptor,
+  SourceCapabilityId,
 } from '../dsc-core/index.js'
 
 /** 资产读取结果的两种形态；类型定义在 core，引擎原样转交给插件 */
@@ -190,12 +192,24 @@ export type ChatCapability = {
 }
 
 /**
- * 供应端点声明能力；插件只交描述，不交执行代码。
- * 声明只是把端点登记进引擎的注册表，执行仍由 dsc-core 按能力维度完成，凭证由引擎在执行时取用。
+ * 供应端点能力；插件只交描述与载荷，不交执行代码。
+ * 声明把端点登记进引擎的注册表；执行由引擎按注册表选中的端点读凭证、组描述后交给 dsc-core，
+ * 插件既拿不到凭证，也拿不到请求对象。
  */
 export type ProviderCapability = {
   /** 声明一个供应端点；同 id 定义不一致时该声明不生效，冲突记入引擎日志与注册表视图 */
   registerSource(descriptor: CoreSourceDescriptor): void
+  /**
+   * 按当前选中的端点执行一次能力调用；只有清单申请了 provider:run 才可用。
+   * 本版只接通 text.generate 与 models.list，其余能力抛 PluginProviderRunError，码为 capability-unimplemented。
+   * 失败一律抛错，不返回空结果：credential-missing、credential-stale、credential-rejected、
+   * capability-unavailable、capability-unimplemented、endpoint-unreachable、protocol-error。
+   */
+  run(
+    capability: SourceCapabilityId,
+    payload: ProviderRunPayload,
+    options?: CallOptions
+  ): Promise<ProviderRunResult>
 }
 
 /** 插件上下文；能力对象由引擎封装 */

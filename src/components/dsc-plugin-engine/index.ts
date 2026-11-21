@@ -243,8 +243,9 @@ export const installPluginEngine = (): PluginEngine => {
     return conflicts
   }
 
-  // TODO 执行链路: 按端点执行时先按描述里的基址读凭证 (credentials.ts), 读到 stale 就要求重新填写,
-  // TODO 再带描述与载荷调 core 的 source:run, 把回流交给调用方; 本轮只落注册表与凭证存取。
+  // 执行链路落在 capabilities.ts 与 providerRun.ts: 插件调 context.provider.run,
+  // 引擎按注册表选出端点、按「端点 id + 基址」读凭证, 再带描述与载荷调 core 的 source:run。
+  // 本版选中的端点固定为该能力在注册表里的第一个, 用户选择与其余七项能力留待后续。
 
   /** 恢复期间不落盘，避免用尚未恢复完的注册表覆盖已有记录 */
   let restoring = true
@@ -1182,6 +1183,15 @@ export type {
 export { MOUNT_POINTS } from './types.js'
 /** 供应端点注册表：冲突判定与执行错误；注册表的读写入口经 engine.sourceRegistry() 暴露 */
 export { PluginSourceError } from './sources.js'
+/** 按端点执行：错误码、错误类型与结果形态 */
+export { PluginProviderRunError, PROVIDER_RUN_ERROR_CODES } from './providerRun.js'
+export type {
+  ProviderModelsResult,
+  ProviderRunErrorCode,
+  ProviderRunPayload,
+  ProviderRunResult,
+  ProviderStreamResult,
+} from './providerRun.js'
 export type {
   SourceCapabilityMatrix,
   SourceConflict,

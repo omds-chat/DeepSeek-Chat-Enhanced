@@ -14,6 +14,7 @@ dsc-plugin-engine/
 ├── registry.ts     # 插件注册表、依赖与冲突校验、内置 id 集合
 ├── sources.ts      # 供应端点注册表：声明合并（能力并集）、定义比对与能力矩阵
 ├── credentials.ts  # 供应端点凭证存取（IndexedDB，键为端点 id + 基址，插件不可见）
+├── providerRun.ts  # 按端点执行：选端点、读凭证、调 source:run、错误归类
 ├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
 ├── localPackage.ts # 本地离线包解析与校验：zip、tgz、meta.json、签名
@@ -78,6 +79,7 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 | `plugins:storage` | 100 次 / 10 秒 | 同步调用 | `context.storage.get`、`set`、`remove` |
 | `chat:request` | 10 次 / 10 秒(仅登记) | 同步调用,单次预算 10 毫秒 | `context.chat.onBeforeRequest` |
 | `provider:source` | 50 次 / 10 秒(仅登记) | 同步调用 | `context.provider.registerSource` |
+| `provider:run` | 10 次 / 10 秒 | 15 秒(只覆盖建立调用) | `context.provider.run` |
 
 `provider:source` 的上限按「声明次数」计:每次 `context.provider.registerSource` 占一个名额,一个插件可能声明多条端点,因此上限取 50。声明集中在激活阶段,超过上限抛 `PluginRateLimitError`,整次激活失败并按失败路径撤销该插件的全部声明。
 
@@ -87,9 +89,9 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 超限抛 `PluginRateLimitError`,未授予抛 `PluginCapabilityError`,超时抛 `PluginTimeoutError`,取消抛 `PluginAbortError`;限流与超时同时用既有 Toast 提示。
 
-`plugins:data-clear` 是引擎管理专用能力,不在 `CORE_CAPABILITIES` 内,插件清单申请它时按 `unknown-capability` 拒绝,也不会出现在插件上下文中。`net:fetch-post` 同理：它是 `context.net.postJson` 背后的独立能力标识,有自己的限流窗口与超时,插件清单不能申请,只能通过 `net:fetch` 的授予间接使用。`chat:request-source` 只在启动时登记一次补丁来源,`source:run` 只由引擎按端点描述发起一次执行,两者同样是引擎专用标识,不进入插件上下文。
+`plugins:data-clear` 是引擎管理专用能力,不在 `CORE_CAPABILITIES` 内,插件清单申请它时按 `unknown-capability` 拒绝,也不会出现在插件上下文中。`net:fetch-post` 同理：它是 `context.net.postJson` 背后的独立能力标识,有自己的限流窗口与超时,插件清单不能申请,只能通过 `net:fetch` 的授予间接使用。`chat:request-source` 只在启动时登记一次补丁来源,`source:run` 只由引擎按端点描述发起一次执行,两者同样是引擎专用标识,不进入插件上下文;插件侧要发起这类执行时走 `provider:run`,那条标识在可见集合内。
 
-`provider:source` 与 `chat:request` 同类：它在 `CORE_CAPABILITIES` 内、插件可以申请,但 core 侧没有对应实现,登记与合并都在引擎内完成。区别是它约束的是「能不能声明供应端点」,不约束「能不能执行」——执行走 `source:run`,插件拿不到那个标识。
+`provider:source` 与 `chat:request` 同类：它在 `CORE_CAPABILITIES` 内、插件可以申请,但 core 侧没有对应实现,登记与合并都在引擎内完成。区别是它约束的是「能不能声明供应端点」,不约束「能不能执行」。执行另有一条插件可见能力 `provider:run`,背后落到引擎专用的 `source:run`;插件拿不到 `source:run` 这个标识,也拿不到端点描述以外的任何凭证。两条能力分开的理由:声明是交描述,执行会花用户填的 Key 与端点额度,授权单位不该相同。
 
 ### net:fetch 的可见性
 
@@ -169,10 +171,11 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 | 环节 | 位置 | 说明 |
 |:---:|:---:|:---:|
-| 能力 | `provider:source` | 插件清单申请的能力；未申请时调用注册接口抛 `PluginCapabilityError` |
+| 能力 | `provider:source`、`provider:run` | 前者管声明、后者管执行；未申请时调用对应成员抛 `PluginCapabilityError` |
 | 注册接口 | `context.provider.registerSource(descriptor)` | 登记一份端点描述；只登记，不执行，不发起网络请求 |
-| 注册表 | `sources.ts` | 合并全部插件的声明，能力清单按端点 id 取并集 |
+| 注册表 | `sources.ts` | 合并全部插件的声明，能力清单按端点 id 取并集；另有 `selectedSource` 给出当前选中的端点 |
 | 凭证 | `credentials.ts` | 按「端点 id + 规范化后的基址」存 IndexedDB，只在执行时读取；不从引擎门面导出 |
+| 执行入口 | `context.provider.run(capability, payload)` | 清单申请 `provider:run` 后可用；引擎选端点、读凭证，失败按错误码抛出 |
 | 执行 | `dsc-core` 的 `source:run` | 引擎专用标识，插件不可达；按能力标识分派 |
 
 端点描述的字段：
@@ -234,7 +237,107 @@ export const activate = (context) => {
 }
 ```
 
-端点能力标识是另一条标识轴，共九个：`text.generate`、`reasoning.think`、`vision.image`、`document.read`、`audio.asr`、`audio.tts`、`tool.web-search`、`tool.read-url`、`models.list`。它们不出现在插件清单里，只出现在端点描述的能力清单里；本轮只有 `text.generate` 与 `models.list` 在 core 侧落地，其余执行时按 `unsupported` 拒绝。
+端点能力标识是另一条标识轴，共九个：`text.generate`、`reasoning.think`、`vision.image`、`document.read`、`audio.asr`、`audio.tts`、`tool.web-search`、`tool.read-url`、`models.list`。它们不出现在插件清单里，只出现在端点描述的能力清单里；本轮只有 `text.generate` 与 `models.list` 接通，其余七项在执行前按 `capability-unimplemented` 拒绝（core 侧的拒绝原因是 `unsupported`）。
+
+### 按端点执行
+
+`context.provider.run(capability, payload, options?)` 是插件侧唯一的执行入口，清单要另外申请 `provider:run`。两条能力分开：`provider:source` 管「能不能声明」，`provider:run` 管「能不能在自己的端点上发起一次调用」。执行链路固定四段：
+
+| 步骤 | 位置 | 做的事 |
+|:---:|:---:|:---:|
+| 选端点 | `sources.ts` 的 `selectedSource` | 取该能力在注册表里的第一个端点；本版不做用户选择 |
+| 读凭证 | `credentials.ts` 的 `readSourceCredential` | 按「端点 id + 规范化后的基址」读取，读到 `stale` 直接拒绝 |
+| 执行 | `dsc-core` 的 `source:run` | 带描述、能力标识、载荷与凭证调用一次；凭证只用于这一次 |
+| 归类 | `providerRun.ts` | 回流原样透传；失败换成可判定的错误码再抛出 |
+
+选端点只看注册表，与凭证是否已填无关：缺凭证按 `credential-missing` 报错，不会悄悄换到下一个端点。端点按声明顺序入表，同一声明序列下选中的端点稳定可复现；冲突期由先声明的那份继续生效，选中结果与 `engine.sourceRegistry()` 看到的一致。选中端点以后要交给用户选择时，只需把 `selectedSource` 换成查「某项能力选哪个端点」，调用方接口不变。
+
+本版只接通 `text.generate` 与 `models.list`：其余七项能力在执行前就拒绝，既不读凭证也不发请求。返回形态按能力区分：
+
+| 能力 | 形态 | 说明 |
+|:---:|:---:|:---:|
+| `text.generate` | `{ kind: 'stream', events }` | `events` 是异步可迭代物，逐条产出 `text`、`thinking`、`title` 与 `end` 四类事件；鉴权与网络失败要到第一次迭代时才抛出 |
+| `models.list` | `{ kind: 'models', models }` | 一次性返回，`models` 每项只有 `id` |
+
+失败一律抛 `PluginProviderRunError`，判定依据是 `code`；原始失败文本只进 `detail`，不回传协议细节：
+
+| `code` | 含义 | 调用方可以做什么 |
+|:---:|:---:|:---:|
+| `credential-missing` | 没有该「端点 id + 基址」的凭证记录，或凭证存储读不出来 | 提示用户填写凭证后重试 |
+| `credential-stale` | 同一端点 id 存在别的基址的记录，端点换过主机 | 要求用户重新填写，不能复用旧 Key |
+| `credential-rejected` | 端点以 401 或 403 拒绝凭证 | 提示用户核对凭证 |
+| `capability-unavailable` | 没有端点提供该能力，或选中的端点未声明它 | 检查端点声明与注册表视图 |
+| `capability-unimplemented` | 端点声明了该能力，本版尚未接通 | 重试没有意义，只能等内核落地 |
+| `endpoint-unreachable` | 请求没有拿到响应：网络层失败，或端点基址不可用 | 提示网络或端点地址问题，可重试 |
+| `protocol-error` | 拿到响应但不符合协议：非 2xx、非流式响应、JSON 不合法、流提前结束 | 视为端点实现问题，按 `detail` 排查 |
+
+错误对象另带 `capability` 与 `sourceId`（还没选出端点时为 `null`）。凭证既不出现在错误里，也不出现在结果或回流事件里。引擎不为这类失败弹宿主提示：失败已经交给调用方，由插件自己决定提示还是降级。
+
+示例：在上一节的声明之上申请 `provider:run`，再消费回流。
+
+```ts
+export const manifest = {
+  id: 'dsc-demo-source',
+  name: 'Demo Source',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['provider:source', 'provider:run'],
+}
+
+export const activate = (context) => {
+  context.provider.registerSource({
+    id: 'demo-deepseek',
+    label: 'Demo DeepSeek',
+    format: 'anthropic-messages',
+    baseUrl: 'https://api.deepseek.com',
+    capabilities: ['text.generate', 'models.list'],
+  })
+}
+
+// 由插件自己的交互触发；端点、凭证与请求组装都不在插件侧
+export const generate = async (context) => {
+  try {
+    const result = await context.provider.run('text.generate', {
+      model: 'deepseek-flash',
+      system: '你是助手',
+      messages: [{ role: 'user', content: '你好' }],
+    })
+    if (result.kind !== 'stream') {
+      return
+    }
+    for await (const event of result.events) {
+      if (event.type === 'text') {
+        context.log(event.text)
+      } else if (event.type === 'end') {
+        context.log('stop: ' + String(event.stopReason ?? 'null'))
+      }
+    }
+  } catch (error) {
+    // 失败不吞：按 code 决定提示还是降级，再抛给调用方或就地记录
+    if (error.code === 'credential-missing' || error.code === 'credential-stale') {
+      context.log('凭证需要重新填写: ' + error.code)
+    }
+    throw error
+  }
+}
+
+// 一次性结果同理：载荷为空对象，返回的 kind 为 models
+export const listModels = async (context) => {
+  const result = await context.provider.run('models.list', {})
+  if (result.kind === 'models') {
+    context.log(result.models.map((model) => model.id).join(','))
+  }
+}
+```
+
+限流 10 次 / 10 秒，单次超时 15 秒。超时只覆盖「建立调用」这一段：`text.generate` 的回流在调用返回后惰性产出，占的是调用方的迭代时间，不占这个预算；要中断就在 `options.signal` 上取消。
+
+后续计划：
+
+- 端点选择交给用户。注册表、凭证与执行入口都已按端点 id 与基址组织，界面只需记录「某项能力选哪个端点」，`selectedSource` 改为查这份选择即可，插件侧的调用形态不变。
+- 端点归属尚未收紧。当前选中是全局的：拿到 `provider:run` 的插件可以在别的插件声明的端点上发起调用，用的是用户为那个端点填的 Key。用户选择落地时一并解决：要么按插件限定可选集合，要么由用户在界面上明确「这次用哪个端点」。
+- 其余七项能力的接通顺序与 `dsc-core` 的落地顺序一致：先在内核补齐载荷与回流解析，再放开 `provider:run` 的判定，插件不需要改调用形态。
+- 失败回退尚未决定。当前不做静默换端点：插件声明了某个端点，就应该知道请求打到了哪里；自动回退会让「谁在生效」重新变成隐式状态。
 
 ### 持久化与启动恢复
 

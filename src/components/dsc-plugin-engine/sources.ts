@@ -202,9 +202,21 @@ export const sourceConflicts = (): readonly SourceConflict[] => sourceView().con
 /** 当前能力矩阵 */
 export const sourceCapabilityMatrix = (): SourceCapabilityMatrix => sourceView().matrix
 
-/** 提供某项能力的端点 id */
+/** 提供某项能力的端点 id; 顺序即端点进入注册表的顺序 */
 export const sourcesForCapability = (capability: SourceCapabilityId): readonly string[] =>
   sourceView().matrix[capability]
+
+/**
+ * 当前选中的供应端点。
+ * 本版取「该能力在注册表里的第一个端点」, 先不做用户选择: 端点按声明顺序入表,
+ * 因此同一声明序列下选中的端点稳定可复现。后续计划见引擎 README 的「按端点执行」一节。
+ */
+export const selectedSource = (
+  capability: SourceCapabilityId
+): CoreSourceDescriptor | undefined => {
+  const [first] = sourcesForCapability(capability)
+  return first === undefined ? undefined : findSource(first)
+}
 
 /**
  * 登记一条供应端点声明。

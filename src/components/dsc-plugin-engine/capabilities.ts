@@ -11,8 +11,10 @@ import {
   type CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import { readSourceCredential } from './credentials.js'
+import { runProviderCapability, type ProviderRunDeps } from './providerRun.js'
 import { isBuiltinPlugin, type PluginRecord } from './registry.js'
-import { PluginSourceError, type SourceConflict } from './sources.js'
+import { PluginSourceError, selectedSource, type SourceConflict } from './sources.js'
 import type {
   AssetsCapability,
   CallOptions,
@@ -62,6 +64,9 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   // 限制的是声明次数: 每次 context.provider.registerSource 占一个名额, 不逐次执行。
   // 一个插件可能声明多条端点, 上限按 50 取; 声明集中在激活阶段, 超过上限会让整次激活失败并撤销全部声明。
   'provider:source': { limit: 50, windowMs: 10000 },
+  // 执行按调用次数计: 选端点、读凭证与组装请求都在这一次调用内完成。
+  // 超时只兜住「建立调用」这一段; text.generate 的回流事件在调用返回后惰性产出, 不占这个时间预算。
+  'provider:run': { limit: 10, windowMs: 10000, timeoutMs: 15000 },
   // 按端点执行由引擎发起, 不经过插件上下文, 上限 0 表示插件不可达
   'source:run': { limit: 0, windowMs: 10000 },
 }
@@ -206,6 +211,17 @@ export const createPluginContext = ({
     ticket: issueTicket(capability),
   })
 
+  /**
+   * 按端点执行的三个依赖。
+   * 端点选择只看注册表, 与凭证是否已填无关: 缺凭证时按 credential-missing 报错, 而不是悄悄换到下一个端点;
+   * 执行仍签 source:run 票据, 凭证由引擎在这一步读出, 插件侧拿不到。
+   */
+  const providerDeps: ProviderRunDeps = {
+    selectedSource,
+    readCredential: readSourceCredential,
+    execute: (request) => core.executeSource(newCall('source:run'), request),
+  }
+
   const invoke = async <T>(
     capability: CoreCapabilityId,
     options: CallOptions | undefined,
@@ -309,6 +325,10 @@ export const createPluginContext = ({
    * 同 id 定义不一致时后声明不生效，冲突写插件日志（引擎日志另记一份）。
    */
   const provider: ProviderCapability = {
+    run: (capability, payload, options) =>
+      invoke('provider:run', options, () =>
+        runProviderCapability(providerDeps, capability, payload, { signal: options?.signal })
+      ),
     registerSource: (descriptor) => {
       ensureGranted('provider:source')
       takeToken('provider:source')

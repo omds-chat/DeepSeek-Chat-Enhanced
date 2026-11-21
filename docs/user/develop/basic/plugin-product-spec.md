@@ -157,7 +157,7 @@
 
 定义比对只看 `format`、规范化后的 `baseUrl` 与 `endpoints` 三项；`label` 差异只算展示差异，不判冲突。未决期先声明的那份临时生效，代价必须知道：后声明方的插件会看到 id 在表里，但执行期只认先声明方的基址；冲突方声明的能力在冲突解决前不进能力矩阵；冲突是需要界面主动展示的状态，不展示等于没有标记；先声明方退出后，下一份声明重新成为唯一定义。
 
-端点能力标识共九个：`text.generate`、`reasoning.think`、`vision.image`、`document.read`、`audio.asr`、`audio.tts`、`tool.web-search`、`tool.read-url`、`models.list`。当前只有 `text.generate` 与 `models.list` 已经落地，其余七项声明了也不会被执行，调用按 `unsupported` 拒绝。描述里没有声明的能力同样拒绝，原因是 `capability`；基址不可用按 `endpoint` 拒绝。
+端点能力标识共九个：`text.generate`、`reasoning.think`、`vision.image`、`document.read`、`audio.asr`、`audio.tts`、`tool.web-search`、`tool.read-url`、`models.list`。当前只有 `text.generate` 与 `models.list` 已经落地，其余七项声明了也不会被执行：内核按 `unsupported` 拒绝，引擎侧对应 `capability-unimplemented`。描述里没有声明的能力同样拒绝，原因是 `capability`；基址不可用按 `endpoint` 拒绝。
 
 示例（只声明，不执行）：
 
@@ -181,7 +181,7 @@ export const activate = (context) => {
 }
 ```
 
-声明不发起任何网络请求，也不代表宿主立刻会使用这条来源：界面上是否启用、凭证怎么填，由宿主决定。
+声明不发起任何网络请求，也不代表宿主立刻会使用这条来源：界面上是否启用、凭证怎么填，由宿主决定。要在自己声明的端点上执行一次调用，需要另外申请 `provider:run`；调用形态、返回形态与错误码见 [从零编写一个 dsc 插件](../framework/build-a-plugin.md) 的「调用供应端点」一节。
 
 ## 本地离线包
 

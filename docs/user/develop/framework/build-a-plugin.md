@@ -39,6 +39,8 @@ dsc 插件在运行阶段就是一个符合 [dsc 插件产物规范](../basic/pl
 
 资产读取是另一条通道:第三方插件可以申请 `assets:read`,用 `context.assets.readText` 或 `readBytes` 按地址读取远端文本或字节。它不是通用联网:只允许 GET、只允许 https(本机回环可用 http)、不带凭证,并且有体积上限与超时。
 
+供应端点执行是第三条通道:第三方插件申请 `provider:source` 与 `provider:run` 后,可以在自己声明的端点上发起一次调用。它不是通用联网:只能打到注册表里选中的端点,端点基址在声明时校验,凭证由用户填写、引擎在执行时读取,请求形态与回流解析都由内核决定,插件既不能改地址,也拿不到 Key。
+
 这条口径是契约约束,不是技术隔离:插件产物与宿主同源运行在同一个页面里,引擎无法在技术上阻止同源代码直接调用浏览器全局的 `fetch`。直接调用属于不合规,不能作为插件可以自行联网的依据。
 
 ## 最小可运行示例
@@ -130,11 +132,12 @@ export const activate = (context) => {
 | `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
 | `assets:read` | 全部插件 | `context.assets.readText`、`context.assets.readBytes` | 20 次 / 10 秒 |
 | `provider:source` | 全部插件 | `context.provider.registerSource` | 50 次 / 10 秒(仅登记) |
+| `provider:run` | 全部插件 | `context.provider.run` | 10 次 / 10 秒 |
 | `net:fetch` | 仅内置插件 | `context.net.getText`、`context.net.postJson` | 10 次 / 10 秒 |
 
 `context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
 
-上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止;`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时。
+上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止,`context.provider.run` 的 15 秒只覆盖「建立调用」这一段(`text.generate` 的回流在调用返回后惰性产出,不占这个预算);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时。
 
 `events:session` 与 `chat:request` 的限流只算登记次数:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError` 并提示 `pluginCallRateLimited`,窗口滚过之后可以继续登记。请求前处理器另有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
 
@@ -184,6 +187,71 @@ export const activate = async (context) => {
 ### 供应端点声明
 
 申请 `provider:source` 后,插件可以声明自己能为宿主提供哪些供应端点(provider endpoint)。声明只交描述,不交执行代码:执行仍在内核,凭证由引擎在执行时取用,插件拿不到。字段、基址规范化与合并冲突口径见 [dsc 插件产物规范](../basic/plugin-product-spec.md) 的「插件声明供应端点」一节。
+
+### 调用供应端点
+
+声明只是把端点交给宿主;要让宿主在自己的端点上执行一次调用,清单还要申请 `provider:run`,然后在激活后用 `context.provider.run(capability, payload)` 发起。两条能力分开的原因:声明是交描述,执行会花用户填的 Key 与端点额度,授权单位不该相同。
+
+端点的选择权在宿主,本版取注册表里该能力的第一个端点,插件不能指定端点,也不能读取凭证:引擎按选中的端点读出 Key,连同描述与载荷交给内核,插件只拿到回流事件或结果。
+
+```js
+export const manifest = {
+  id: 'dsc-demo-source',
+  name: 'Demo Source',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['provider:source', 'provider:run'],
+}
+
+export const activate = (context) => {
+  context.provider.registerSource({
+    id: 'demo-deepseek',
+    label: 'Demo DeepSeek',
+    format: 'anthropic-messages',
+    baseUrl: 'https://api.deepseek.com',
+    capabilities: ['text.generate', 'models.list'],
+  })
+}
+
+export const ask = async (context) => {
+  const result = await context.provider.run('text.generate', {
+    model: 'deepseek-flash',
+    system: '你是助手',
+    messages: [{ role: 'user', content: '你好' }],
+  })
+  if (result.kind !== 'stream') {
+    return
+  }
+  for await (const event of result.events) {
+    if (event.type === 'text') {
+      context.log(event.text)
+    }
+  }
+}
+
+export const models = async (context) => {
+  const result = await context.provider.run('models.list', {})
+  if (result.kind === 'models') {
+    context.log(result.models.map((model) => model.id).join(','))
+  }
+}
+```
+
+返回形态按能力区分:`text.generate` 给 `{ kind: 'stream', events }`,逐条产出 `text`、`thinking`、`title` 与 `end` 四类事件,鉴权与网络失败要到第一次迭代时才抛出;`models.list` 给 `{ kind: 'models', models }`,每项只有 `id`。本版只接通这两项,其余七项能力在执行前抛 `PluginProviderRunError`,码为 `capability-unimplemented`,重试没有意义。
+
+失败一律抛 `PluginProviderRunError`,按 `error.code` 区分原因,原文在 `error.detail`,错误对象另带 `capability` 与 `sourceId`:
+
+| `code` | 含义 |
+|:---:|:---:|
+| `credential-missing` | 还没有该「端点 id + 基址」的凭证,或凭证存储读不出来 |
+| `credential-stale` | 端点换过主机,旧凭证不能复用 |
+| `credential-rejected` | 端点以 401 或 403 拒绝凭证 |
+| `capability-unavailable` | 没有端点提供该能力,或选中的端点未声明它 |
+| `capability-unimplemented` | 端点声明了该能力,本版尚未接通 |
+| `endpoint-unreachable` | 请求没有拿到响应:网络层失败或基址不可用 |
+| `protocol-error` | 拿到响应但不符合协议 |
+
+引擎不为这类失败弹宿主提示,由插件决定提示还是降级;需要提示用户时用 `context.ui.notify` 与既有文案键。
 
 各能力的完整签名与可见数据范围见 [dsc 插件开发规范](../basic/plugin-develop-spec.md)。
 

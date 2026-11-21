@@ -21,6 +21,8 @@ export type CoreCapabilityId =
   | 'chat:request'
   // 只声明供应端点，core 侧没有实现；登记与合并都在引擎内完成
   | 'provider:source'
+  // 按选中的供应端点执行，core 侧没有独立方法；引擎组好描述与凭证后走 source:run
+  | 'provider:run'
   // 引擎管理专用，不在 CORE_CAPABILITIES 内，插件申请时按未知能力拒绝
   | 'net:fetch-post'
   | 'plugins:data-clear'
@@ -40,6 +42,7 @@ export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
   'plugins:storage',
   'chat:request',
   'provider:source',
+  'provider:run',
 ]
 
 /** 会话摘要视图 */
