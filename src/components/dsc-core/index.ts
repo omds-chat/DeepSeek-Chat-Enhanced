@@ -15,6 +15,7 @@ import {
 } from './plugin-data.js'
 import { registerRequestPatchSource } from './request-patch.js'
 import { registerCoreService, requireCoreService } from './registry.js'
+import { executeSource } from './sources.js'
 import {
   CORE_VERSION,
   type CoreApi,
@@ -129,6 +130,7 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     registerCoreService('plugins:storage', pluginDataService)
     registerCoreService('plugins:data-clear', clearPluginData)
     registerCoreService('chat:request-source', registerRequestPatchSource)
+    registerCoreService('source:run', executeSource)
     opened = true
   }
   return {
@@ -162,6 +164,7 @@ export const openCore = (credential: CoreCredential): CoreApi => {
       requireCoreService(call, 'plugins:data-clear')(pluginId),
     setRequestPatchSource: (call, source) =>
       requireCoreService(call, 'chat:request-source')(source),
+    executeSource: (call, request) => requireCoreService(call, 'source:run')(request),
   }
 }
 
@@ -210,3 +213,44 @@ export {
   setAlertSink,
 } from './guard.js'
 export type { BypassEvent, CoreCall, CoreCredential, CoreTicket } from './guard.js'
+/** 来源能力标识与来源描述：引擎注册表与插件声明共用这一份 */
+export {
+  checkSourceDescriptor,
+  IMPLEMENTED_SOURCE_CAPABILITIES,
+  isSourceCapabilityId,
+  isSourceFormat,
+  isSourceId,
+  normalizeSourceBaseUrl,
+  normalizeSourceDescriptor,
+  SOURCE_CAPABILITIES,
+  SOURCE_CAPABILITY_IDS,
+  SOURCE_FORMATS,
+  sourceEndpoint,
+} from './source-catalog.js'
+export type {
+  CoreSourceDescriptor,
+  SourceCapabilityId,
+  SourceEndpointCapability,
+  SourceEndpointOverrides,
+  SourceFormat,
+  SourceProblem,
+} from './source-catalog.js'
+/** 按来源执行：请求组装、执行入口与与协议无关的回流事件 */
+export { assembleTextGenerateRequest, CoreSourceError, executeSource } from './sources.js'
+export type {
+  CoreModelsListPayload,
+  CorePendingSourceCapability,
+  CorePendingSourcePayload,
+  CoreSourceContentBlock,
+  CoreSourceFileBlock,
+  CoreSourceMessage,
+  CoreSourceModel,
+  CoreSourceRejectReason,
+  CoreSourceRunRequest,
+  CoreSourceRunResult,
+  CoreSourceSecret,
+  CoreSourceStopReason,
+  CoreSourceStreamEvent,
+  CoreSourceTextBlock,
+  CoreTextGeneratePayload,
+} from './sources.js'

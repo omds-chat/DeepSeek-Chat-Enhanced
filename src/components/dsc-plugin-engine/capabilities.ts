@@ -1,4 +1,5 @@
 import {
+  checkSourceDescriptor,
   PluginDataError,
   issueTicket,
   type AssetBytesResult,
@@ -7,9 +8,11 @@ import {
   type CoreCall,
   type CoreCapabilityId,
   type CoreCredential,
+  type CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { isBuiltinPlugin, type PluginRecord } from './registry.js'
+import { PluginSourceError, type SourceConflict } from './sources.js'
 import type {
   AssetsCapability,
   CallOptions,
@@ -18,6 +21,7 @@ import type {
   EventsCapability,
   NetCapability,
   PluginContext,
+  ProviderCapability,
   SessionsCapability,
   SettingsCapability,
   StorageCapability,
@@ -55,6 +59,11 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'chat:request': { limit: 10, windowMs: 10000 },
   // 引擎启动时登记一次补丁来源，同样不经过插件上下文
   'chat:request-source': { limit: 0, windowMs: 10000 },
+  // 限制的是声明次数: 每次 context.provider.registerSource 占一个名额, 不逐次执行。
+  // 一个插件可能声明多条端点, 上限按 50 取; 声明集中在激活阶段, 超过上限会让整次激活失败并撤销全部声明。
+  'provider:source': { limit: 50, windowMs: 10000 },
+  // 按端点执行由引擎发起, 不经过插件上下文, 上限 0 表示插件不可达
+  'source:run': { limit: 0, windowMs: 10000 },
 }
 
 /** 能力未授予 */
@@ -132,6 +141,8 @@ export type ContextDeps = {
   report: (key: TranslationKey, params?: TranslationParams) => void
   /** 首次使用资产来源时的提示出口；由引擎按「插件 + 来源」去重后调用 */
   announceAsset: (pluginId: string, url: string) => void
+  /** 登记一份端点声明；冲突由引擎记日志后原样返回，供上下文写插件日志 */
+  declareSource: (pluginId: string, descriptor: CoreSourceDescriptor) => readonly SourceConflict[]
 }
 
 /** 把核心内部接口封装成受限能力对象 */
@@ -141,6 +152,7 @@ export const createPluginContext = ({
   credential,
   report,
   announceAsset,
+  declareSource,
 }: ContextDeps): PluginContext => {
   const { manifest } = record
   const windows = new Map<CoreCapabilityId, number[]>()
@@ -291,6 +303,41 @@ export const createPluginContext = ({
     },
   }
 
+  /**
+   * 供应端点声明：只登记描述，不交执行代码。
+   * 描述形态在引擎侧先校验一遍（含基址规范化），不合格的声明直接拒绝，不入注册表；
+   * 同 id 定义不一致时后声明不生效，冲突写插件日志（引擎日志另记一份）。
+   */
+  const provider: ProviderCapability = {
+    registerSource: (descriptor) => {
+      ensureGranted('provider:source')
+      takeToken('provider:source')
+      const problem = checkSourceDescriptor(descriptor)
+      const declaredId = typeof descriptor?.id === 'string' ? descriptor.id : ''
+      if (problem !== null) {
+        report('pluginSourceRejected', {
+          id: manifest.id,
+          source: declaredId === '' ? '(invalid id)' : declaredId,
+          reason: problem,
+        })
+        throw new PluginSourceError(problem)
+      }
+      for (const conflict of declareSource(manifest.id, descriptor)) {
+        pushLog(
+          'provider:source: ' +
+            conflict.sourceId +
+            ' declared by ' +
+            conflict.rejectedOwner +
+            ' conflicts on ' +
+            conflict.fields.join('/') +
+            ', the definition from ' +
+            conflict.keptOwner +
+            ' stays effective until it is resolved'
+        )
+      }
+    },
+  }
+
   const ui: UiCapability = {
     notify: (key, params) => invokeSync('notify', () => core.notify(newCall('notify'), key, params)),
   }
@@ -398,6 +445,7 @@ export const createPluginContext = ({
     assets,
     storage,
     chat,
+    provider,
     log: pushLog,
   }
 }

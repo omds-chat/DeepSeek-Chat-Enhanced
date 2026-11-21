@@ -6,6 +6,7 @@ import type {
   CoreEvent,
   CoreSessionSummary,
   CoreSessionView,
+  CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 
 /** 资产读取结果的两种形态；类型定义在 core，引擎原样转交给插件 */
@@ -188,6 +189,15 @@ export type ChatCapability = {
   onBeforeRequest(handler: BeforeRequestHandler): () => void
 }
 
+/**
+ * 供应端点声明能力；插件只交描述，不交执行代码。
+ * 声明只是把端点登记进引擎的注册表，执行仍由 dsc-core 按能力维度完成，凭证由引擎在执行时取用。
+ */
+export type ProviderCapability = {
+  /** 声明一个供应端点；同 id 定义不一致时该声明不生效，冲突记入引擎日志与注册表视图 */
+  registerSource(descriptor: CoreSourceDescriptor): void
+}
+
 /** 插件上下文；能力对象由引擎封装 */
 export type PluginContext = {
   readonly id: string
@@ -200,6 +210,7 @@ export type PluginContext = {
   readonly assets: AssetsCapability
   readonly storage: StorageCapability
   readonly chat: ChatCapability
+  readonly provider: ProviderCapability
   readonly log: (message: string) => void
 }
 

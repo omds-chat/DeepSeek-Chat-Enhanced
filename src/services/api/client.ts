@@ -138,15 +138,17 @@ const hasFile = (body: CreateMessageRequest) =>
   )
 
 /**
- * POST /anthropic/v1/messages（stream: true），逐个产出流式事件，收到 message_stop 时结束。
+ * 按端点地址打开消息流，逐个产出流式事件，收到 message_stop 时结束。
+ * dsc-core 的 text.generate 用它按来源组装请求；DeepSeek 端点由 streamMessage 绑定同一地址。
  * ping、保活注释与无法解析的内容不产出；中止请求时抛出 signal 的 AbortError。
  */
-export async function* streamMessage(
+export async function* streamMessageAt(
+  endpoint: string,
   apiKey: string,
   body: CreateMessageRequest,
   signal: AbortSignal
 ): AsyncGenerator<MessageStreamEvent> {
-  const response = await request(`${ANTHROPIC_BASE_URL}/messages`, {
+  const response = await request(endpoint, {
     method: 'POST',
     headers: {
       ...anthropicHeaders(apiKey, hasFile(body)),
@@ -186,4 +188,53 @@ export async function* streamMessage(
   }
   // 服务端没有提供错误内容时保持为空，不推测断流原因。
   throw new ApiError('interrupted', '')
+}
+
+/** POST /anthropic/v1/messages（stream: true）；行为与参数化之前一致 */
+export const streamMessage = (
+  apiKey: string,
+  body: CreateMessageRequest,
+  signal: AbortSignal
+): AsyncGenerator<MessageStreamEvent> =>
+  streamMessageAt(`${ANTHROPIC_BASE_URL}/messages`, apiKey, body, signal)
+
+/** 远端模型清单的单项；只取 id，其余字段忽略 */
+export type RemoteModel = { id: string }
+
+/**
+ * GET 一次模型清单端点（DeepSeek 为 /models，与 verifyApiKey 同一个地址，区别只在读取响应体）。
+ * 响应体不是预期结构时按协议错误抛出，不返回空数组冒充结论。
+ */
+export const fetchModelList = async (
+  endpoint: string,
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<RemoteModel[]> => {
+  const response = await request(endpoint, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal,
+  })
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    throw new ApiError('protocol', 'model list is not valid JSON')
+  }
+  const data =
+    typeof body === 'object' && body !== null ? (body as { data?: unknown }).data : undefined
+  if (!Array.isArray(data)) {
+    throw new ApiError('protocol', 'model list has no data array')
+  }
+  const models: RemoteModel[] = []
+  for (const item of data) {
+    if (
+      typeof item === 'object' &&
+      item !== null &&
+      typeof (item as { id?: unknown }).id === 'string'
+    ) {
+      models.push({ id: (item as { id: string }).id })
+    }
+  }
+  return models
 }

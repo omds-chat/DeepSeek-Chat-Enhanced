@@ -32,6 +32,7 @@
 | 错误与降级的原因代码与用户可见文案 | 与本仓库的 `i18n` 文案键配套 |
 | 请求前补丁(`chat:request` 与贡献点 `chat:before-request`) | 模板规范尚未覆盖,补丁字段、范围裁剪与合并规则由本仓库引擎实现界定,写入路径在 `dsc-core` 的发送路径上 |
 | 资产读取(`assets:read` 的三态结果与首次使用提示) | 模板规范尚未覆盖;三态口径、体积与超时上限、去重提示都由本仓库实现界定 |
+| 插件声明供应端点(`provider:source` 与端点注册表) | 模板规范尚未覆盖;端点描述的字段、基址规范化、合并与冲突口径、凭证按端点与基址绑定且不出宿主的约束都由本仓库的引擎与内核实现界定 |
 
 ## 引擎安装接口
 
@@ -103,6 +104,82 @@
 整站模型的验签顺序:取证书、用内置根证书在本机校链、用证书验 `web_files.json.sig`、按清单逐文件验签、安装与启动时按 `plugin.js.sig` 验整站签名、作者签名按材料单独校验。结论仍是三态:清单或签名缺失、证书缺失按未校验;链不通过、清单签名不通过、文件签名不通过按失败,失败只把目录数据结论降级为未校验,不阻断安装。
 
 整站模型没有 L2 清单,安装来源里的 `authorPubSha512` 缺省,作者公钥不做哈希把关;整站模型也没有清单 `revision`,`manifest_revisions` 为空。整站签名不代替作者签名:作者签名由作者用自己持有的私钥签,合集只做收录与整站签名(或合集签名)。
+
+## 插件声明供应端点
+
+插件可以声明自己能为宿主提供哪些供应端点（provider endpoint，下称端点），但只交描述、不交执行代码。执行仍在 `dsc-core`：它按能力维度组装请求、解析回流，凭证由引擎在执行时取用。「端点」与插件安装来源（`inner`、`outer` 等）不是同一个概念，文档与界面不用「来源」指代它。
+
+三个后果先交代清楚：
+
+| 后果 | 说明 |
+|:---:|:---:|
+| 插件不参与请求组装 | 请求形态、请求头与回流形状都由内核按端点的协议格式决定，插件改不了 |
+| 插件拿不到凭证 | 凭证按「端点 id + 规范化后的基址」存在引擎的 IndexedDB 里，插件既拿不到读写入口，也拿不到任何凭证值；内核只在执行时取用 |
+| 插件不承担执行判定 | 能力是否可用由内核判定，失败按内核的错误类型回传 |
+
+声明的步骤：
+
+1. 在清单的 `capabilities` 里申请 `provider:source`。
+2. 在激活时调用 `context.provider.registerSource(descriptor)`，一个端点一次调用。
+3. 描述按下面这张表填写。
+
+| 字段 | 必填 | 说明 |
+|:---:|:---:|:---:|
+| `id` | 是 | 小写字母开头，允许数字、点、下划线与连字符，3 到 64 字符 |
+| `label` | 是 | 展示名称，最多 40 字符；只用于展示，不参与冲突判定 |
+| `format` | 是 | `anthropic-messages` 或 `openai-chat`；只描述线上协议，不指厂商 |
+| `baseUrl` | 是 | 端点基址；登记前规范化，见下表 |
+| `capabilities` | 是 | 该端点能提供的能力，不得为空、不得重复 |
+| `endpoints` | 否 | 按能力覆盖端点路径，只允许站内绝对路径 |
+
+基址在登记前统一规范化，规范化后的值同时用于比对与执行：
+
+| 处理 | 规则 |
+|:---:|:---:|
+| 去空白 | 首尾空白一律去掉；不去掉时校验能过、执行期却会拼出非法地址 |
+| 主机 | 转小写 |
+| 端口 | 去掉默认端口（443、80） |
+| 路径 | 去掉尾斜杠 |
+| 拒绝 | 带 query、hash 或内嵌用户名密码的地址拒绝；非 https 且非本机回环的 http 同样拒绝 |
+
+登记的语义：
+
+| 情形 | 结果 |
+|:---:|:---:|
+| 未申请 `provider:source` 就登记 | 抛 `PluginCapabilityError`，并提示 `pluginCapabilityDenied` |
+| 描述不合格 | 抛 `PluginSourceError`，原因取 `id`、`label`、`format`、`baseUrl`、`capabilities`、`endpoints` 之一，并提示 `pluginSourceRejected` |
+| 端点 id 与别的插件相同、定义也相同 | 合并成一个端点，能力清单取并集 |
+| 端点 id 与别的插件相同、定义不同 | 先声明的那份临时生效，后声明的不生效，冲突记入引擎日志与 `engine.sourceRegistry()`；冲突方也记入声明方列表 |
+| 同一插件在一次激活内声明超过 50 个端点 | 抛 `PluginRateLimitError`，该次激活失败并按失败路径撤销全部声明 |
+| 插件停用或卸载 | 该插件的全部声明撤销，其他声明方仍可提供同一端点 |
+
+定义比对只看 `format`、规范化后的 `baseUrl` 与 `endpoints` 三项；`label` 差异只算展示差异，不判冲突。未决期先声明的那份临时生效，代价必须知道：后声明方的插件会看到 id 在表里，但执行期只认先声明方的基址；冲突方声明的能力在冲突解决前不进能力矩阵；冲突是需要界面主动展示的状态，不展示等于没有标记；先声明方退出后，下一份声明重新成为唯一定义。
+
+端点能力标识共九个：`text.generate`、`reasoning.think`、`vision.image`、`document.read`、`audio.asr`、`audio.tts`、`tool.web-search`、`tool.read-url`、`models.list`。当前只有 `text.generate` 与 `models.list` 已经落地，其余七项声明了也不会被执行，调用按 `unsupported` 拒绝。描述里没有声明的能力同样拒绝，原因是 `capability`；基址不可用按 `endpoint` 拒绝。
+
+示例（只声明，不执行）：
+
+```js
+export const manifest = {
+  id: 'dsc-demo-source',
+  name: 'Demo Source',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['provider:source'],
+}
+
+export const activate = (context) => {
+  context.provider.registerSource({
+    id: 'demo-deepseek',
+    label: 'Demo DeepSeek',
+    format: 'anthropic-messages',
+    baseUrl: 'https://api.deepseek.com',
+    capabilities: ['text.generate', 'models.list'],
+  })
+}
+```
+
+声明不发起任何网络请求，也不代表宿主立刻会使用这条来源：界面上是否启用、凭证怎么填，由宿主决定。
 
 ## 本地离线包
 
@@ -190,5 +267,8 @@
 | `assets:read` 拿到 HTTP 状态码或没有状态码 | 不抛错,按三态结果交给插件;`status` 与 `no-status` 的区别由插件自行处理 |
 | 插件首次读取某个来源地址 | 提示用户一次 `pluginAssetSourceFirstUse`;之后的读取失败只写该插件的插件日志 |
 | 插件数据超过 64KB 或无法序列化 | 抛 `PluginDataError`,并提示 `pluginDataQuotaExceeded` 或 `pluginDataInvalid` |
+| 声明供应端点时描述不合格 | 抛 `PluginSourceError`,原因取 `id`、`label`、`format`、`baseUrl`、`capabilities`、`endpoints` 之一,并提示 `pluginSourceRejected` |
+| 两个插件声明同一端点 id 但定义不同 | 先声明的那份临时生效,后声明不生效,冲突记入引擎日志与 `engine.sourceRegistry()` |
+| 端点换过主机后旧凭证被读取 | 读取结论为 `stale`,不复用旧 Key,要求重新填写 |
 
 所有用户可见提示复用宿主 `i18n` 文案,插件不自行拼接中文文案。

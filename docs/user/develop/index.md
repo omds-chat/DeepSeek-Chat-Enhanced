@@ -18,7 +18,7 @@ docs/user/develop/
 | 文档 | 说明 |
 |:---:|:---:|
 | [dsc 插件开发规范](basic/plugin-develop-spec.md) | 占位与关联文档:开发规范以模板仓库 specs 为准,含清单字段、版本与依赖、运行时 meta、作者签名与分发要求 |
-| [dsc 插件产物规范](basic/plugin-product-spec.md) | 模板未覆盖的 dsce 专有内容:合集签名与来源结论、目录数据校验、安装记录持久化、引擎安装接口与降级行为 |
+| [dsc 插件产物规范](basic/plugin-product-spec.md) | 模板未覆盖的 dsce 专有内容:合集签名与来源结论、目录数据校验、插件声明供应端点、安装记录持久化、引擎安装接口与降级行为 |
 | [信任链与 PKI 签名](basic/trust-chain.md) | 根证书、终端签名证书、合集签名与作者签名、吊销、重签时机与私钥边界 |
 | [网页签名与运行时校验](basic/web-signature.md) | 网页产物的逐文件 CMS 签名、证书链校验、运行时静默校验与发布流水线 |
 | [页面版本继承](basic/page-version-inherit.md) | 版本号来源、加载时的比对流程、localStorage 键名与旧版本地址推导 |

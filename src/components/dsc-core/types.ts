@@ -1,6 +1,7 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import type { AssetBytesResult, AssetTextResult } from './assets.js'
 import type { CoreCall } from './guard.js'
+import type { CoreSourceRunRequest, CoreSourceRunResult } from './sources.js'
 
 /** dsc-core 版本；与 package.json 的 version 保持一致 */
 export const CORE_VERSION = '1.0.0'
@@ -18,10 +19,13 @@ export type CoreCapabilityId =
   | 'assets:read'
   | 'plugins:storage'
   | 'chat:request'
+  // 只声明供应端点，core 侧没有实现；登记与合并都在引擎内完成
+  | 'provider:source'
   // 引擎管理专用，不在 CORE_CAPABILITIES 内，插件申请时按未知能力拒绝
   | 'net:fetch-post'
   | 'plugins:data-clear'
   | 'chat:request-source'
+  | 'source:run'
 
 /** 全部核心能力；引擎据此校验插件申请 */
 export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
@@ -35,6 +39,7 @@ export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
   'assets:read',
   'plugins:storage',
   'chat:request',
+  'provider:source',
 ]
 
 /** 会话摘要视图 */
@@ -144,4 +149,9 @@ export type CoreApi = {
   clearPluginData(call: CoreCall, pluginId: string): void
   /** 登记请求补丁来源；只有引擎可以登记，传 null 撤销登记 */
   setRequestPatchSource(call: CoreCall, source: CoreRequestPatchSource | null): void
+  /**
+   * 按供应端点描述执行一次能力调用；只有引擎可以调用。
+   * 描述与凭证都由引擎在执行时给出，插件侧拿不到这两项。
+   */
+  executeSource(call: CoreCall, request: CoreSourceRunRequest): Promise<CoreSourceRunResult>
 }

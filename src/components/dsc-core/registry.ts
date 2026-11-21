@@ -1,5 +1,6 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { consumeTicket, isCredential, recordBypass, type CoreCall } from './guard.js'
+import type { CoreSourceRunRequest, CoreSourceRunResult } from './sources.js'
 import type {
   CoreAssetBytesResult,
   CoreAssetTextResult,
@@ -39,6 +40,7 @@ export type CoreServiceTable = {
   'plugins:storage': (call: CoreStorageCall) => unknown
   'plugins:data-clear': (pluginId: string) => void
   'chat:request-source': (source: CoreRequestPatchSource | null) => void
+  'source:run': (request: CoreSourceRunRequest) => Promise<CoreSourceRunResult>
 }
 
 const services = new Map<CoreCapabilityId, unknown>()

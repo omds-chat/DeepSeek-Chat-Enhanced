@@ -16,6 +16,7 @@ import {
   type CoreEvent,
   type CoreRequestPatch,
   type CoreRequestPreview,
+  type CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 import { createAssetAnnouncer } from './assetAccess.js'
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
@@ -36,6 +37,7 @@ import { isPluginSourceAllowed, loadPluginModuleFromCode, resolvePluginModule } 
 import { convergePatch, mergePatch, REQUEST_PATCH_BUDGET_MS } from './requestPatch.js'
 import { toPluginId } from './pluginId.js'
 import * as store from './registry.js'
+import { declareSource, forgetSources, sourceView, type SourceRegistryView } from './sources.js'
 import {
   decodeSignature,
   encodeSignature,
@@ -180,6 +182,8 @@ export type PluginEngine = {
   /** 引擎自身的日志，例如落盘与恢复失败 */
   engineLogs(): readonly string[]
   bypassEvents(): readonly BypassEvent[]
+  /** 供应端点注册表视图：合并后的端点描述、能力矩阵与冲突记录 */
+  sourceRegistry(): SourceRegistryView
 }
 
 const describeError = (error: unknown): string =>
@@ -212,6 +216,35 @@ export const installPluginEngine = (): PluginEngine => {
       engineLogs.shift()
     }
   }
+
+  /**
+   * 登记一条供应端点声明。
+   * 冲突不阻断声明以外的任何流程：先声明的那份临时生效，后声明的不生效并记一条引擎日志，
+   * 冲突同时出现在 sourceRegistry() 里，供设置界面展示。
+   */
+  const registerSource = (
+    pluginId: string,
+    descriptor: CoreSourceDescriptor
+  ): ReturnType<typeof declareSource> => {
+    const conflicts = declareSource(pluginId, descriptor)
+    for (const conflict of conflicts) {
+      pushEngineLog(
+        'source ' +
+          conflict.sourceId +
+          ': ' +
+          conflict.fields.join('/') +
+          ' mismatch between ' +
+          conflict.keptOwner +
+          ' and ' +
+          conflict.rejectedOwner +
+          ', the first definition is kept'
+      )
+    }
+    return conflicts
+  }
+
+  // TODO 执行链路: 按端点执行时先按描述里的基址读凭证 (credentials.ts), 读到 stale 就要求重新填写,
+  // TODO 再带描述与载荷调 core 的 source:run, 把回流交给调用方; 本轮只落注册表与凭证存取。
 
   /** 恢复期间不落盘，避免用尚未恢复完的注册表覆盖已有记录 */
   let restoring = true
@@ -461,7 +494,14 @@ export const installPluginEngine = (): PluginEngine => {
       return false
     }
     try {
-      const context = createPluginContext({ record, core, credential, report, announceAsset })
+      const context = createPluginContext({
+        record,
+        core,
+        credential,
+        report,
+        announceAsset,
+        declareSource: registerSource,
+      })
       await runWithTimeout(Promise.resolve(record.plugin.activate(context)), ACTIVATE_TIMEOUT, {
         onTimeout: () => report('pluginCallTimeout', { id, capability: 'activate' }),
       })
@@ -469,9 +509,10 @@ export const installPluginEngine = (): PluginEngine => {
       persist()
       return true
     } catch (error) {
-      // 激活中途失败时同样要撤销已注册的处理器，避免残留订阅
+      // 激活中途失败时同样要撤销已注册的处理器与端点声明，避免残留订阅与端点
       store.clearContributions(record)
       store.runDisposers(record)
+      forgetSources(id)
       store.markFailed(record, describeError(error))
       // 原始错误只进插件日志，界面用可读文案
       store.pushLog(record, describeError(error))
@@ -497,6 +538,8 @@ export const installPluginEngine = (): PluginEngine => {
     } finally {
       store.clearContributions(record)
       store.runDisposers(record)
+      // 停用后不再提供端点：声明随停用撤销，注册表随即回到其他声明方给出的定义
+      forgetSources(id)
       store.markInactive(record)
     }
     persist()
@@ -524,6 +567,8 @@ export const installPluginEngine = (): PluginEngine => {
       return { removed: false, hasLeftoverData: leftover }
     }
     // 卸载只移除注册表与持久化记录；插件本地数据保留，交由设置的数据管理清理
+    // 未激活过的插件不会走 deactivateNow，这里再撤销一次端点声明
+    forgetSources(id)
     patchNotices.delete(id + ':timeout')
     patchNotices.delete(id + ':clamped')
     persist()
@@ -1079,6 +1124,7 @@ export const installPluginEngine = (): PluginEngine => {
     logs: (id) => store.get(id)?.logs ?? [],
     engineLogs: () => engineLogs,
     bypassEvents: readBypassEvents,
+    sourceRegistry: sourceView,
   }
 
   // 恢复在内部异步进行，installPluginEngine 保持同步返回，不阻塞首屏渲染
@@ -1119,6 +1165,7 @@ export type {
   PluginModule,
   PluginSource,
   PluginSourceType,
+  ProviderCapability,
   PluginState,
   PluginStateView,
   RequestPatch,
@@ -1133,3 +1180,11 @@ export type {
   UiCapability,
 } from './types.js'
 export { CONTRIBUTION_POINTS } from './types.js'
+/** 供应端点注册表：冲突判定与执行错误；注册表的读写入口经 engine.sourceRegistry() 暴露 */
+export { PluginSourceError } from './sources.js'
+export type {
+  SourceCapabilityMatrix,
+  SourceConflict,
+  SourceConflictField,
+  SourceRegistryView,
+} from './sources.js'

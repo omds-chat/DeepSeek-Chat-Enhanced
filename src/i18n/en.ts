@@ -198,6 +198,7 @@ export const en = {
   pluginCallTimeout: 'Plugin {id} timed out calling {capability}',
   pluginRequestPatchClamped: 'The request patch of plugin {id} was out of range and got clipped',
   pluginAssetSourceFirstUse: 'Plugin {id} started reading remote assets from {origin}',
+  pluginSourceRejected: 'Plugin {id} declared provider endpoint {source} was rejected: {reason}',
   pluginRestoreFailed: 'Plugin {id} failed to restore: {reason}',
   pluginDataQuotaExceeded: 'Local data for plugin {id} exceeds the 64KB limit',
   pluginDataInvalid: 'Data written by plugin {id} cannot be serialized',

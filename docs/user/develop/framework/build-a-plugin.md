@@ -127,6 +127,7 @@ export const activate = (context) => {
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
 | `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
 | `assets:read` | 全部插件 | `context.assets.readText`、`context.assets.readBytes` | 20 次 / 10 秒 |
+| `provider:source` | 全部插件 | `context.provider.registerSource` | 50 次 / 10 秒(仅登记) |
 | `net:fetch` | 仅内置插件 | `context.net.getText`、`context.net.postJson` | 10 次 / 10 秒 |
 
 `context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
@@ -177,6 +178,10 @@ export const activate = async (context) => {
 引擎侧能够确定的拒绝(地址不是绝对地址、协议不符、地址内嵌凭证、体积超限、超时、取消)抛 `PluginAssetError`,`reason` 取值为 `url`、`protocol`、`credential`、`too-large`、`timeout`、`aborted`。
 
 该插件首次访问某个来源地址时,宿主会提示用户一次(同一插件与同一来源只提示一次),提示只说明哪个插件在访问哪个站点,不替用户判断站点是否可信;之后的失败只写入该插件的插件日志。
+
+### 供应端点声明
+
+申请 `provider:source` 后,插件可以声明自己能为宿主提供哪些供应端点(provider endpoint)。声明只交描述,不交执行代码:执行仍在内核,凭证由引擎在执行时取用,插件拿不到。字段、基址规范化与合并冲突口径见 [dsc 插件产物规范](../basic/plugin-product-spec.md) 的「插件声明供应端点」一节。
 
 各能力的完整签名与可见数据范围见 [dsc 插件开发规范](../basic/plugin-develop-spec.md)。
 

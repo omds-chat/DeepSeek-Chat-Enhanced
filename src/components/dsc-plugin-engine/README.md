@@ -12,6 +12,8 @@ dsc-plugin-engine/
 ├── capabilities.ts # 能力白名单与受限代理（安全封装层）
 ├── requestPatch.ts # 请求补丁的白名单、范围裁剪与合并
 ├── registry.ts     # 插件注册表、依赖与冲突校验、内置 id 集合
+├── sources.ts      # 供应端点注册表：声明合并（能力并集）、定义比对与能力矩阵
+├── credentials.ts  # 供应端点凭证存取（IndexedDB，键为端点 id + 基址，插件不可见）
 ├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
 ├── localPackage.ts # 本地离线包解析与校验：zip、tgz、meta.json、签名
@@ -73,6 +75,9 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 | `assets:read` | 20 次 / 10 秒 | 内层 10 秒后中止请求 | `context.assets.readText`、`context.assets.readBytes` |
 | `plugins:storage` | 100 次 / 10 秒 | 同步调用 | `context.storage.get`、`set`、`remove` |
 | `chat:request` | 10 次 / 10 秒(仅登记) | 同步调用,单次预算 10 毫秒 | `context.chat.onBeforeRequest` |
+| `provider:source` | 50 次 / 10 秒(仅登记) | 同步调用 | `context.provider.registerSource` |
+
+`provider:source` 的上限按「声明次数」计:每次 `context.provider.registerSource` 占一个名额,一个插件可能声明多条端点,因此上限取 50。声明集中在激活阶段,超过上限抛 `PluginRateLimitError`,整次激活失败并按失败路径撤销该插件的全部声明。
 
 表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session` 与 `chat:request` 只登记处理器、不逐次调用,同样没有超时。超时只对异步成员生效。
 
@@ -80,7 +85,9 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 超限抛 `PluginRateLimitError`,未授予抛 `PluginCapabilityError`,超时抛 `PluginTimeoutError`,取消抛 `PluginAbortError`;限流与超时同时用既有 Toast 提示。
 
-`plugins:data-clear` 是引擎管理专用能力,不在 `CORE_CAPABILITIES` 内,插件清单申请它时按 `unknown-capability` 拒绝,也不会出现在插件上下文中。`net:fetch-post` 同理：它是 `context.net.postJson` 背后的独立能力标识,有自己的限流窗口与超时,插件清单不能申请,只能通过 `net:fetch` 的授予间接使用。`chat:request-source` 是第三个引擎专用标识,只在启动时登记一次补丁来源,同样不进入插件上下文。
+`plugins:data-clear` 是引擎管理专用能力,不在 `CORE_CAPABILITIES` 内,插件清单申请它时按 `unknown-capability` 拒绝,也不会出现在插件上下文中。`net:fetch-post` 同理：它是 `context.net.postJson` 背后的独立能力标识,有自己的限流窗口与超时,插件清单不能申请,只能通过 `net:fetch` 的授予间接使用。`chat:request-source` 只在启动时登记一次补丁来源,`source:run` 只由引擎按端点描述发起一次执行,两者同样是引擎专用标识,不进入插件上下文。
+
+`provider:source` 与 `chat:request` 同类：它在 `CORE_CAPABILITIES` 内、插件可以申请,但 core 侧没有对应实现,登记与合并都在引擎内完成。区别是它约束的是「能不能声明供应端点」,不约束「能不能执行」——执行走 `source:run`,插件拿不到那个标识。
 
 ### net:fetch 的可见性
 
@@ -153,6 +160,79 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 落点在 `dsc-core`:引擎启动时经 `chat:request-source` 登记一个「给切片、返回补丁」的回调,`dsc-core/request-patch.ts` 在发送路径上调用它并写进请求。方向与 `events:session` 的订阅一致——core 在需要时回调引擎,引擎既不缓存请求,也不持有请求对象。
 
 选择「core 在发送前向引擎索取」而不是「引擎把补丁交给 core 的方法」的理由:请求在 `src/services/chat/store.ts` 的发送路径里同步构造并立即发出,同一时刻可能有多个会话并发流式,失败重试还会重新构造一次;若由引擎把补丁预先交给 core,core 必须缓存补丁并按请求归属,而归属信息只在构造点才存在。索取形态不保存任何请求状态,core 侧的落点是一个只做字段写入的纯函数。
+
+### 供应端点挂载点与注册表
+
+插件可以声明它能提供哪些供应端点（provider endpoint，下称端点），但只交描述、不交执行代码：装配请求与解析回流的实现在 `dsc-core`，凭证由引擎在执行时取用，插件两头都碰不到。这里的「端点」与插件安装来源（`inner`、`outer` 等）不是同一个概念，文档与界面不用「来源」指代它。
+
+| 环节 | 位置 | 说明 |
+|:---:|:---:|:---:|
+| 挂载点 | `provider:source` | 插件清单申请的能力；未申请时调用注册接口抛 `PluginCapabilityError` |
+| 注册接口 | `context.provider.registerSource(descriptor)` | 登记一份端点描述；只登记，不执行，不发起网络请求 |
+| 注册表 | `sources.ts` | 合并全部插件的声明，能力清单按端点 id 取并集 |
+| 凭证 | `credentials.ts` | 按「端点 id + 规范化后的基址」存 IndexedDB，只在执行时读取；不从引擎门面导出 |
+| 执行 | `dsc-core` 的 `source:run` | 引擎专用标识，插件不可达；按能力标识分派 |
+
+端点描述的字段：
+
+| 字段 | 必填 | 说明 |
+|:---:|:---:|:---:|
+| `id` | 是 | 小写字母开头，允许数字、点、下划线与连字符，3 到 64 字符；注册表按它合并与判冲突 |
+| `label` | 是 | 展示名称，最多 40 字符；只用于展示，不参与冲突判定 |
+| `format` | 是 | `anthropic-messages` 或 `openai-chat`；只描述线上协议，不指厂商 |
+| `baseUrl` | 是 | 端点基址；登记前规范化，见下表 |
+| `capabilities` | 是 | 该端点能提供的能力，取自九个端点能力标识，不得为空、不得重复 |
+| `endpoints` | 否 | 按能力覆盖端点路径，只允许站内绝对路径；缺省按 `format` 推导 |
+
+基址在登记前统一规范化，注册表的比对与执行期的地址拼接都只用规范化后的值：
+
+| 处理 | 规则 |
+|:---:|:---:|
+| 去空白 | 首尾空白一律去掉，否则校验能过、执行期却拼出非法地址 |
+| 主机 | 转小写 |
+| 端口 | 去掉默认端口（https 的 443、http 的 80） |
+| 路径 | 去掉尾斜杠 |
+| 拒绝 | 带 query、hash 或内嵌用户名密码的地址直接拒绝；非 https 且非本机回环的 http 同样拒绝 |
+
+合并与冲突：
+
+| 情形 | 结论 |
+|:---:|:---:|
+| 端点 id 不同 | 各自入表 |
+| 端点 id 相同、定义一致 | 能力清单取并集，声明方都记进 `owners` |
+| 端点 id 相同、定义不一致 | 先声明的那份临时生效，后声明的不生效，记一条 `SourceConflict` |
+
+`SourceConflict` 带端点 id、冲突字段、临时生效与被拒绝的两份描述，以及双方的插件 id。定义比对只看 `format`、规范化后的 `baseUrl` 与 `endpoints` 三项：这三项决定请求发到哪里、按什么协议组装；`label` 只是展示名，差异不算冲突，展示名取先声明方；能力清单按并集合并，也不参与判定。
+
+未决期先声明的那份临时生效，代价写在文档里而不是藏起来：后声明方的插件会看到 id 在表里，但执行期只认先声明方的基址；冲突方声明的能力不进能力矩阵；冲突只体现在注册表视图与引擎日志里，界面必须主动展示；先声明方退出后，下一份声明重新成为唯一定义。`owners` 把冲突方也记进去，因此「谁还声明过这个 id」在冲突期也查得到。
+
+`engine.sourceRegistry()` 返回合并后的端点描述、端点 id 到声明方的 `owners`、能力矩阵与冲突列表，供设置界面展示。能力矩阵对九个端点能力逐项给出提供它的端点 id，没有端点提供时为空数组。停用或卸载插件时撤销该插件的全部声明。
+
+`credentials.ts` 只给引擎的执行路径使用：读 `readSourceCredential(sourceId, baseUrl)`、写 `writeSourceCredential(sourceId, baseUrl, apiKey)`，与安装记录分库（`<APP_NAME>-plugin-sources`），键是「端点 id + 规范化后的基址」，IndexedDB 不可用时降级为内存镜像。读取结论有三态：`ok` 可用；`missing` 没有记录；`stale` 同一端点 id 还存在别的基址的记录，说明端点换过主机，必须重新填写，不能把旧 Key 发到新主机。它不从引擎门面再导出，插件既拿不到读写入口，也拿不到任何凭证值。
+
+示例只声明一条端点，不执行：
+
+```ts
+export const manifest = {
+  id: 'dsc-demo-source',
+  name: 'Demo Source',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['provider:source'],
+}
+
+export const activate = (context) => {
+  context.provider.registerSource({
+    id: 'demo-deepseek',
+    label: 'Demo DeepSeek',
+    format: 'anthropic-messages',
+    baseUrl: 'https://api.deepseek.com',
+    capabilities: ['text.generate', 'models.list'],
+  })
+}
+```
+
+端点能力标识是另一条标识轴，共九个：`text.generate`、`reasoning.think`、`vision.image`、`document.read`、`audio.asr`、`audio.tts`、`tool.web-search`、`tool.read-url`、`models.list`。它们不出现在插件清单里，只出现在端点描述的能力清单里；本轮只有 `text.generate` 与 `models.list` 在 core 侧落地，其余执行时按 `unsupported` 拒绝。
 
 ### 持久化与启动恢复
 
@@ -302,7 +382,8 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 能力/贡献点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册贡献点并返回释放函数 | `capabilities.ts` |
 | 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;联网只经 `context.net`(第三方插件不可用)与 `context.assets`(只读远端资产);插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
-| 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 IndexedDB `<APP_NAME>-plugins` 的 `plugins` 仓库,插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>` | `db.ts`、`../dsc-core/plugin-data.ts` |
+| 供应端点注册 | 服务注册与 `ctx.provide`,按提供方合并 | 插件交端点描述,引擎合并成注册表并给出能力矩阵与冲突 | `sources.ts`、`../dsc-core/source-catalog.ts` |
+| 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 IndexedDB `<APP_NAME>-plugins` 的 `plugins` 仓库,插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>`,供应端点凭证另存 `<APP_NAME>-plugin-sources`(键为端点 id + 基址) | `db.ts`、`credentials.ts`、`../dsc-core/plugin-data.ts` |
 | 内置插件 | dsh 自带插件包与内置 bundle | `builtin.ts` 清单,启动时先于外部插件装载 | `builtin.ts` |
 | 热重载 | `dsh-hmr` | 未实现,刷新页面重新加载 | 无 |
 
