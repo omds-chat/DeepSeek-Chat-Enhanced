@@ -139,7 +139,7 @@ node scripts/pki/ca.mjs sign-web --dir dist --eec certs/ds-chat-pages/ds-chat-pa
 
 `.github/workflows/pages.yml` 直接构建,根证书由 `certs/ds-chat/ds-chat-root-ca.crt` 内嵌,不再从 secrets 注入;在构建之后、上传产物之前执行 `sign-web`:
 
-- `secrets.WEB_EEC_KEY` 写入仓库内被忽略的临时文件,签完立即删除;
+- `secrets.DS_CHAT_PAGES_EEC_SECRET` 写入仓库内被忽略的临时文件,签完立即删除;
 - EEC 证书取 `certs/ds-chat-pages/ds-chat-pages-eec.crt` ;
 - 执行 `node scripts/pki/ca.mjs sign-web --dir dist --eec <EEC> --key <私钥>` 。
 

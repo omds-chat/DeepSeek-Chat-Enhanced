@@ -234,7 +234,7 @@ jobs:
       # 网页签名: 私钥写入被 git 忽略的 temp/ 临时文件,签名结束立即删除
       - name: Sign web files
         env:
-          WEB_EEC_KEY: ${{ secrets.WEB_EEC_KEY }}
+          WEB_EEC_KEY: ${{ secrets.DS_CHAT_PAGES_EEC_SECRET }}
         run: |
           set -euo pipefail
           if [ -z "${WEB_EEC_KEY}" ]; then
