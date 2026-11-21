@@ -463,6 +463,12 @@ export const en = {
   pluginSettingsLoadFailed: 'Failed to load settings, please retry',
   pluginSettingsLoading: 'Loading settings',
   pluginSettingsSaveHint: 'Changes take effect after saving',
+  pluginPageRejected: 'Page descriptor of plugin {id} was rejected: {reason}',
+  pluginTabPages: 'Plugin pages',
+  pluginPagesBack: 'Back to page list',
+  pluginPagesEmpty: 'No plugin has registered a page',
+  pluginPagesLoading: 'Loading the page',
+  pluginPagesLoadFailed: 'The page is gone or the plugin is inactive',
   trustListRootMismatch:
     'The trust data of plugin sources does not match this build, so source trust checks were skipped; decide for yourself whether to continue',
   trustListCollectionsUntrusted:

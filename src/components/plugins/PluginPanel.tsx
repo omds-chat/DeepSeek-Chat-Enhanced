@@ -12,6 +12,7 @@ import { IconButton } from '../base/IconButton.js'
 import { IconRefreshOutline16 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
 import { InstalledPlugins } from './InstalledPlugins.js'
+import { PluginPages } from './PluginPages.js'
 import { PluginSettingsDetail } from './PluginSettingsDetail.js'
 import { judgeInstallFailure } from './installFailure.js'
 import { LocalInstall } from './LocalInstall.js'
@@ -29,6 +30,7 @@ import styles from './PluginPanel.module.css'
 const tabs: { value: PluginPanelTab; label: TranslationKey }[] = [
   { value: 'installed', label: 'pluginTabInstalled' },
   { value: 'market', label: 'pluginTabMarket' },
+  { value: 'pages', label: 'pluginTabPages' },
 ]
 
 /**
@@ -125,8 +127,10 @@ export const PluginPanel = () => {
             <PendingConflicts plugins={plugins} refresh={refresh} />
             <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
           </div>
-        ) : (
+        ) : tab === 'market' ? (
           <MarketPlugins installedIds={installedIds} onInstalled={refresh} />
+        ) : (
+          <PluginPages plugins={plugins} />
         )}
       </div>
       {tab === 'installed' ? <InstallFromUrl onInstalled={refresh} /> : null}

@@ -1,0 +1,99 @@
+/* 插件页面: 复用设置表面的样式 token, 只补页面区块自身的少量布局 */
+
+.entryList {
+  display: flex;
+  flex-direction: column;
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 0;
+}
+
+.entry + .entry {
+  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.entryHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entryTitle {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.entryCaption {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-caption);
+}
+
+.pageTitle {
+  padding: 4px 0 8px;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.text {
+  margin: 0;
+  padding: 14px 0;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+  white-space: pre-wrap;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+.listItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+}
+
+.listItem + .listItem {
+  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.listItemHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.listItemTitle {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.listItemDesc {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.listItemActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.actionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0;
+}

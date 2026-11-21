@@ -16,6 +16,7 @@ dsc-plugin-engine/
 ├── installConflicts.ts # 安装期冲突判定：正反两个方向，与启用期同口径
 ├── sources.ts      # 供应端点注册表：声明合并（能力并集）、定义比对与能力矩阵
 ├── pluginSettings.ts # 插件设置表面：字段描述校验、注册表与值读写门面（secret 走凭证库）
+├── pluginPages.ts   # 插件页面：声明式页面描述校验、登记表与动作、数据挂载点
 ├── credentials.ts  # 供应端点凭证存取（IndexedDB，键为端点 id + 基址，插件不可见）
 ├── providerRun.ts  # 按端点执行：选端点、读凭证、调 source:run、错误归类
 ├── db.ts           # 安装记录与待决定冲突组的持久化（IndexedDB，不可用时降级为内存）
@@ -44,7 +45,7 @@ dsc-plugin-engine/
 | `dependencies` | 否 | 依赖的插件 id,安装、启用、停用、卸载四处都生效:安装时须已存在,激活时须已激活,停用与卸载时不得有已启用的依赖方 |
 | `conflicts` | 否 | 冲突的插件 id,安装期与启用期都生效,两个方向都算:安装时任一方声明排斥另一方即拒绝(原因按声明方向分三条);启用时只算 `active` 记录,冲突则停用双方并写入待决定记录,由用户选择保留哪一个 |
 | `capabilities` | 是 | 申请的能力,必须在核心能力表内且不得重复 |
-| `mounts` | 否 | 声明的挂载点(`session:changed`、`chat:before-request`),必须在挂载点表内且不得重复 |
+| `mounts` | 否 | 声明的挂载点(`session:changed`、`chat:before-request`、`ui:page-action`、`ui:page-data`),必须在挂载点表内且不得重复 |
 
 清单的 `id` 由插件名收敛而来：去掉 `@scope/` 前缀后转小写,非 `[a-z0-9-]` 的字符折叠为连字符,再去掉首尾连字符。收敛结果立即按清单规则 `^[a-z][a-z0-9-]{2,63}$` 校验,字符形态或长度不合规时安装按 `invalid-manifest` 拒绝,原因说明指向插件命名而不是笼统的清单非法。规则只有 `pluginId.ts` 一处实现,离线包、在线安装与插件市场都引用它,同一插件经不同路径得到同一个 id。
 
@@ -157,6 +158,7 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 | `notify` | 10 次 / 10 秒 | 同步调用 | `context.ui.notify` |
 | `settings:locale` | 60 次 / 10 秒 | 3 秒 | `context.settings.locale` |
 | `settings:surface` | 60 次 / 10 秒 | 同步调用 | `context.settings.register`、`context.settings.values` |
+| `ui:page` | 20 次 / 10 秒(仅登记) | 同步调用 | `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` |
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
 | `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
 | `assets:read` | 20 次 / 10 秒 | 内层 10 秒后中止请求 | `context.assets.readText`、`context.assets.readBytes` |
@@ -167,9 +169,9 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 
 `provider:source` 的上限按「声明次数」计:每次 `context.provider.registerSource` 占一个名额,一个插件可能声明多条端点,因此上限取 50。声明集中在激活阶段,超过上限抛 `PluginRateLimitError`,整次激活失败并按失败路径撤销该插件的全部声明。
 
-表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session`、`chat:request` 与 `settings:surface` 只登记、不逐次执行耗时操作,同样没有超时。超时只对异步成员生效。
+表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session`、`chat:request`、`settings:surface` 与 `ui:page` 只登记、不逐次执行耗时操作,同样没有超时。超时只对异步成员生效。
 
-登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
+登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest`,以及每次 `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` 各占一个名额,之后的事件回调、请求前调用、页面动作回调与页面数据索取都由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
 
 超限抛 `PluginRateLimitError`,未授予抛 `PluginCapabilityError`,超时抛 `PluginTimeoutError`,取消抛 `PluginAbortError`;限流与超时同时用既有 Toast 提示。
 
@@ -280,6 +282,49 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 宿主 UI:已安装列表点插件名进详情页(不做路由,返回即回列表),详情页由宿主按描述渲染表单。脏值生命周期照抄 dsh:改动即脏、保存才落盘、字段级非法阻塞保存、保存失败保留草稿、离开页面丢弃草稿;每个字段带覆盖徽标(已修改)与「重置为默认」按钮。没有登记描述的插件(未激活、或没有可配置项)显示「本插件没有可配置项」。
 
 卸载清理:登记随停用撤销;覆盖值与秘密值由引擎管理,卸载时一并清除,不在遗留数据区出现。
+
+### 插件页面（ui:page）
+
+第三方插件可以在清单里申请能力 `ui:page`,在激活期用 `context.ui.registerPage(descriptor)` 登记一份声明式页面描述,宿主据此在插件面板的「插件页面」标签页渲染页面。与 `settings:surface` 同法,插件只交描述、不交控件:控件形态、样式与 i18n 全部归宿主,这是插件没有 React 能力时的页面形态。消费场景是插件需要一块自己的展示与管理界面(例如资产市场的来源管理与安装入口)。
+
+登记与校验实现在 `pluginPages.ts`,与设置表面同法:只登记描述、不执行;描述非法(非法 id、非法标题、空区块、超过 64 个区块、重复区块 id、未知区块类型、非法条目、非法动作、非法说明文字、非法表单字段、跨区块重复字段键、超规模)时整份注册失败,抛 `PluginPageError`,`code` 是结构化的问题码,同时提示 `pluginPageRejected`。登记返回带页面 id 的句柄,释放函数进入插件的 disposer 集合,停用随引擎清理(激活中途失败同样撤销);同一插件重复登记同 id 页面时替换前一份。
+
+页面描述的形态:
+
+| 字段 | 必填 | 说明 |
+|:---:|:---:|:---:|
+| `id` | 是 | `^[a-z][a-z0-9-]{0,63}$`,同一插件内不得重复,与插件 id 共同构成页面入口的键 |
+| `titleKey` / `title` | 是 | 二选一:`titleKey` 必须是宿主 i18n 字典里的键,`title` 是插件直给的文案(1 到 40 字符);页面入口的名字用它 |
+| `blocks` | 是 | 区块数组,1 到 64 个,按声明顺序渲染 |
+
+区块四种:
+
+| 区块 | 字段 | 说明 |
+|:---:|:---:|:---:|
+| `text` | `text` | 静态说明文字,1 到 2000 字符 |
+| `list` | `items`、`itemAction?` | 条目数组(至多 200 条),每条 `{ key, titleKey 或 title, description?, badgeKey 或 badge }`;条目键不得重复,`description` 是 1 到 200 字符的直给文案,标题与徽标复用设置字段标签的文案口径(`titleKey` / `title`、`badgeKey` / `badge` 各自二选一);`itemAction` 是可选的逐条动作 `{ key, labelKey 或 label }` |
+| `form` | `fields` | 复用 `settings:surface` 的五种字段描述与宿主控件,字段键在同一页面内不得重复(跨区块同键同样拒绝) |
+| `actions` | `items` | 按钮组(至多 8 个),每项 `{ key, labelKey 或 label }`,键不得重复 |
+
+规模上限:最多 64 个区块,描述序列化后不超过 8 KB,超限按 `too-many-blocks` / `descriptor-too-large` 拒绝。
+
+两个挂载点,登记时要求清单同时申请能力 `ui:page` 与对应挂载点,缺任一项抛 `PluginCapabilityError`:
+
+| 挂载点 | 登记 | 回调时机 |
+|:---:|:---:|:---:|
+| `ui:page-action` | `context.ui.onPageAction(handler)` | 用户点击页面上的动作按钮时,引擎同步回调一次,载荷 `{ pageId, actionId, itemKey?, form? }`;`itemKey` 只有逐条动作带,`form` 是宿主收集的页面表单区块当前草稿值,页面没有表单区块时不出现 |
+| `ui:page-data` | `context.ui.onPageData(handler)` | 宿主进入页面或动作返回刷新指示时,引擎同步索取当前模型,传页面 id;处理器同步返回页面描述 |
+
+回调的约定:
+
+- 动作处理器同步返回 `{ refresh: true }` 时,宿主重新向插件索取页面模型;返回其他值或什么都不返回时页面保持原样。异步工作(如安装资产)由插件自行发起,完成后用 `context.ui.notify` 提示,页面数据等用户下次进入或下一次刷新指示再更新。
+- 两个挂载点的回调由引擎发起,不占插件的限流名额;`ui:page` 的限流按登记次数计,`registerPage`、`onPageAction`、`onPageData` 每次各占一个名额,20 次 / 10 秒。
+- 数据处理器返回的模型按登记期同一份校验收敛:非法、抛错或页面 id 与所请求页面不一致时回落到登记时的缺省模型,原因写插件日志;未实现 `ui:page-data` 的插件页面静态显示。
+- 页面表单的值只活在宿主侧的脏值生命周期里(改动即脏、字段级非法给出问题文案、可重置为默认),没有落盘动作;用户点击动作按钮时,宿主把当前草稿值随载荷交给插件。
+
+宿主 UI:插件面板新增「插件页面」标签页,与「已安装」「插件市场」同级;每个已登记页面的插件各得一个入口,名字用页面标题,条目下方是插件 id。进入页面后宿主按区块顺序渲染,表单区块复用设置详情页的控件与样式 token;动作按钮触发引擎回调,返回刷新指示时立即重新索取模型。不做路由、不做模态遮罩:返回即回页面列表,遵守界面交互禁令(只用气泡通知与悬浮卡片)。
+
+清理:停用撤销全部页面登记与两个挂载点处理器;卸载时引擎再兜底清一次,避免未激活过的插件留下残留。
 
 ### 供应端点能力与注册表
 

@@ -1,4 +1,10 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import type {
+  PageActionHandler,
+  PageDataHandler,
+  PageDescriptor,
+  PluginPageHandle,
+} from './pluginPages.js'
 import type { SettingDescriptor, SettingValue } from './pluginSettings.js'
 import type { ProviderRunPayload, ProviderRunResult } from './providerRun.js'
 import type {
@@ -27,13 +33,21 @@ export const MAX_PLUGIN_CODE_MB = MAX_PLUGIN_CODE_BYTES / (1024 * 1024)
 /**
  * 挂载点；插件声明要挂到宿主哪个回调位置。
  * session:changed 是核心事件，chat:before-request 不是事件，它在每次发请求前同步调用一次。
+ * ui:page-action 与 ui:page-data 服务插件页面：前者在用户点击页面动作按钮时回调，
+ * 后者在宿主进入页面或收到刷新指示时索取页面模型，两者都是同步调用。
  */
-export type MountPoint = 'session:changed' | 'chat:before-request'
+export type MountPoint =
+  | 'session:changed'
+  | 'chat:before-request'
+  | 'ui:page-action'
+  | 'ui:page-data'
 
 /** 全部挂载点 */
 export const MOUNT_POINTS: readonly MountPoint[] = [
   'session:changed',
   'chat:before-request',
+  'ui:page-action',
+  'ui:page-data',
 ]
 
 /** 事件处理器 */
@@ -117,9 +131,24 @@ export type EventsCapability = {
   on(point: MountPoint, handler: MountHandler): () => void
 }
 
-/** 提示能力 */
+/**
+ * 提示与页面能力。
+ * notify 复用宿主文案键提示用户；registerPage 登记一份声明式页面描述，宿主据此渲染页面；
+ * onPageAction 与 onPageData 分别登记页面动作回调与页面数据索取处理器，
+ * 都要求清单声明对应挂载点，登记返回释放函数，停用随引擎清理。
+ */
 export type UiCapability = {
   notify(key: TranslationKey, params?: TranslationParams): void
+  /**
+   * 登记一份插件页面描述；与 settings.register 同法：只登记描述、不交控件，
+   * 描述非法时抛 PluginPageError，code 是结构化的问题码。
+   * 返回带页面 id 的句柄，释放函数进入插件的 disposer 集合，停用随引擎清理。
+   */
+  registerPage(descriptor: PageDescriptor): PluginPageHandle
+  /** 登记页面动作回调；用户点击页面上的动作按钮时由引擎同步调用一次 */
+  onPageAction(handler: PageActionHandler): () => void
+  /** 登记页面数据处理器；宿主进入页面或动作返回刷新指示时同步索取页面模型 */
+  onPageData(handler: PageDataHandler): () => void
 }
 
 /**

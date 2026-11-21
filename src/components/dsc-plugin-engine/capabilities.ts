@@ -21,6 +21,16 @@ import {
   pluginSettingValuesForPlugin,
 } from './pluginSettings.js'
 import { readSourceCredential } from './credentials.js'
+import {
+  PluginPageError,
+  checkPageDescriptor,
+  declarePage,
+  declarePageActionHandler,
+  declarePageDataHandler,
+  forgetPage,
+  forgetPageActionHandler,
+  forgetPageDataHandler,
+} from './pluginPages.js'
 import { runProviderCapability, type ProviderRunDeps } from './providerRun.js'
 import { isBuiltinPlugin, type PluginRecord } from './registry.js'
 import { PluginSourceError, selectedSource, type SourceConflict } from './sources.js'
@@ -70,6 +80,9 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'chat:request': { limit: 10, windowMs: 10000 },
   // 登记与读取共用一个窗口：每次 settings.register 占一个名额，settings.values 的读取同样计数
   'settings:surface': { limit: 60, windowMs: 10000 },
+  // 登记型成员：registerPage、onPageAction 与 onPageData 各占一个名额，
+  // 页面动作回调与页面数据索取由引擎发起，不再占用名额
+  'ui:page': { limit: 20, windowMs: 10000 },
   // 引擎启动时登记一次补丁来源，同样不经过插件上下文
   'chat:request-source': { limit: 0, windowMs: 10000 },
   // 限制的是声明次数: 每次 context.provider.registerSource 占一个名额, 不逐次执行。
@@ -373,6 +386,56 @@ export const createPluginContext = ({
 
   const ui: UiCapability = {
     notify: (key, params) => invokeSync('notify', () => core.notify(newCall('notify'), key, params)),
+    /**
+     * 登记插件页面。与 settings.register 同法: 只登记描述、不交控件,
+     * 校验即拒绝(重复 id、未知区块类型、非法文案都让整份注册失败),
+     * 释放函数进入插件的 disposer 集合, 停用随引擎清理。
+     */
+    registerPage: (descriptor) => {
+      ensureGranted('ui:page')
+      takeToken('ui:page')
+      const check = checkPageDescriptor(descriptor, isTranslationKey)
+      if (!check.ok) {
+        report('pluginPageRejected', { id: manifest.id, reason: check.problem })
+        throw new PluginPageError(check.problem)
+      }
+      declarePage(manifest.id, check.descriptor)
+      const dispose = () => {
+        forgetPage(manifest.id, check.descriptor.id)
+      }
+      record.disposers.add(dispose)
+      return { id: check.descriptor.id, dispose }
+    },
+    /**
+     * 登记页面动作回调。与 events.on 同法: 只登记、不逐次调用,
+     * 用户点击动作按钮时由引擎同步回调, 每次登记占一个限流名额。
+     */
+    onPageAction: (handler) => {
+      ensureGranted('ui:page')
+      ensureMount('ui:page', 'ui:page-action')
+      takeToken('ui:page')
+      declarePageActionHandler(manifest.id, handler)
+      const dispose = () => {
+        forgetPageActionHandler(manifest.id)
+      }
+      record.disposers.add(dispose)
+      return dispose
+    },
+    /**
+     * 登记页面数据处理器。宿主进入页面或动作返回刷新指示时同步索取当前模型,
+     * 登记口径与页面动作回调相同。
+     */
+    onPageData: (handler) => {
+      ensureGranted('ui:page')
+      ensureMount('ui:page', 'ui:page-data')
+      takeToken('ui:page')
+      declarePageDataHandler(manifest.id, handler)
+      const dispose = () => {
+        forgetPageDataHandler(manifest.id)
+      }
+      record.disposers.add(dispose)
+      return dispose
+    },
   }
 
   const settings: SettingsCapability = {

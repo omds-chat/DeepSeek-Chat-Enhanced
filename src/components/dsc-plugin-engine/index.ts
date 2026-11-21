@@ -59,6 +59,16 @@ import {
   type PluginSettingsFacade,
 } from './pluginSettings.js'
 import { toPluginId } from './pluginId.js'
+import {
+  dispatchPageAction,
+  forgetPages,
+  pageEntries,
+  readPageModel,
+  type PageActionPayload,
+  type PluginPageActionResult,
+  type PluginPageEntry,
+  type PluginPageModelResult,
+} from './pluginPages.js'
 import * as store from './registry.js'
 import { declareSource, forgetSources, sourceView, type SourceRegistryView } from './sources.js'
 import {
@@ -231,6 +241,15 @@ export type PluginEngine = {
   sourceRegistry(): SourceRegistryView
   /** 插件设置表面：读描述、逐字段读值、写覆盖值与重置；供宿主设置页使用 */
   pluginSettings(pluginId: string): PluginSettingsFacade
+  /** 已登记的全部插件页面；宿主据此给每个页面一个入口 */
+  pluginPages(): PluginPageEntry[]
+  /**
+   * 读一个页面的当前模型：插件实现 ui:page-data 时向插件索取，
+   * 否则用登记时的描述静态显示；页面不存在（未登记或插件已停用）时拒绝。
+   */
+  readPage(pluginId: string, pageId: string): PluginPageModelResult
+  /** 分发一次页面动作；refresh 为 true 时宿主随后调 readPage 重新索取模型 */
+  dispatchPageAction(pluginId: string, payload: PageActionPayload): PluginPageActionResult
 }
 
 const describeError = (error: unknown): string =>
@@ -832,6 +851,8 @@ export const installPluginEngine = (): PluginEngine => {
     // 未激活过的插件不会走 deactivateNow，这里再撤销一次端点声明
     forgetSources(id)
     forgetSettings(id)
+    // 页面登记与动作、数据挂载点随卸载一并清理: 停用的 disposers 已撤过一次, 这里兜住未激活的残留
+    forgetPages(id)
     clearPluginSettings(id)
     void clearPluginSecrets(id, settingFieldKeys)
     patchNotices.delete(id + ':timeout')
@@ -1505,6 +1526,17 @@ export const installPluginEngine = (): PluginEngine => {
     bypassEvents: readBypassEvents,
     sourceRegistry: sourceView,
     pluginSettings: pluginSettingsFacade,
+    pluginPages: () => pageEntries(),
+    readPage: (pluginId, pageId) => {
+      const record = store.get(pluginId)
+      const log = record ? (message: string) => store.pushLog(record, message) : undefined
+      return readPageModel(pluginId, pageId, log)
+    },
+    dispatchPageAction: (pluginId, payload) => {
+      const record = store.get(pluginId)
+      const log = record ? (message: string) => store.pushLog(record, message) : undefined
+      return dispatchPageAction(pluginId, payload, log)
+    },
   }
 
   // 恢复在内部异步进行，installPluginEngine 保持同步返回，不阻塞首屏渲染
@@ -1584,6 +1616,28 @@ export type {
   SettingValueView,
   SettingWriteResult,
 } from './pluginSettings.js'
+/** 插件页面：错误类型与键规则；登记、校验与挂载点实现在 pluginPages.ts */
+export { PluginPageError, PAGE_KEY_PATTERN } from './pluginPages.js'
+export type {
+  PageActionDescriptor,
+  PageActionHandler,
+  PageActionPayload,
+  PageActionResponse,
+  PageBlock,
+  PageBlockType,
+  PageDataHandler,
+  PageDescriptor,
+  PageDescriptorProblem,
+  PageFormBlock,
+  PageListItemDescriptor,
+  PageListBlock,
+  PageTextBlock,
+  PageActionsBlock,
+  PluginPageActionResult,
+  PluginPageEntry,
+  PluginPageHandle,
+  PluginPageModelResult,
+} from './pluginPages.js'
 /** 按端点执行：错误码、错误类型与结果形态 */
 export { PluginProviderRunError, PROVIDER_RUN_ERROR_CODES } from './providerRun.js'
 export type {

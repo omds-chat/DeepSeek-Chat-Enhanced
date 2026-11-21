@@ -122,17 +122,26 @@ const MAX_DESCRIPTOR_BYTES = 8 * 1024
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** 标签校验: labelKey 与 label 二选一; labelKey 必须是宿主字典里的键 */
-const checkLabel = (raw: Record<string, unknown>, hasTranslationKey: (key: string) => boolean): boolean => {
-  const hasLabelKey = typeof raw.labelKey === 'string'
-  const hasLabel = typeof raw.label === 'string'
+/**
+ * 标签校验: xxxKey 与 xxx 二选一; xxxKey 必须是宿主字典里的键。
+ * prefix 是文案字段名, 键字段名是它的 Key 后缀形式, 供插件页面的条目标题
+ * (titleKey / title)与徽标(badgeKey / badge)复用设置字段标签的同一口径。
+ */
+export const checkLabel = (
+  raw: Record<string, unknown>,
+  hasTranslationKey: (key: string) => boolean,
+  prefix: 'label' | 'title' | 'badge' = 'label'
+): boolean => {
+  const keyField = prefix + 'Key'
+  const hasLabelKey = typeof raw[keyField] === 'string'
+  const hasLabel = typeof raw[prefix] === 'string'
   if (hasLabelKey === hasLabel) {
     return false
   }
   if (hasLabelKey) {
-    return hasTranslationKey(raw.labelKey as string)
+    return hasTranslationKey(raw[keyField] as string)
   }
-  const label = (raw.label as string).trim()
+  const label = (raw[prefix] as string).trim()
   return label !== '' && label.length <= MAX_LABEL_LENGTH
 }
 

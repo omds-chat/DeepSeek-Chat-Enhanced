@@ -429,6 +429,12 @@ export const zh = {
   pluginSettingsLoadFailed: '设置读取失败，请重试',
   pluginSettingsLoading: '正在读取设置',
   pluginSettingsSaveHint: '改动保存后生效',
+  pluginPageRejected: '插件 {id} 的页面描述被拒绝：{reason}',
+  pluginTabPages: '插件页面',
+  pluginPagesBack: '返回页面列表',
+  pluginPagesEmpty: '当前没有插件登记页面',
+  pluginPagesLoading: '正在读取页面',
+  pluginPagesLoadFailed: '页面不存在或插件已停用',
   trustListRootMismatch: '插件来源的信任数据与当前版本不一致，已跳过来源信任校验，请自行判断是否继续使用',
   trustListCollectionsUntrusted:
     '插件来源 {ids}（共 {count} 个）无法确认可信，已标记为不可信，请自行判断是否继续使用',

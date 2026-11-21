@@ -110,7 +110,7 @@ export const activate = (context) => {
 |:---:|:---:|
 | `export const manifest` | 安装依据。用户从地址安装时不必再提供清单;写在 `default` 导出对象上也能识别,模块顶层的具名导出优先 |
 | `capabilities` | 申请的能力,必须在核心能力表内且不得重复。未申请的能力被调用时抛 `PluginCapabilityError` |
-| `mounts` | 声明要挂载的位置。只有声明了 `session:changed` 才能调用 `context.events.on('session:changed', ...)`;只有声明了 `chat:before-request` 才能调用 `context.chat.onBeforeRequest(...)` |
+| `mounts` | 声明要挂载的位置。只有声明了 `session:changed` 才能调用 `context.events.on('session:changed', ...)`;只有声明了 `chat:before-request` 才能调用 `context.chat.onBeforeRequest(...)`;只有声明了 `ui:page-action` 与 `ui:page-data` 才能调用 `context.ui.onPageAction(...)` 与 `context.ui.onPageData(...)` |
 | `conflicts` | 冲突的插件 id,在安装期与启用期都生效,两个方向都算:安装时本清单列出的插件已安装、或某个已安装插件的清单里声明排斥本插件,都拒绝安装;启用时只算正在运行的插件,冲突则按保守策略处置——把冲突双方全部停用、把这组冲突写进待决定记录,再由用户在插件面板选择保留哪一个;两边互相声明时按双向冲突处置,方向只影响文案 |
 | `activate(context)` | 启动入口,可返回 Promise;抛错或超过 5 秒会让插件进入 `failed`,引擎与其他插件继续运行 |
 | `deactivate()` | 停用入口,可选,可返回 Promise,超时 3 秒;之后引擎执行 `events.on` 返回的释放函数并清空挂载点 |
@@ -130,6 +130,7 @@ export const activate = (context) => {
 | `notify` | 全部插件 | `context.ui.notify` | 10 次 / 10 秒 |
 | `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
 | `settings:surface` | 全部插件 | `context.settings.register`、`context.settings.values` | 60 次 / 10 秒 |
+| `ui:page` | 全部插件 | `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` | 20 次 / 10 秒(仅登记) |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
 | `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
 | `assets:read` | 全部插件 | `context.assets.readText`、`context.assets.readBytes` | 20 次 / 10 秒 |
@@ -139,9 +140,9 @@ export const activate = (context) => {
 
 `context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
 
-上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止,`context.provider.run` 的 15 秒只覆盖「建立调用」这一段(`text.generate` 的回流在调用返回后惰性产出,不占这个预算);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时;`context.settings.register` 与 `context.settings.values` 同为同步调用。
+上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止,`context.provider.run` 的 15 秒只覆盖「建立调用」这一段(`text.generate` 的回流在调用返回后惰性产出,不占这个预算);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时;`context.settings.register`、`context.settings.values` 与 `context.ui` 的三个页面成员(`registerPage`、`onPageAction`、`onPageData`)同为同步调用。
 
-`events:session` 与 `chat:request` 的限流只算登记次数:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError` 并提示 `pluginCallRateLimited`,窗口滚过之后可以继续登记。请求前处理器另有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
+`events:session` 与 `chat:request` 的限流只算登记次数:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。`ui:page` 同为登记型成员:每次 `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` 各占一个名额,页面动作回调与页面数据索取由引擎发起,不占名额。同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError` 并提示 `pluginCallRateLimited`,窗口滚过之后可以继续登记。请求前处理器另有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
 
 `net:fetch` 只对内置插件开放。第三方插件在清单里申请它时,安装结果为 `unknown-capability`,与申请一个不存在的能力表现一致;调用层还会再校验一次。第三方插件需要联网时由宿主决定是否开放,口径见上文「[联网](#联网)」。
 
@@ -361,6 +362,83 @@ export const activate = (context) => {
 - 脏值生命周期:改动即脏、保存才落盘、保存失败保留草稿、离开页面丢弃草稿;每个字段可「重置为默认」。
 - 登记只在激活期有效:插件未激活时详情页显示「本插件没有可配置项」。
 
+### 注册插件页面
+
+插件可以给宿主贡献一块自己的页面(例如资产市场的来源管理、目录浏览与安装入口):清单申请能力 `ui:page`,并在挂载点里声明 `ui:page-action` 与 `ui:page-data`,激活期用 `context.ui.registerPage(descriptor)` 登记一份声明式页面描述。宿主在插件面板的「插件页面」标签页给每个页面一个入口,名字用页面标题。与设置表面同法,插件只交描述、不交控件,不写任何界面代码。
+
+```ts
+export const manifest = {
+  id: 'demo-pages',
+  name: 'Demo Pages',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['ui:page', 'plugins:storage'],
+  mounts: ['ui:page-action', 'ui:page-data'],
+}
+
+export const activate = (context) => {
+  const page = {
+    id: 'catalog',
+    title: '资产目录',
+    blocks: [
+      { id: 'intro', type: 'text', text: '浏览来源并安装资产。' },
+      { id: 'source-form', type: 'form', fields: [
+        { key: 'source-url', type: 'text', label: '来源地址', default: 'https://example.com' },
+        { key: 'auto-install', type: 'switch', label: '自动安装', default: false },
+      ] },
+      { id: 'items', type: 'list', items: [
+        { key: 'pkg-a', title: '资产 A', description: '第一个资产', badge: '已收录' },
+      ], itemAction: { key: 'install', label: '安装' } },
+      { id: 'ops', type: 'actions', items: [{ key: 'refresh-all', label: '刷新目录' }] },
+    ],
+  }
+  context.ui.registerPage(page)
+
+  // 用户点击动作按钮时同步回调:载荷 { pageId, actionId, itemKey?, form? }
+  context.ui.onPageAction((payload) => {
+    context.log('page action: ' + payload.actionId + ' on ' + payload.pageId)
+    // 异步工作(如安装资产)由插件自行发起,完成后用 notify 提示;
+    // 返回 { refresh: true } 让宿主重新索取页面模型
+    return { refresh: true }
+  })
+
+  // 宿主进入页面或收到刷新指示时同步索取当前模型;不登记时静态显示缺省模型
+  context.ui.onPageData((pageId) => {
+    if (pageId !== 'catalog') {
+      return null
+    }
+    return { ...page, blocks: [/* 按当前数据重新组织 */] }
+  })
+}
+```
+
+页面描述的规则:
+
+| 字段 | 必填 | 说明 |
+|:---:|:---:|:---:|
+| `id` | 是 | `^[a-z][a-z0-9-]{0,63}$`,同一插件内不得重复,与插件 id 共同构成页面入口的键 |
+| `titleKey` / `title` | 是 | 二选一:`titleKey` 用宿主 i18n 字典里的键,`title` 直接给文案(1 到 40 字符);页面入口的名字用它 |
+| `blocks` | 是 | 1 到 64 个区块,按声明顺序渲染 |
+
+区块四种:
+
+| 区块 | 内容 | 说明 |
+|:---:|:---:|:---:|
+| `text` | `{ text }` | 静态说明文字,1 到 2000 字符 |
+| `list` | `{ items, itemAction? }` | 条目数组(至多 200 条),每条 `{ key, titleKey 或 title, description?, badgeKey 或 badge }`;条目键不得重复;`itemAction` 是可选的逐条动作 `{ key, labelKey 或 label }` |
+| `form` | `{ fields }` | 复用设置表面的五种字段描述与控件,字段键在同一页面内不得重复 |
+| `actions` | `{ items }` | 按钮组(至多 8 个),每项 `{ key, labelKey 或 label }`,键不得重复 |
+
+校验即拒绝:非法 id、非法标题、空区块、重复区块 id、未知区块类型、非法条目、非法动作、非法说明文字、非法表单字段、跨区块重复字段键或超规模都让整份注册失败,抛 `PluginPageError`,`code` 是结构化的问题码,并提示 `pluginPageRejected`;描述序列化后不超过 8 KB。登记返回带页面 id 的句柄,释放函数停用随引擎清理;同一插件重复登记同 id 页面时替换前一份。
+
+动作与数据的约定:
+
+- 用户点击动作按钮时,引擎同步调用 `onPageAction` 登记的处理器一次,载荷 `{ pageId, actionId, itemKey?, form? }`:`itemKey` 只有逐条动作带,`form` 是页面表单区块的当前草稿值,页面没有表单区块时不出现。
+- 处理器同步返回 `{ refresh: true }` 表示页面数据已变化,宿主随即调 `onPageData` 登记的处理器索取新模型;返回其他值或什么都不返回时页面保持原样。异步工作由插件自行发起,完成后用 `context.ui.notify` 提示。
+- 未实现 `ui:page-data` 时宿主用登记时的描述静态显示;实现了的话,宿主在进入页面与收到刷新指示时索取当前模型,返回的模型按登记期同一份校验,非法、抛错或页面 id 不一致时回落到缺省模型。
+- 页面表单的值只活在宿主侧:改动即脏、字段级非法给出问题文案、可重置为默认,没有落盘动作;用户点击动作按钮时随载荷交给插件。
+- 两个挂载点的回调由引擎发起,不占限流名额;`ui:page` 的限流按登记次数计。
+
 ## 本地加载验证
 
 1. 准备产物:一个 js 文件,例如 `dsc-demo-log.js`。
@@ -478,6 +556,7 @@ npm 包的要点:
 | 抛 `PluginAbortError` | 传入的 `signal` 已取消 | 检查取消逻辑 |
 | 抛 `PluginDataError` | 数据超过 64KB,或值无法 JSON 序列化 | 精简数据;移除函数、`undefined` 与循环引用 |
 | 抛 `PluginSettingsError` | 设置描述非法(重复 key、未知类型、非法 default、非法 labelKey、超规模) | 按 `code` 修正描述后重新激活 |
+| 抛 `PluginPageError` | 页面描述非法(非法 id、非法标题、空区块、重复区块 id、未知区块类型、非法条目、非法动作、非法表单字段、超规模) | 按 `code` 修正描述后重新激活 |
 | 请求参数没有变化 | 处理器超过 10 毫秒预算,或抛错;越界值被裁剪 | 查看引擎日志里的 `chat:before-request` 记录,把耗时压到 10 毫秒内并检查抛错 |
 | 系统提示词被整体替换 | 同时返回了 `systemPromptReplace` | 只想补充说明时改用 `systemPromptAppend` |
 | 停用被拒绝 | 有已启用的插件依赖它 | 先停用依赖方再停用;「被依赖阻塞」徽标标出这种插件,强行停用标志同样按拒绝处理 |
