@@ -234,15 +234,15 @@ jobs:
       # 网页签名: 私钥写入被 git 忽略的 temp/ 临时文件,签名结束立即删除
       - name: Sign web files
         env:
-          WEB_EEC_KEY: ${{ secrets.DS_CHAT_PAGES_EEC_SECRET }}
+          DS_CHAT_PAGES_EEC_SECRET: ${{ secrets.DS_CHAT_PAGES_EEC_SECRET }}
         run: |
           set -euo pipefail
-          if [ -z "${WEB_EEC_KEY}" ]; then
+          if [ -z "${DS_CHAT_PAGES_EEC_SECRET}" ]; then
             echo "::error::WEB_EEC_KEY 未配置,无法生成网页签名"
             exit 1
           fi
           mkdir -p temp
-          printf '%s\n' "${WEB_EEC_KEY}" > temp/web-eec.key
+          printf '%s\n' "${DS_CHAT_PAGES_EEC_SECRET}" > temp/web-eec.key
           trap 'rm -f temp/web-eec.key' EXIT
           chmod 600 temp/web-eec.key
           node scripts/pki/ca.mjs sign-web \
