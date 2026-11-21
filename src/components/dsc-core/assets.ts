@@ -96,7 +96,7 @@ const readLimitedBytes = async (response: Response): Promise<ArrayBuffer> => {
 
 /**
  * 按地址取一次资产。
- * 只允许 https, 本机回环主机允许 http; 不发送 Cookie 与自定义请求头(`credentials: 'omit'`),
+ * 只允许 https, 回环主机允许 http; 不发送 Cookie 与自定义请求头(`credentials: 'omit'`),
  * 不接受地址里内嵌的用户名与密码; 响应体上限 512KB, 超时 10 秒。
  * 拿到响应头即视为拿到了状态码: 非 2xx 原样回传状态码, 读体中途断流同样回传状态码;
  * 只有 `fetch` 本身拒绝时才回传无状态码。

@@ -4,8 +4,8 @@ import type { ManifestReader } from './manifest.js'
  * 整站签名：清单取件、清单验签、逐文件验签与证书链校验。
  * 整站模型对站点内的 .html、.js、.css、.json 文件逐个生成 CMS 分离签名（<文件>.sig），
  * 汇总写成 web_files.json 并对清单自身单独签名，签名证书随站点分发。
- * 验签顺序固定为：取证书、在本机用内置根证书校验链、用证书验清单签名、按清单逐文件验签。
- * 结论只有三态：verified 通过、unverified 未校验（材料缺失或本机不具备校验条件）、failed 失败；
+ * 验签顺序固定为：取证书、在本地用内置根证书校验链、用证书验清单签名、按清单逐文件验签。
+ * 结论只有三态：verified 通过、unverified 未校验（材料缺失或本地不具备校验条件）、failed 失败；
  * 取值与引擎的 SignatureState 一致，不新增第四态。
  */
 
@@ -21,7 +21,7 @@ export const SITE_SIGNED_EXTENSIONS: readonly string[] = ['.html', '.js', '.css'
 /** 签名结论；三态与引擎的 SignatureState 同一取值 */
 export type SignatureState = 'verified' | 'unverified' | 'failed'
 
-/** 证书链结论；none 表示没有证书或本机不具备校验条件 */
+/** 证书链结论；none 表示没有证书或本地不具备校验条件 */
 export type SiteChainState = 'ok' | 'chain' | 'none'
 
 /** 一份整站清单 */
@@ -119,7 +119,7 @@ const verifierModule = (): Promise<VerifierModule> => {
 }
 
 /**
- * 证书链校验：用本机内置根证书校验站点证书。
+ * 证书链校验：用内置根证书校验站点证书。
  * 没有证书、没有根证书或环境没有 WebCrypto 时返回 none，由调用方按未校验处理；
  * 证书无法解析或链不通过返回 chain。
  */

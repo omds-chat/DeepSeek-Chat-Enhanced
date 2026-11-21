@@ -61,7 +61,7 @@ export type SignatureState = 'verified' | 'unverified' | 'failed'
 
 /**
  * 来源结论。
- * confirmed 表示合集证书链已在本机校验通过且 CMS 验签通过；
+ * confirmed 表示合集证书链已在本地校验通过且 CMS 验签通过；
  * failed 表示校验未通过：证书链不通过（含过期、非本根签发、被吊销）,或拿不到证书、验签不通过；
  * unknown 表示完全没有来源信息；local 表示本地安装,不参与来源判定。
  * 信任清单的结论不参与这里的判定,只用于界面展示来源是否被官方认可。

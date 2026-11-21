@@ -6,7 +6,7 @@ import type { DscPlugin, LoadedPlugin, PluginFactory, PluginManifest } from './t
 const DEFAULT_TIMEOUT = 10000
 
 /**
- * 插件来源地址判定：https 任意主机，或 http 的本机回环地址。
+ * 插件来源地址判定：https 任意主机，或 http 的回环地址。
  * 规则收敛在 utils 里，面板、加载器、市场与资产读取共用同一份实现，避免多处复制后漂移。
  */
 export const isPluginSourceAllowed = (value: string): boolean => isHttpsOrLocalUrl(value)

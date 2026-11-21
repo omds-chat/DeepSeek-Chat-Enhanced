@@ -10,7 +10,7 @@ export type Locale = 'zh-CN' | 'en-US'
 export type ThemePreference = 'light' | 'dark' | 'system'
 
 /**
- * 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、
+ * 本地设置，存 localStorage：API Key、语言、主题、位置、朗读音色、
  * 深度思考与智能搜索开关、供应端点的局域网 http 开关、侧边栏收起状态
  */
 type Settings = {

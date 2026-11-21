@@ -40,7 +40,7 @@ export type PluginOrigin = {
   pluginBase?: string
   /** 合集 EEC 证书 PEM，启动校验时用于 CMS 验签；清单已登记时取清单证书，未登记时按来源 certs 布局的嵌套、扁平与 eec.pem 三档依次取 */
   eec?: string
-  /** 证书链是否已在本机校验通过；缺省视为未校验，来源结论按 failed 处理 */
+  /** 证书链是否已在本地校验通过；缺省视为未校验，来源结论按 failed 处理 */
   eecAnchored?: boolean
   /** 信任清单判定；只用于界面展示来源是否被官方认可 */
   sourceTrust?: SourceTrustState

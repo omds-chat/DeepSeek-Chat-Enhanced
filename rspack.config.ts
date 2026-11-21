@@ -63,9 +63,9 @@ type DevLinkKey = (typeof DEV_LINK_KEYS)[number]
 /** .env 提供的开发地址；未设置时为空串 */
 type DevLinks = Record<DevLinkKey, string>
 
-/** 未提供 DS_CHAT_PAGES_LINK 时的开发服务器端口，与本地回环主机一起构成本机默认地址 */
+/** 未提供 DS_CHAT_PAGES_LINK 时的开发服务器端口，与本地回环主机一起构成默认地址 */
 const DEFAULT_DEV_PORT = 8090
-/** 未提供 DS_CHAT_PAGES_LINK 时的开发服务器主机，只监听本机回环 */
+/** 未提供 DS_CHAT_PAGES_LINK 时的开发服务器主机，只监听回环地址 */
 const DEFAULT_DEV_HOST = '127.0.0.1'
 
 /**
@@ -121,7 +121,7 @@ const readDevLinks = (dev: boolean, envPath: string | null): DevLinks => {
 
 /**
  * 由 DS_CHAT_PAGES_LINK 解析开发服务器的主机与端口，让 dev 页面与来源地址同址。
- * 未设置、协议不符或端口非法时回落到端口 8090 与本机回环。
+ * 未设置、协议不符或端口非法时回落到端口 8090 与回环地址。
  */
 const resolveDevServerTarget = (pagesLink: string): { port: number; host: string } => {
   const fallback = { port: DEFAULT_DEV_PORT, host: DEFAULT_DEV_HOST }
@@ -246,7 +246,7 @@ export const createConfig = ({
       }),
     ],
     performance: { hints: false },
-    // 开发服务器跟随 .env: 端口与主机由 DS_CHAT_PAGES_LINK 解析，未设置时回落到本机默认
+    // 开发服务器跟随 .env: 端口与主机由 DS_CHAT_PAGES_LINK 解析，未设置时回落到默认值
     devServer: { ...resolveDevServerTarget(links.DS_CHAT_PAGES_LINK), ...devServer },
   }
 }

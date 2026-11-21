@@ -10,7 +10,7 @@ export const zh = {
   sessionLoading: '正在加载对话...',
   sessionListLoadFailed: '对话列表加载失败，请重试',
   sessionLoadFailed: '对话加载失败，请重试',
-  sessionSaveFailed: '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
+  sessionSaveFailed: '对话或附件尚未保存到本地，关闭页面可能丢失，请重试',
   sessionDeleteFailed: '删除对话失败，请重试',
   settings: '设置',
   appNameLine1: 'DeepSeek-Chat',
@@ -330,7 +330,7 @@ export const zh = {
   pluginMarketSourceMoveDown: '下移',
   pluginMarketSourceNoUrl: '暂无可用地址',
   pluginMarketSourceInvalid:
-    '至少需要一个有效地址；地址需以 https:// 开头，本机地址可用 http://localhost、http://127.0.0.1 或 http://[::1]',
+    '至少需要一个有效地址；地址需以 https:// 开头，本地地址可用 http://localhost、http://127.0.0.1 或 http://[::1]',
   pluginMarketSourceFailed: '该来源的所有地址都拉取失败',
   pluginMarketNoSource: '还没有可用的来源',
   pluginMarketCatalogFailed: '插件目录索引拉取失败',
@@ -378,7 +378,7 @@ export const zh = {
   pluginInstallUrlLabel: '插件产物地址',
   pluginInstallUrlPlaceholder: 'https://example.com/plugin.js',
   pluginInstallUrlInvalid:
-    '地址需以 https:// 开头，本机地址可用 http://localhost、http://127.0.0.1 或 http://[::1]',
+    '地址需以 https:// 开头，本地地址可用 http://localhost、http://127.0.0.1 或 http://[::1]',
   pluginManifestMissing: '插件产物未导出 manifest，安装时也没有提供清单：{id}',
   pluginInstalling: '安装中',
   pluginOperationBusy: '处理中',

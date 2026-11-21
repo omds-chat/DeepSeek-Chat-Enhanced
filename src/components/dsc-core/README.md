@@ -13,7 +13,7 @@
 | `src/components/chatInput/`、`files/`、`markdown/`、`messages/`、`search/`、`session/`、`settings/`、`sider/` | 业务 UI | 禁止 |
 | `src/services/chat/` | 会话读写、分支、草稿、IndexedDB 持久化、历史导入导出 | 仅摘要与只读视图可见 |
 | `src/services/api/` | API 客户端、SSE、错误分类 | 禁止 |
-| `src/services/settings.ts` | 本机设置与 API Key | 仅语言可见 |
+| `src/services/settings.ts` | 本地设置与 API Key | 仅语言可见 |
 | `src/services/attachments.ts` | 附件校验与上传 | 禁止 |
 | `src/services/markdown/`、`speech/`、`location.ts`、`locationData.ts`、`uploadExts.ts` | 渲染、朗读、位置、扩展名清单 | 禁止 |
 | `src/i18n/` | 文案与语言切换 | 仅经 `notify` 与引擎告警使用 |
@@ -53,7 +53,7 @@ dsc-core/
 | `settings:locale` | `currentLocale` | 只读当前语言 | 可开放 |
 | `net:fetch` | `fetchText` | 读取外源文本资源,只有 https 与 GET | 需限流 |
 | `net:fetch-post` | `postJson` | 发送一次 JSON POST,响应体丢弃,只回传状态码 | 仅引擎 |
-| `assets:read` | `readAssetText`、`readAssetBytes` | 按地址取远端文本或字节,三态结果原样返回,只有 https 与本机回环 | 需限流 |
+| `assets:read` | `readAssetText`、`readAssetBytes` | 按地址取远端文本或字节,三态结果原样返回,只有 https 与回环地址 | 需限流 |
 | `plugins:storage` | `readPluginEntry`、`writePluginEntry`、`removePluginEntry` | 插件自身的键值数据,单插件 64KB | 需限流 |
 | `plugins:data-clear` | `clearPluginData` | 清除单个插件的全部数据,只供宿主设置的数据管理调用 | 仅宿主 |
 | `chat:request-source` | `setRequestPatchSource` | 登记请求补丁来源,登记与撤销都只由引擎发起 | 仅引擎 |
@@ -61,7 +61,7 @@ dsc-core/
 
 `chat:request` 是插件可见能力,但它在 core 侧没有对应方法:登记与调用都在引擎内完成,core 只在发送路径上向引擎索取一次补丁。同一份补丁的字段白名单与范围裁剪也只由引擎实现,core 不重复判定。`provider:source` 同理:插件用它声明可提供的供应端点,登记与合并都在引擎的注册表里,core 侧不留空实现;真正的执行走 `source:run`,插件拿不到那个标识。插件侧的入口是引擎的 `provider:run`:它在引擎里选端点、读凭证,再转成一次 `source:run`;core 侧同样没有对应方法。
 
-永久不开放：API Key、`zustand` store 原始句柄、IndexedDB 句柄与事务、附件上传与原件、任意网络请求(`net:fetch` 与 `assets:read` 是两条受限例外:前者只对内置插件开放,后者只按地址读取资产且仅 https 与本机回环)、任意 DOM 操作。
+永久不开放：API Key、`zustand` store 原始句柄、IndexedDB 句柄与事务、附件上传与原件、任意网络请求(`net:fetch` 与 `assets:read` 是两条受限例外:前者只对内置插件开放,后者只按地址读取资产且仅 https 与回环地址)、任意 DOM 操作。
 
 ## 按供应端点执行
 
@@ -69,7 +69,7 @@ dsc-core/
 
 描述字段见 `source-catalog.ts`:`id`、`label`、`format`、`baseUrl`、`capabilities`,以及按能力覆盖端点路径的 `endpoints`。端点路径缺省按 `format` 推导:`anthropic-messages` 用 `/anthropic/v1/messages` 与 `/models`,`openai-chat` 用 `/v1/chat/completions` 与 `/v1/models`。
 
-基址由 `normalizeSourceBaseUrl` 规范化后再用于比对与拼接:去首尾空白、主机转小写、去默认端口、去尾斜杠,带 query、hash 或内嵌用户名密码的地址直接拒绝。协议与主机按可选策略判定:缺省只接受 https 与本机回环的 http,宿主打开「允许局域网 http 供应端点」后额外放行私有网段与其它非回环主机的 http;执行入口按当前开关对传入的基址再规范化一次,因此调用方给的字符串与注册表里的值不会分叉成两个地址。这份策略只给供应端点用,`net:fetch` 与 `assets:read` 仍按 `utils/url` 的默认口径。
+基址由 `normalizeSourceBaseUrl` 规范化后再用于比对与拼接:去首尾空白、主机转小写、去默认端口、去尾斜杠,带 query、hash 或内嵌用户名密码的地址直接拒绝。协议与主机按可选策略判定:缺省只接受 https 与回环地址的 http,宿主打开「允许局域网 http 供应端点」后额外放行私有网段与其它非回环主机的 http;执行入口按当前开关对传入的基址再规范化一次,因此调用方给的字符串与注册表里的值不会分叉成两个地址。这份策略只给供应端点用,`net:fetch` 与 `assets:read` 仍按 `utils/url` 的默认口径。
 
 | 能力标识 | 形态 | 已落地 | 说明 |
 |:---:|:---:|:---:|:---:|
@@ -122,7 +122,7 @@ dsc-core/
 
 | 约束 | 规定 |
 |:---:|:---:|
-| 协议 | 只允许 `https:`;本机回环主机(`localhost`、`127.0.0.1`、`[::1]`)允许 `http:`;重定向后的最终地址按同一规则再校验 |
+| 协议 | 只允许 `https:`;回环主机(`localhost`、`127.0.0.1`、`[::1]`)允许 `http:`;重定向后的最终地址按同一规则再校验 |
 | 凭证 | 不携带 Cookie(`credentials: 'omit'`),不发送自定义请求头;地址里内嵌用户名或密码时直接拒绝 |
 | 方法 | 只允许 GET |
 | 响应类型 | 不做限制,内容是否可用由插件判断 |

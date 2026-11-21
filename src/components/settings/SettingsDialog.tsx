@@ -396,7 +396,7 @@ const LocationSetting = () => {
 }
 
 /**
- * 供应端点的局域网 http 开关：默认关闭，打开后端点基址不再限于 https 与本机回环。
+ * 供应端点的局域网 http 开关：默认关闭，打开后端点基址不再限于 https 与回环地址。
  * 只影响供应端点校验，资产读取与插件来源仍按原口径拒绝局域网 http。
  */
 const SourceLanHttpSetting = () => {

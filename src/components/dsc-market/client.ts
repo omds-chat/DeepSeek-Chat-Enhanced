@@ -189,7 +189,7 @@ export const parseSourceMeta = (text: string): SourceMeta | null => {
   }
 }
 
-/** 计数接口地址只接受 https 或本机回环，与来源地址同一判定 */
+/** 计数接口地址只接受 https 或回环地址，与来源地址同一判定 */
 const isApiUrl = (value: string): boolean => isHttpsOrLocalUrl(value)
 
 /** 解析插件目录索引 plugins.json；不合格条目跳过并计数 */

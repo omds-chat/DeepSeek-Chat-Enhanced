@@ -99,7 +99,7 @@ const MAX_ENGINE_LOG = 100
  * eec 与 eecUrls 都提供合集证书：两者都有时优先用信任清单登记的 eec，省一次请求；
  * eecUrls 按顺序尝试，公开发布布局 certs/<合集 id>/<合集 id>-eec.crt 优先，
  * 旧站点的扁平布局 certs/<合集 id>-eec.crt 兼容，最旧的 eec.pem 最后兜底；
- * 证书必须在本机通过证书链校验才会用于 CMS 验签，链不通过时结论为 failed 且不再验签。
+ * 证书必须在本地通过证书链校验才会用于 CMS 验签，链不通过时结论为 failed 且不再验签。
  * authorPubUrl 与 authorSigUrl 齐全时做作者裸签名验签；没有证书时 CMS 验签直接跳过。
  */
 export type InstallSource = SignatureSource & {
@@ -944,7 +944,7 @@ export const installPluginEngine = (): PluginEngine => {
     const target = manifest?.id ?? url
     const sourceType: PluginSourceType = source?.sourceType ?? 'outer'
     if (!isPluginSourceAllowed(url)) {
-      // 地址判定与加载器一致：只接受 https 与本机回环的 http
+      // 地址判定与加载器一致：只接受 https 与回环地址的 http
       pushEngineLog(`install ${target} failed: source url is not allowed`)
       report('pluginInstallRejected', { id: target, reason: pluginReasonText('load-failed') })
       return { ok: false, reason: 'load-failed', detail: 'source url is not allowed' }
@@ -979,7 +979,7 @@ export const installPluginEngine = (): PluginEngine => {
           state: 'unverified' as SignatureState,
         }
     const signature: SignatureState = outcome.state
-    // 来源结论只看本机结论：链通过且验签通过才是 confirmed，链不通过与拿不到证书都是确定的负面结论
+    // 来源结论只看本地结论：链通过且验签通过才是 confirmed，链不通过与拿不到证书都是确定的负面结论
     const { verdict, reason: verdictReason } = sourceVerdictOf({
       // 调用方没有给出来源信息时按「完全不知道来源」处理，结论为 unknown
       hasSource: source !== undefined,

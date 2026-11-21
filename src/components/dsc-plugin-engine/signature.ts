@@ -88,7 +88,7 @@ export const authorPubMatches = async (
  * 收集签名材料：合集证书与 CMS 签名、作者公钥与作者签名。
  * 合集证书优先用信任清单已登记或安装记录里已存的那张，没有时在线依次尝试来源自带的
  * certs/<合集 id>/<合集 id>-eec.crt、旧站点的 certs/<合集 id>-eec.crt 与最旧的 eec.pem；
- * 离线不发请求，只用已存的证书。证书都必须在本机用构建内嵌的根证书通过证书链校验才会用于验签，
+ * 离线不发请求，只用已存的证书。证书都必须在本地用构建内嵌的根证书通过证书链校验才会用于验签，
  * 校验在 verifyArtifact 里完成。都没有时 CMS 验签直接跳过，由调用方按拿不到证书处理。
  */
 export const loadSignatureMaterial = async (
@@ -205,7 +205,7 @@ export const embeddedRootCa = (): string =>
 /**
  * 证书链校验结论。
  * ok 表示证书由内置根 CA 签发且在有效期内；chain 表示链校验不通过；
- * revoked 表示证书已被吊销；none 表示没有证书，或本机不具备校验条件。
+ * revoked 表示证书已被吊销；none 表示没有证书，或本地不具备校验条件。
  */
 export type ChainState = 'ok' | 'chain' | 'revoked' | 'none'
 
@@ -255,7 +255,7 @@ export const verifyCmsSignature = async (
 /**
  * 用内置根 CA 校验证书链，取得吊销列表时一并检查吊销。
  * 未注入根证书或环境没有 WebCrypto 时返回 none，由调用方按无法确认处理；
- * 吊销列表由 certs 分支分发，但吊销结论仍在本机用同一张根证书校验。
+ * 吊销列表由 certs 分支分发，但吊销结论仍在本地用同一张根证书校验。
  */
 export const verifyEecChain = async (eecPem: string): Promise<ChainState> => {
   const { ensurePkijsEngine, isRevoked, parseCertificate, verifyCertificateChain, verifyCrl } =
@@ -304,7 +304,7 @@ export type VerifyOutcome = {
   cms: boolean | null
   /** 作者裸签名结论；没有作者材料时为 null */
   author: boolean | null
-  /** 证书链结论；没有证书或本机不具备校验条件时为 none */
+  /** 证书链结论；没有证书或本地不具备校验条件时为 none */
   chain: ChainState
   /** 汇总状态；任何一项不通过为 failed，完全没有材料为 unverified */
   state: SignatureState
@@ -347,7 +347,7 @@ export const verifyArtifact = async (
   return { cms: cms ? true : null, author: author ? true : null, chain, state: 'verified' }
 }
 
-/** 来源结论的判定输入；只看本机的证书链与 CMS 验签结论 */
+/** 来源结论的判定输入；只看本地的证书链与 CMS 验签结论 */
 export type SourceVerdictInput = {
   /** 是否有来源信息；宿主内联安装或本地包没有来源，结论为 unknown */
   hasSource: boolean
@@ -364,7 +364,7 @@ export type SourceVerdictResult = {
 }
 
 /**
- * 来源结论：证书链在本机校验通过且 CMS 验签通过才算已确认。
+ * 来源结论：证书链在本地校验通过且 CMS 验签通过才算已确认。
  * 链不通过（过期、非本根签发、被吊销）为 failed 并按 chain 或 revoked 区分原因；
  * 拿不到证书或验签不通过为 failed 并记为 other；完全没有来源信息才为 unknown。
  * 信任清单的结论不参与判定，只用于界面展示来源是否被官方认可。

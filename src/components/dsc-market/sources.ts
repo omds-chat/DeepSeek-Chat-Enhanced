@@ -5,7 +5,7 @@ import type { MarketSource } from './types.js'
 /** plugins:storage 中保存来源配置的键 */
 export const KEY_SOURCES = 'market-sources'
 
-/** 来源地址判定：https 任意主机，或 http 的本机回环地址；规则与引擎的插件来源判定共用 */
+/** 来源地址判定：https 任意主机，或 http 的回环地址；规则与引擎的插件来源判定共用 */
 export const isSourceUrl = (value: string): boolean => isHttpsOrLocalUrl(value)
 
 /** 规范化 base_url：去掉查询与哈希，补齐尾部斜杠；非法地址返回 null */

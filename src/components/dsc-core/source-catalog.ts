@@ -117,7 +117,7 @@ export type CoreSourceDescriptor = {
   readonly format: SourceFormat
   /**
    * 规范化后的端点基址, 例如 https://api.deepseek.com。
-   * 默认只允许 https 与本机回环的 http; 宿主的局域网开关打开后, 其它主机的 http 也接受。
+   * 默认只允许 https 与回环地址的 http; 宿主的局域网开关打开后, 其它主机的 http 也接受。
    */
   readonly baseUrl: string
   /** 该供应端点可提供的能力清单; 注册表按并集合并, 执行前再校验一次 */
@@ -145,7 +145,7 @@ const MAX_LABEL_LENGTH = 40
 /**
  * 规范化端点基址。
  * 规则: 去首尾空白、主机转小写、去默认端口、去尾斜杠; 带 query、hash 或内嵌用户名密码的地址直接拒绝。
- * 协议与主机按 policy 判定: 缺省为 https 加本机回环 http, allowLanHttp 打开后额外放行局域网 http。
+ * 协议与主机按 policy 判定: 缺省为 https 加回环地址 http, allowLanHttp 打开后额外放行局域网 http。
  * 注册表的定义比对与执行期的地址拼接都只用规范化后的值, 两处看到同一个字符串。
  */
 export const normalizeSourceBaseUrl = (

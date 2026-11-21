@@ -334,7 +334,7 @@ export const MarketPlugins = ({
 
   // 信任校验未通过不再禁用安装：保留「不可信」标识与提示，由用户自行判断
   const untrusted = runtime?.trust === 'untrusted'
-  // 未在官方清单登记只是中性说明，不按不可信处理；安装时仍按本机链校验与验签给出结论
+  // 未在官方清单登记只是中性说明，不按不可信处理；安装时仍按本地链校验与验签给出结论
   const needsConfirm = runtime?.trust === 'unverified' || untrusted
 
   return (
