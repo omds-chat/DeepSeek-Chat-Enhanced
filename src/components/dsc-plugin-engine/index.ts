@@ -5,6 +5,7 @@ import { sourceEndpointPolicy } from '../../services/settings.js'
 import { showToast } from '../base/toastState.js'
 import {
   CORE_VERSION,
+  clearPluginSettings,
   createCredential,
   hasPluginData,
   issueTicket,
@@ -20,6 +21,7 @@ import {
   type CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 import { createAssetAnnouncer } from './assetAccess.js'
+import { clearPluginSecrets } from './credentials.js'
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
 import {
@@ -50,6 +52,12 @@ import {
   samePendingConflicts,
 } from './pendingConflicts.js'
 import { convergePatch, mergePatch, REQUEST_PATCH_BUDGET_MS } from './requestPatch.js'
+import {
+  forgetSettings,
+  pluginSettingsFacade,
+  settingsDescriptor,
+  type PluginSettingsFacade,
+} from './pluginSettings.js'
 import { toPluginId } from './pluginId.js'
 import * as store from './registry.js'
 import { declareSource, forgetSources, sourceView, type SourceRegistryView } from './sources.js'
@@ -221,6 +229,8 @@ export type PluginEngine = {
   bypassEvents(): readonly BypassEvent[]
   /** 供应端点注册表视图：合并后的端点描述、能力矩阵与冲突记录 */
   sourceRegistry(): SourceRegistryView
+  /** 插件设置表面：读描述、逐字段读值、写覆盖值与重置；供宿主设置页使用 */
+  pluginSettings(pluginId: string): PluginSettingsFacade
 }
 
 const describeError = (error: unknown): string =>
@@ -801,6 +811,8 @@ export const installPluginEngine = (): PluginEngine => {
     if (!record) {
       return { removed: false, hasLeftoverData: false }
     }
+    // 设置表面随卸载一并清理: 覆盖值与秘密值都由引擎管理, 插件离开后不留不可达的残留
+    const settingFieldKeys = settingsDescriptor(id)?.fields.map((field) => field.key) ?? []
     // 数据默认保留，卸载前先记录该插件是否遗留数据，由界面提示清理入口
     const leftover = hasPluginData(id)
     const dependents = store.activeDependents(id)
@@ -819,6 +831,9 @@ export const installPluginEngine = (): PluginEngine => {
     // 卸载只移除注册表与持久化记录；插件本地数据保留，交由设置的数据管理清理
     // 未激活过的插件不会走 deactivateNow，这里再撤销一次端点声明
     forgetSources(id)
+    forgetSettings(id)
+    clearPluginSettings(id)
+    void clearPluginSecrets(id, settingFieldKeys)
     patchNotices.delete(id + ':timeout')
     patchNotices.delete(id + ':clamped')
     // 记录移除后依赖它的插件拿不到依赖，按依赖未满足自动停用并提示
@@ -1489,6 +1504,7 @@ export const installPluginEngine = (): PluginEngine => {
     engineLogs: () => engineLogs,
     bypassEvents: readBypassEvents,
     sourceRegistry: sourceView,
+    pluginSettings: pluginSettingsFacade,
   }
 
   // 恢复在内部异步进行，installPluginEngine 保持同步返回，不阻塞首屏渲染
@@ -1554,6 +1570,20 @@ export type {
 export { MOUNT_POINTS } from './types.js'
 /** 供应端点注册表：冲突判定与执行错误；注册表的读写入口经 engine.sourceRegistry() 暴露 */
 export { PluginSourceError } from './sources.js'
+/** 设置表面：描述类型、校验错误与门面；注册与校验实现在 pluginSettings.ts */
+export { PluginSettingsError, SETTING_KEY_PATTERN } from './pluginSettings.js'
+export type { PluginSettingsFacade } from './pluginSettings.js'
+export type {
+  SettingDescriptor,
+  SettingDescriptorProblem,
+  SettingFieldDescriptor,
+  SettingFieldOptions,
+  SettingFieldType,
+  SettingValue,
+  SettingValueProblem,
+  SettingValueView,
+  SettingWriteResult,
+} from './pluginSettings.js'
 /** 按端点执行：错误码、错误类型与结果形态 */
 export { PluginProviderRunError, PROVIDER_RUN_ERROR_CODES } from './providerRun.js'
 export type {

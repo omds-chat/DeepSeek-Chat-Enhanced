@@ -36,6 +36,7 @@ dsc-core/
 ├── source-catalog.ts # 供应端点能力标识表、描述校验与基址规范化、端点路径推导（纯数据模块）
 ├── sources.ts     # source:run 的唯一实现：按端点描述组装请求、解析回流
 ├── plugin-data.ts # plugins:storage 的唯一实现：localStorage 与 64KB 配额
+├── plugin-settings.ts # 插件设置覆盖值的命名空间存储：localStorage 与 16KB 配额（宿主侧入口）
 └── README.md      # 归属边界与接口说明
 ```
 

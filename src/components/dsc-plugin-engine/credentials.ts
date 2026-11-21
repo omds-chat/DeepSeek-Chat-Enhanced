@@ -63,6 +63,113 @@ export type WriteCredentialResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: string }
 
+/**
+ * 插件设置秘密值的通道。
+ * 设置表面的 secret 字段复用同一张凭证库: 与供应端点凭证同一张表、同一套内存镜像与降级口径,
+ * 键里的 source_id 带 `plugin-secret:` 前缀, 该前缀含冒号, 与供应端点 id 的词表(`SOURCE_ID_PATTERN`)不相交,
+ * 两类记录互不可达。秘密值只写不读: 读侧只回答「是否已配置」, 值本身不回传给任何调用方。
+ */
+const SECRET_SOURCE_PREFIX = 'plugin-secret:'
+/** 秘密值占位基址; 键结构要求成对, 秘密通道不使用基址, 恒为空串 */
+const SECRET_BASE_URL = ''
+/** 单个秘密值长度上限 */
+const MAX_SECRET_LENGTH = 4096
+
+const secretSourceId = (pluginId: string, fieldKey: string): string =>
+  SECRET_SOURCE_PREFIX + pluginId + ':' + fieldKey
+
+/** 写入结果; 失败不抛错, 由调用方记日志 */
+export type PluginSecretWriteResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string }
+
+/**
+ * 写入插件设置的秘密值; 写入前校验插件 id、字段键与值形态, 空值不落盘。
+ * 键结构里基址恒为空串, 与供应端点凭证的键空间天然不相交。
+ */
+export const writePluginSecret = async (
+  pluginId: string,
+  fieldKey: string,
+  value: string
+): Promise<PluginSecretWriteResult> => {
+  if (!/^[a-z][a-z0-9-]{2,63}$/.test(pluginId)) {
+    return { ok: false, reason: 'plugin id is not valid' }
+  }
+  if (!/^[a-z][a-z0-9-]{0,63}$/.test(fieldKey)) {
+    return { ok: false, reason: 'setting key is not valid' }
+  }
+  const trimmed = value.trim()
+  if (trimmed === '') {
+    return { ok: false, reason: 'secret value is empty' }
+  }
+  if (trimmed.length > MAX_SECRET_LENGTH) {
+    return { ok: false, reason: 'secret value is too long' }
+  }
+  memory.set(mirrorKey(secretSourceId(pluginId, fieldKey), SECRET_BASE_URL), {
+    sourceId: secretSourceId(pluginId, fieldKey),
+    baseUrl: SECRET_BASE_URL,
+    apiKey: trimmed,
+    updatedAt: Date.now(),
+  })
+  const db = await openCredentialDB()
+  if (!db) {
+    return { ok: true }
+  }
+  try {
+    await db.put(STORE, {
+      source_id: secretSourceId(pluginId, fieldKey),
+      base_url: SECRET_BASE_URL,
+      api_key: trimmed,
+      updated_at: Date.now(),
+    })
+    return { ok: true }
+  } catch (error) {
+    degraded = true
+    return { ok: false, reason: describe(error) }
+  }
+}
+
+/** 秘密值是否已配置; 存储不可用时按内存镜像回答 */
+export const readPluginSecretConfigured = async (
+  pluginId: string,
+  fieldKey: string
+): Promise<boolean> => {
+  const key = mirrorKey(secretSourceId(pluginId, fieldKey), SECRET_BASE_URL)
+  const db = await openCredentialDB()
+  if (!db) {
+    return memory.has(key)
+  }
+  try {
+    // 不走 readStored: 秘密键的 source_id 带冒号, 不在供应端点 id 词表内, 这里只判存在性
+    const record = await db.get(STORE, [secretSourceId(pluginId, fieldKey), SECRET_BASE_URL])
+    return record !== undefined || memory.has(key)
+  } catch {
+    degraded = true
+    return memory.has(key)
+  }
+}
+
+/** 清除插件设置的秘密值; 记录不存在时按成功处理 */
+export const clearPluginSecret = async (pluginId: string, fieldKey: string): Promise<void> => {
+  memory.delete(mirrorKey(secretSourceId(pluginId, fieldKey), SECRET_BASE_URL))
+  const db = await openCredentialDB()
+  if (!db) {
+    return
+  }
+  try {
+    await db.delete(STORE, [secretSourceId(pluginId, fieldKey), SECRET_BASE_URL])
+  } catch {
+    degraded = true
+  }
+}
+
+/** 按字段键清单批量清除一个插件的秘密值; 由卸载清理调用 */
+export const clearPluginSecrets = async (pluginId: string, fieldKeys: readonly string[]): Promise<void> => {
+  for (const fieldKey of fieldKeys) {
+    await clearPluginSecret(pluginId, fieldKey)
+  }
+}
+
 const describe = (error: unknown): string =>
   error instanceof Error ? error.message : String(error)
 

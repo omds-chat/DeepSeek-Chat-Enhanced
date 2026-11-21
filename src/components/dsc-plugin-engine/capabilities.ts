@@ -11,7 +11,15 @@ import {
   type CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
+import { isTranslationKey } from '../../i18n/index.js'
 import { sourceEndpointPolicy } from '../../services/settings.js'
+import {
+  PluginSettingsError,
+  checkSettingDescriptor,
+  declareSettings,
+  forgetSettings,
+  pluginSettingValuesForPlugin,
+} from './pluginSettings.js'
 import { readSourceCredential } from './credentials.js'
 import { runProviderCapability, type ProviderRunDeps } from './providerRun.js'
 import { isBuiltinPlugin, type PluginRecord } from './registry.js'
@@ -34,7 +42,7 @@ import type {
 /**
  * 单能力策略：时间窗内的调用上限，以及异步调用的单次超时。
  * 同步成员没有超时（同步调用不适用），这几项不填 timeoutMs：
- * sessions:rename、notify、plugins:storage，以及只给引擎用的 plugins:data-clear；
+ * sessions:rename、notify、plugins:storage、settings:surface，以及只给引擎用的 plugins:data-clear；
  * events:session 与 chat:request 是登记型成员，登记本身同步返回，同样不填。
  * 登记型成员的限流语义是「登记次数」：每次 events.on、每次 chat.onBeforeRequest 各占一个名额，
  * 之后的事件回调与请求前调用由引擎发起，不再占用名额。
@@ -60,6 +68,8 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'plugins:data-clear': { limit: 0, windowMs: 10000 },
   // 限制的是登记次数；每次请求前调用处理器由引擎发起，不逐次占用名额
   'chat:request': { limit: 10, windowMs: 10000 },
+  // 登记与读取共用一个窗口：每次 settings.register 占一个名额，settings.values 的读取同样计数
+  'settings:surface': { limit: 60, windowMs: 10000 },
   // 引擎启动时登记一次补丁来源，同样不经过插件上下文
   'chat:request-source': { limit: 0, windowMs: 10000 },
   // 限制的是声明次数: 每次 context.provider.registerSource 占一个名额, 不逐次执行。
@@ -370,6 +380,27 @@ export const createPluginContext = ({
       invoke('settings:locale', options, async () =>
         core.currentLocale(newCall('settings:locale'))
       ),
+    /**
+     * 登记设置表面描述。与 provider.registerSource 同法: 只登记描述、不交控件,
+     * 校验即拒绝(重复 key、未知类型、非法 default 都让整份注册失败),
+     * 释放函数进入插件的 disposer 集合, 停用随引擎清理。
+     */
+    register: (descriptor) =>
+      invokeSync('settings:surface', () => {
+        const check = checkSettingDescriptor(descriptor, isTranslationKey)
+        if (!check.ok) {
+          report('pluginSettingsRejected', { id: manifest.id, reason: check.problem })
+          throw new PluginSettingsError(check.problem)
+        }
+        declareSettings(manifest.id, check.descriptor)
+        const dispose = () => {
+          forgetSettings(manifest.id)
+        }
+        record.disposers.add(dispose)
+        return dispose
+      }),
+    // 只读自身命名空间: 其他插件的设置值不可见, secret 字段不返回
+    values: () => invokeSync('settings:surface', () => pluginSettingValuesForPlugin(manifest.id)),
   }
 
   const net: NetCapability = {

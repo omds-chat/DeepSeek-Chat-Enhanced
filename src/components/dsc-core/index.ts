@@ -205,6 +205,16 @@ export type {
 } from './plugin-data.js'
 /** 插件数据的宿主侧入口：只给引擎与设置界面的数据管理使用，不经过凭证门面 */
 export { clearAllPluginData, clearPluginData, hasPluginData, listPluginData } from './plugin-data.js'
+/** 插件设置覆盖值的宿主侧入口：只给引擎使用，插件侧只有 context.settings.values() 的只读面 */
+export {
+  clearPluginSettings,
+  PluginSettingsError,
+  readPluginSettingsOverrides,
+  removePluginSettingEntry,
+  writePluginSettingEntry,
+  type PluginSettingsRejectReason,
+  type PluginSettingsStore,
+} from './plugin-settings.js'
 export {
   createCredential,
   issueTicket,

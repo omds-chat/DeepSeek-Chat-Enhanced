@@ -21,6 +21,8 @@ import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { formatDateTime } from '../../utils/format.js'
 import { isLegacyInstall } from './legacyInstall.js'
+import { openPluginDetail } from './pluginPanelState.js'
+import detailStyles from './settings/PluginSettings.module.css'
 import styles from './PluginPanel.module.css'
 
 const stateLabels: Record<PluginState, TranslationKey> = {
@@ -358,7 +360,13 @@ export const InstalledPlugins = ({
           return (
             <div key={plugin.id} className={styles.row} role="row" aria-busy={busy?.id === plugin.id}>
               <div className={styles.nameCell} role="cell">
-                <span className={styles.name}>{plugin.name}</span>
+                <button
+                  type="button"
+                  className={clsx(styles.name, detailStyles.nameButton)}
+                  onClick={() => openPluginDetail(plugin.id)}
+                >
+                  {plugin.name}
+                </button>
                 <span className={styles.caption}>{plugin.id}</span>
                 {status?.dependencyMissing ? (
                   <span

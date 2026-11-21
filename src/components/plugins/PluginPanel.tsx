@@ -12,12 +12,17 @@ import { IconButton } from '../base/IconButton.js'
 import { IconRefreshOutline16 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
 import { InstalledPlugins } from './InstalledPlugins.js'
+import { PluginSettingsDetail } from './PluginSettingsDetail.js'
 import { judgeInstallFailure } from './installFailure.js'
 import { LocalInstall } from './LocalInstall.js'
 import { MarketPlugins } from './MarketPlugins.js'
 import { PendingConflicts } from './PendingConflicts.js'
 import { MobileHeader } from '../session/MobileHeader.js'
-import { usePluginPanel, type PluginPanelTab } from './pluginPanelState.js'
+import {
+  closePluginDetail,
+  usePluginPanel,
+  type PluginPanelTab,
+} from './pluginPanelState.js'
 import { usePluginList } from './usePluginList.js'
 import styles from './PluginPanel.module.css'
 
@@ -34,6 +39,7 @@ export const PluginPanel = () => {
   const t = useTranslate()
   const isMobile = useIsMobile()
   const tab = usePluginPanel((state) => state.tab)
+  const detailPluginId = usePluginPanel((state) => state.detailPluginId)
   const { plugins, ready, refresh } = usePluginList()
   const installedIds = new Set(plugins.map((plugin) => plugin.id))
   const baseId = useId()
@@ -59,6 +65,24 @@ export const PluginPanel = () => {
     event.preventDefault()
     usePluginPanel.setState({ tab: tabs[next].value })
     tabRefs.current[next]?.focus()
+  }
+
+  const detail = detailPluginId !== null ? plugins.find((plugin) => plugin.id === detailPluginId) : undefined
+
+  // 详情视图覆盖标签页内容：沿用同一页骨架，返回即回列表，不引入路由
+  if (detailPluginId !== null) {
+    return (
+      <div className={styles.page}>
+        {isMobile ? <MobileHeader /> : null}
+        <div className={styles.body}>
+          <PluginSettingsDetail
+            pluginId={detailPluginId}
+            pluginName={detail?.name ?? detailPluginId}
+            onBack={closePluginDetail}
+          />
+        </div>
+      </div>
+    )
   }
 
   return (

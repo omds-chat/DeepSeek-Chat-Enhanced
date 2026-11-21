@@ -129,6 +129,7 @@ export const activate = (context) => {
 | `events:session` | 全部插件 | `context.events.on` | 5 次 / 10 秒(仅登记) |
 | `notify` | 全部插件 | `context.ui.notify` | 10 次 / 10 秒 |
 | `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
+| `settings:surface` | 全部插件 | `context.settings.register`、`context.settings.values` | 60 次 / 10 秒 |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
 | `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
 | `assets:read` | 全部插件 | `context.assets.readText`、`context.assets.readBytes` | 20 次 / 10 秒 |
@@ -138,7 +139,7 @@ export const activate = (context) => {
 
 `context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
 
-上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止,`context.provider.run` 的 15 秒只覆盖「建立调用」这一段(`text.generate` 的回流在调用返回后惰性产出,不占这个预算);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时。
+上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止,`context.provider.run` 的 15 秒只覆盖「建立调用」这一段(`text.generate` 的回流在调用返回后惰性产出,不占这个预算);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时;`context.settings.register` 与 `context.settings.values` 同为同步调用。
 
 `events:session` 与 `chat:request` 的限流只算登记次数:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError` 并提示 `pluginCallRateLimited`,窗口滚过之后可以继续登记。请求前处理器另有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
 
@@ -307,6 +308,59 @@ export const activate = (context) => {
 
 补丁不阻断请求:超时或抛错时请求照常发出,原因只写引擎日志(抛错同时写该插件的插件日志),插件列表里不会因此变成 `failed`。同步计算无法中断,10 毫秒是引擎在处理器返回后能判定的边界,不是强制终止。
 
+### 插件设置表面
+
+插件可以给用户提供可配置项:清单申请能力 `settings:surface`,激活期用 `context.settings.register(descriptor)` 登记一份字段描述,宿主据此渲染设置表单(已安装列表点插件名进入详情页)。插件只交描述、不交控件:控件形态、样式与 i18n 全部归宿主,插件不写任何界面代码。
+
+```ts
+export const manifest = {
+  id: 'demo-settings',
+  name: 'Demo Settings',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['settings:surface'],
+}
+
+export const activate = (context) => {
+  context.settings.register({
+    fields: [
+      { key: 'mode', type: 'select', label: '模式', default: 'fast', options: [
+        { value: 'fast', label: '快速' },
+        { value: 'accurate', label: '精确' },
+      ] },
+      { key: 'threshold', type: 'number', label: '阈值', default: 0.5, min: 0, max: 1 },
+      { key: 'greeting', type: 'text', label: '问候语', default: '你好', maxLength: 20 },
+      { key: 'verbose', type: 'switch', label: '详细输出', default: false },
+      { key: 'token', type: 'secret', label: '令牌' },
+    ],
+  })
+  // 只读自身设置值:用户覆盖值优先,否则默认值;secret 字段不返回
+  const values = context.settings.values()
+  context.log('mode = ' + String(values.mode))
+}
+```
+
+字段描述的规则:
+
+| 字段 | 必填 | 说明 |
+|:---:|:---:|:---:|
+| `key` | 是 | `^[a-z][a-z0-9-]{0,63}$`,同一份描述内不得重复 |
+| `type` | 是 | `switch`、`select`、`number`、`text`、`secret` 之一 |
+| `labelKey` / `label` | 是 | 二选一:`labelKey` 用宿主 i18n 字典里的键,`label` 直接给文案(1 到 40 字符) |
+| `default` | 非 secret 必填 | 默认值,必须通过该字段自己的取值校验;secret 字段不得有默认值 |
+| `min` / `max` / `step` | 否 | number 的取值范围与步进 |
+| `maxLength` / `pattern` | 否 | text 的长度上限与形态约束 |
+| `options` | select 必填 | 2 到 32 个选项,`{ value, labelKey 或 label }` |
+
+校验即拒绝:重复 key、未知类型、非法 default、非法 labelKey 或编译不过的 pattern 都让整份注册失败,抛 `PluginSettingsError`,`code` 是结构化的问题码,并提示 `pluginSettingsRejected`。最多 32 个字段,描述序列化后不超过 8 KB。登记返回释放函数,停用随引擎清理;同一插件再次登记时替换前一份。
+
+值的语义:
+
+- 插件侧只有 `context.settings.values()` 一个只读入口,读自身命名空间:用户覆盖值优先,否则默认值;其他插件的设置不可见,secret 字段不返回任何值。
+- 写侧在宿主:用户在设置页改动,保存前引擎按描述校验,非法值拒绝落盘;`secret` 字段的值进凭证存储,只写不读。
+- 脏值生命周期:改动即脏、保存才落盘、保存失败保留草稿、离开页面丢弃草稿;每个字段可「重置为默认」。
+- 登记只在激活期有效:插件未激活时详情页显示「本插件没有可配置项」。
+
 ## 本地加载验证
 
 1. 准备产物:一个 js 文件,例如 `dsc-demo-log.js`。
@@ -423,6 +477,7 @@ npm 包的要点:
 | 抛 `PluginTimeoutError` | 单次异步调用超过 3 秒 | 缩短单次调用耗时 |
 | 抛 `PluginAbortError` | 传入的 `signal` 已取消 | 检查取消逻辑 |
 | 抛 `PluginDataError` | 数据超过 64KB,或值无法 JSON 序列化 | 精简数据;移除函数、`undefined` 与循环引用 |
+| 抛 `PluginSettingsError` | 设置描述非法(重复 key、未知类型、非法 default、非法 labelKey、超规模) | 按 `code` 修正描述后重新激活 |
 | 请求参数没有变化 | 处理器超过 10 毫秒预算,或抛错;越界值被裁剪 | 查看引擎日志里的 `chat:before-request` 记录,把耗时压到 10 毫秒内并检查抛错 |
 | 系统提示词被整体替换 | 同时返回了 `systemPromptReplace` | 只想补充说明时改用 `systemPromptAppend` |
 | 停用被拒绝 | 有已启用的插件依赖它 | 先停用依赖方再停用;「被依赖阻塞」徽标标出这种插件,强行停用标志同样按拒绝处理 |

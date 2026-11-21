@@ -15,6 +15,7 @@ dsc-plugin-engine/
 ├── dependencies.ts # 依赖关系判定：停用前置检查、依赖未满足与被依赖阻塞两种状态
 ├── installConflicts.ts # 安装期冲突判定：正反两个方向，与启用期同口径
 ├── sources.ts      # 供应端点注册表：声明合并（能力并集）、定义比对与能力矩阵
+├── pluginSettings.ts # 插件设置表面：字段描述校验、注册表与值读写门面（secret 走凭证库）
 ├── credentials.ts  # 供应端点凭证存取（IndexedDB，键为端点 id + 基址，插件不可见）
 ├── providerRun.ts  # 按端点执行：选端点、读凭证、调 source:run、错误归类
 ├── db.ts           # 安装记录与待决定冲突组的持久化（IndexedDB，不可用时降级为内存）
@@ -155,6 +156,7 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 | `events:session` | 5 次 / 10 秒(仅登记) | 同步调用 | `context.events.on` |
 | `notify` | 10 次 / 10 秒 | 同步调用 | `context.ui.notify` |
 | `settings:locale` | 60 次 / 10 秒 | 3 秒 | `context.settings.locale` |
+| `settings:surface` | 60 次 / 10 秒 | 同步调用 | `context.settings.register`、`context.settings.values` |
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
 | `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
 | `assets:read` | 20 次 / 10 秒 | 内层 10 秒后中止请求 | `context.assets.readText`、`context.assets.readBytes` |
@@ -165,7 +167,7 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 
 `provider:source` 的上限按「声明次数」计:每次 `context.provider.registerSource` 占一个名额,一个插件可能声明多条端点,因此上限取 50。声明集中在激活阶段,超过上限抛 `PluginRateLimitError`,整次激活失败并按失败路径撤销该插件的全部声明。
 
-表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session` 与 `chat:request` 只登记处理器、不逐次调用,同样没有超时。超时只对异步成员生效。
+表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session`、`chat:request` 与 `settings:surface` 只登记、不逐次执行耗时操作,同样没有超时。超时只对异步成员生效。
 
 登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
 
@@ -246,6 +248,38 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 落点在 `dsc-core`:引擎启动时经 `chat:request-source` 登记一个「给切片、返回补丁」的回调,`dsc-core/request-patch.ts` 在发送路径上调用它并写进请求。方向与 `events:session` 的订阅一致——core 在需要时回调引擎,引擎既不缓存请求,也不持有请求对象。
 
 选择「core 在发送前向引擎索取」而不是「引擎把补丁交给 core 的方法」的理由:请求在 `src/services/chat/store.ts` 的发送路径里同步构造并立即发出,同一时刻可能有多个会话并发流式,失败重试还会重新构造一次;若由引擎把补丁预先交给 core,core 必须缓存补丁并按请求归属,而归属信息只在构造点才存在。索取形态不保存任何请求状态,core 侧的落点是一个只做字段写入的纯函数。
+
+### 插件设置表面
+
+第三方插件可以在清单里申请能力 `settings:surface`,在激活期用 `context.settings.register(descriptor)` 登记一份字段描述,宿主据此渲染设置表单。插件只交描述、不交控件:控件形态、样式与 i18n 全部归宿主,这是与 dsh(插件自带 React 组件)的关键差异,也是能力白名单模型的自然结论。
+
+登记与校验实现在 `pluginSettings.ts`,与供应端点声明同法:只登记描述、不执行;描述非法(重复 key、未知类型、非法 default、非法 labelKey、编译不过的 pattern、超规模)时整份注册失败,抛 `PluginSettingsError`,`code` 是结构化的问题码,同时提示 `pluginSettingsRejected`。登记返回释放函数,进入插件的 disposer 集合,停用随引擎清理(激活中途失败同样撤销);同一插件再次登记时替换前一份,页面 id 就是插件 id,不允许自定义,避免跨插件抢占。
+
+字段描述的形态:
+
+| 字段 | 必填 | 说明 |
+|:---:|:---:|:---:|
+| `key` | 是 | `^[a-z][a-z0-9-]{0,63}$`,同一份描述内不得重复,也是设置存储的键 |
+| `type` | 是 | `switch`、`select`、`number`、`text`、`secret` 五种之一,未知类型整份拒绝 |
+| `labelKey` / `label` | 是 | 二选一:`labelKey` 必须是宿主 i18n 字典里的键,`label` 是插件直给的文案(1 到 40 字符) |
+| `default` | 非 secret 必填 | 默认值;必须通过该字段自己的取值校验;secret 字段不得有默认值 |
+| `min` / `max` / `step` | 否 | number 的取值范围与步进;步进只影响控件交互,不参与校验 |
+| `maxLength` / `pattern` | 否 | text 的长度上限与形态约束;pattern 必须能通过 `new RegExp` 编译 |
+| `options` | select 必填 | 2 到 32 个选项,每项 `{ value, labelKey 或 label }`,value 不得重复 |
+
+规模上限:最多 32 个字段,描述序列化后不超过 8 KB,超限按 `too-many-fields` / `descriptor-too-large` 拒绝。
+
+值的语义分两层:默认层来自描述的 `default`,用户覆盖层落在 dsc-core 的设置命名空间(`<APP_NAME>:plugin-settings:<pluginId>`,概念上是 `settings/<pluginId>/<fieldKey>`),与 `plugins:storage` 的插件数据(`<APP_NAME>:plugin-data:<id>`)完全分开——插件用 `storage.set` 写不到这张表,写侧只有引擎的门面,写入前按描述校验,无法绕过。覆盖值不落盘默认值:单插件覆盖层上限 16 KB。
+
+| 通道 | 位置 | 说明 |
+|:---:|:---:|:---:|
+| 插件读自身值 | `context.settings.values()` | 只读自身命名空间:覆盖值优先,否则默认值;其他插件的设置不可见,secret 字段不返回任何值 |
+| 宿主读写 | `engine.pluginSettings(pluginId)` | 门面:`descriptor()`、`values()`(逐字段的生效值与覆盖状态)、`set(key, value)`、`reset(key)`、`resetAll()`;写前校验,失败返回结构化问题码 |
+| 秘密值 | `credentials.ts` | `secret` 字段复用供应端点凭证库:同一张表、同一套内存镜像与降级口径,键的 source_id 带 `plugin-secret:` 前缀(含冒号,与端点 id 词表不相交);只写不读,读侧只回答「是否已配置」 |
+
+宿主 UI:已安装列表点插件名进详情页(不做路由,返回即回列表),详情页由宿主按描述渲染表单。脏值生命周期照抄 dsh:改动即脏、保存才落盘、字段级非法阻塞保存、保存失败保留草稿、离开页面丢弃草稿;每个字段带覆盖徽标(已修改)与「重置为默认」按钮。没有登记描述的插件(未激活、或没有可配置项)显示「本插件没有可配置项」。
+
+卸载清理:登记随停用撤销;覆盖值与秘密值由引擎管理,卸载时一并清除,不在遗留数据区出现。
 
 ### 供应端点能力与注册表
 
@@ -574,6 +608,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
 | 供应端点注册 | 服务注册与 `ctx.provide`,按提供方合并 | 插件交端点描述,引擎合并成注册表并给出能力矩阵与冲突 | `sources.ts`、`../dsc-core/source-catalog.ts` |
 | 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 IndexedDB `<APP_NAME>-plugins` 的 `plugins` 仓库,插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>`,供应端点凭证另存 `<APP_NAME>-plugin-sources`(键为端点 id + 基址) | `db.ts`、`credentials.ts`、`../dsc-core/plugin-data.ts` |
+| 插件设置面 | Plugins 页 + `settings.section`,页面骨架由宿主画 | 激活期登记字段描述,宿主渲染表单;值分默认层与覆盖层,secret 走凭证库 | `pluginSettings.ts`、`../dsc-core/plugin-settings.ts` |
 | 内置插件 | dsh 自带插件包与内置 bundle | `builtin.ts` 清单,启动时先于外部插件装载 | `builtin.ts` |
 | 热重载 | `dsh-hmr` | 未实现,刷新页面重新加载 | 无 |
 
@@ -613,6 +648,34 @@ engine?.install(
   }
 )
 await engine?.activate('demo-plugin')
+
+// 设置表面：申请 settings:surface，激活期登记字段描述
+engine?.install(
+  {
+    id: 'demo-settings',
+    name: 'Demo Settings',
+    version: '1.0.0',
+    engines: '^1.0.0',
+    capabilities: ['settings:surface'],
+  },
+  {
+    activate(context) {
+      context.settings.register({
+        fields: [
+          { key: 'mode', type: 'select', label: '模式', default: 'fast', options: [
+            { value: 'fast', label: '快速' },
+            { value: 'accurate', label: '精确' },
+          ] },
+          { key: 'threshold', type: 'number', label: '阈值', default: 0.5, min: 0, max: 1 },
+          { key: 'token', type: 'secret', label: '令牌' },
+        ],
+      })
+      const values = context.settings.values()
+      context.log('mode = ' + String(values.mode))
+    },
+  }
+)
+await engine?.activate('demo-settings')
 
 // 请求前补丁：申请 chat:request 并声明挂载点 chat:before-request
 engine?.install(
