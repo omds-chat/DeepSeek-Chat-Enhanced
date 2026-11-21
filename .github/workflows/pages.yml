@@ -238,7 +238,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${DS_CHAT_PAGES_EEC_SECRET}" ]; then
-            echo "::error::WEB_EEC_KEY 未配置,无法生成网页签名"
+            echo "::error::DS_CHAT_PAGES_EEC_SECRET 未配置,无法生成网页签名"
             exit 1
           fi
           mkdir -p temp
