@@ -262,8 +262,8 @@ export const en = {
   pluginUninstallRejected: 'Plugin {id} could not be uninstalled: {reason}',
   pluginReasonInvalidManifest: 'The plugin manifest is not valid',
   pluginReasonUnknownCapability: 'The plugin requested a capability the engine does not support',
-  pluginReasonUnknownContribution:
-    'The plugin requested a contribution point the engine does not support',
+  pluginReasonUnknownMount:
+    'The plugin requested a mount point the engine does not support',
   pluginReasonIncompatibleVersion: 'The plugin is not compatible with this dsc version',
   pluginReasonDuplicate: 'A plugin with the same id is already installed',
   pluginReasonConflict: 'The plugin conflicts with an installed plugin',

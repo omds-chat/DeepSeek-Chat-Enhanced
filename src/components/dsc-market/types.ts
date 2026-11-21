@@ -59,9 +59,9 @@ export type CatalogPlugin = {
   versions: string[]
   meta: RuntimeMeta | null
   /**
-   * 由 meta.json 推导的清单：capabilities 与 contributions 都取自 meta.json。
+   * 由 meta.json 推导的清单：capabilities 与 mounts 都取自 meta.json。
    * 缺 capabilities 时为 null，安装时整份交给产物自带的 manifest；
-   * 缺 contributions 时清单不带该字段，由引擎在安装阶段用产物导出的 manifest 补齐。
+   * 缺 mounts 时清单不带该字段，由引擎在安装阶段用产物导出的 manifest 补齐。
    */
   manifest: PluginManifest | null
   /** 该插件的 versions.json 与展示版本 meta.json 是否都通过 L3 清单校验 */

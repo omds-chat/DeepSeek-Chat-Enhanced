@@ -2,13 +2,13 @@ import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
 import { RANGE_PATTERN } from './versionRange.js'
 import {
-  CONTRIBUTION_POINTS,
+  MOUNT_POINTS,
   type BeforeRequestHandler,
-  type ContributionHandler,
-  type ContributionPoint,
   type DscPlugin,
   type InstallRejection,
   type InstallResult,
+  type MountHandler,
+  type MountPoint,
   type PluginManifest,
   type PluginSource,
   type PluginSourceType,
@@ -91,7 +91,7 @@ export type PluginRecord = {
   enabled: boolean
   state: PluginState
   error?: string
-  contributions: Map<ContributionPoint, Set<ContributionHandler>>
+  mounts: Map<MountPoint, Set<MountHandler>>
   /** 请求前处理器；按登记顺序调用，与事件处理器分开存放 */
   requestHandlers: Set<BeforeRequestHandler>
   disposers: Set<() => void>
@@ -203,26 +203,26 @@ export const readManifest = (value: unknown): PluginManifest | null => {
   if (conflicts) {
     manifest.conflicts = conflicts
   }
-  const contributions = readStringArray(raw.contributions)
-  if (contributions) {
-    manifest.contributions = contributions as ContributionPoint[]
+  const mounts = readStringArray(raw.mounts)
+  if (mounts) {
+    manifest.mounts = mounts as MountPoint[]
   }
   return manifest
 }
 
 /**
- * 用产物导出的清单补齐安装清单缺少的贡献点。
- * 市场与离线包由 meta.json 推导的清单可能没有 contributions 字段，安装阶段能拿到产物的 manifest 时用它补齐；
- * 清单已声明该字段（含空数组）时以清单为准，产物多出来的贡献点不会越过清单的声明。
+ * 用产物导出的清单补齐安装清单缺少的挂载点。
+ * 市场与离线包由 meta.json 推导的清单可能没有 mounts 字段，安装阶段能拿到产物的 manifest 时用它补齐；
+ * 清单已声明该字段（含空数组）时以清单为准，产物多出来的挂载点不会越过清单的声明。
  */
-export const withArtifactContributions = (
+export const withArtifactMounts = (
   manifest: PluginManifest,
   artifact: PluginManifest | undefined
 ): PluginManifest => {
-  if (manifest.contributions !== undefined || artifact?.contributions === undefined) {
+  if (manifest.mounts !== undefined || artifact?.mounts === undefined) {
     return manifest
   }
-  return { ...manifest, contributions: [...artifact.contributions] }
+  return { ...manifest, mounts: [...artifact.mounts] }
 }
 
 const validateManifest = (manifest: PluginManifest): InstallRejection | null => {
@@ -242,13 +242,13 @@ const validateManifest = (manifest: PluginManifest): InstallRejection | null => 
       return 'unknown-capability'
     }
   }
-  const contributions = manifest.contributions ?? []
-  if (new Set(contributions).size !== contributions.length) {
+  const mounts = manifest.mounts ?? []
+  if (new Set(mounts).size !== mounts.length) {
     return 'invalid-manifest'
   }
-  for (const point of contributions) {
-    if (!CONTRIBUTION_POINTS.includes(point)) {
-      return 'unknown-contribution'
+  for (const point of mounts) {
+    if (!MOUNT_POINTS.includes(point)) {
+      return 'unknown-mount'
     }
   }
   return null
@@ -304,7 +304,7 @@ export const add = (
     verdictReason: options.verdictReason ?? null,
     enabled: false,
     state: 'registered',
-    contributions: new Map(),
+    mounts: new Map(),
     requestHandlers: new Set(),
     disposers: new Set(),
     logs: [],
@@ -331,7 +331,7 @@ export const addFailed = (
     enabled: true,
     state: 'failed',
     error: reason,
-    contributions: new Map(),
+    mounts: new Map(),
     requestHandlers: new Set(),
     disposers: new Set(),
     logs: [reason],
@@ -362,9 +362,9 @@ export const markFailed = (record: PluginRecord, reason: string) => {
   record.error = reason
 }
 
-/** 清空贡献点；请求前处理器同属贡献点，一并清空 */
-export const clearContributions = (record: PluginRecord) => {
-  record.contributions.clear()
+/** 清空挂载点；请求前处理器同属挂载点，一并清空 */
+export const clearMounts = (record: PluginRecord) => {
+  record.mounts.clear()
   record.requestHandlers.clear()
 }
 

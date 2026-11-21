@@ -14,8 +14,10 @@ dsc 插件在运行阶段就是一个符合 [dsc 插件产物规范](../basic/pl
 |:---:|:---:|
 | `registered` | 已登记,尚未启动 |
 | `active` | 已激活,能力可用 |
-| `inactive` | 已停用,能力与贡献点已撤销 |
+| `inactive` | 已停用,能力与挂载点已撤销 |
 | `failed` | 启动失败,原因记录在插件日志与列表的错误字段 |
+
+挂载点是插件声明要挂到宿主哪个回调位置:清单用 `mounts` 列出位置名,激活时再按位置登记处理器。后文的「[逐段说明](#逐段说明)」给出两项挂载点的差别。
 
 ## 运行环境
 
@@ -55,7 +57,7 @@ export const manifest: PluginManifest = {
   version: '1.0.0',
   engines: '^1.0.0',
   capabilities: ['events:session', 'plugins:storage'],
-  contributions: ['session:changed'],
+  mounts: ['session:changed'],
 }
 
 // 启动入口,引擎在激活时调用,超时 5 秒
@@ -86,7 +88,7 @@ export const manifest = {
   version: '1.0.0',
   engines: '^1.0.0',
   capabilities: ['events:session', 'plugins:storage'],
-  contributions: ['session:changed'],
+  mounts: ['session:changed'],
 }
 
 export const activate = (context) => {
@@ -106,9 +108,9 @@ export const activate = (context) => {
 |:---:|:---:|
 | `export const manifest` | 安装依据。用户从地址安装时不必再提供清单;写在 `default` 导出对象上也能识别,模块顶层的具名导出优先 |
 | `capabilities` | 申请的能力,必须在核心能力表内且不得重复。未申请的能力被调用时抛 `PluginCapabilityError` |
-| `contributions` | 声明订阅的贡献点。只有声明了 `session:changed` 才能调用 `context.events.on('session:changed', ...)`;只有声明了 `chat:before-request` 才能调用 `context.chat.onBeforeRequest(...)` |
+| `mounts` | 声明要挂载的位置。只有声明了 `session:changed` 才能调用 `context.events.on('session:changed', ...)`;只有声明了 `chat:before-request` 才能调用 `context.chat.onBeforeRequest(...)` |
 | `activate(context)` | 启动入口,可返回 Promise;抛错或超过 5 秒会让插件进入 `failed`,引擎与其他插件继续运行 |
-| `deactivate()` | 停用入口,可选,可返回 Promise,超时 3 秒;之后引擎执行 `events.on` 返回的释放函数并清空贡献点 |
+| `deactivate()` | 停用入口,可选,可返回 Promise,超时 3 秒;之后引擎执行 `events.on` 返回的释放函数并清空挂载点 |
 
 插件 id 的仓库约定是以 `dsc-` 开头。引擎的格式校验为小写字母开头、允许数字与连字符、长度 3 到 64。
 
@@ -187,7 +189,7 @@ export const activate = async (context) => {
 
 ### 请求前补丁
 
-申请 `chat:request` 并在清单里声明贡献点 `chat:before-request` 后,插件可以为每次请求提供参数补丁:
+申请 `chat:request` 并在清单里声明挂载点 `chat:before-request` 后,插件可以为每次请求提供参数补丁:
 
 ```js
 export const manifest = {
@@ -196,7 +198,7 @@ export const manifest = {
   version: '1.0.0',
   engines: '^1.0.0',
   capabilities: ['chat:request'],
-  contributions: ['chat:before-request'],
+  mounts: ['chat:before-request'],
 }
 
 export const activate = (context) => {
@@ -287,7 +289,7 @@ npm 包的要点:
 - `package.json` 的 `files` 需要包含 `dist`,否则产物不会进包。
 - `package/` 下的其他内容被忽略,只安装 `package/dist/` 下的文件。
 
-`meta.json` 是安装依据:预检先确认包内有 `meta.json` 与 `plugin.js`,再确认 `plugin.js` 不超过 2 MB,然后把 `meta.json` 按 UTF-8 解码并解析。`meta.json` 不是合法 UTF-8 时按 `invalid-meta` 拒绝;解码成功后要求 `name`、`version`、`author` 非空且版本号为三段数字。清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。`contributions` 不影响能否推导清单:`meta.json` 写了就原样带进清单,没写时由引擎用产物导出的 `manifest.contributions` 补齐,因此同一份产物经离线包与经市场安装得到同一份贡献点。`dependencies.dsc` 会被当作清单的 `engines` 使用,必须写成单段版本范围,例如 `^1.0.0`;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检同样按 `invalid-meta` 拒绝,原因说明指向 `dependencies.dsc`。
+`meta.json` 是安装依据:预检先确认包内有 `meta.json` 与 `plugin.js`,再确认 `plugin.js` 不超过 2 MB,然后把 `meta.json` 按 UTF-8 解码并解析。`meta.json` 不是合法 UTF-8 时按 `invalid-meta` 拒绝;解码成功后要求 `name`、`version`、`author` 非空且版本号为三段数字。清单里的 `capabilities` 用来推导安装清单,缺该字段时改用产物导出的 `manifest`,两者都没有时安装失败。`mounts` 不影响能否推导清单:`meta.json` 写了就原样带进清单,没写时由引擎用产物导出的 `manifest.mounts` 补齐,因此同一份产物经离线包与经市场安装得到同一份挂载点。`dependencies.dsc` 会被当作清单的 `engines` 使用,必须写成单段版本范围,例如 `^1.0.0`;写成 `>=1.0.0 <2.0.0` 这类组合范围时预检同样按 `invalid-meta` 拒绝,原因说明指向 `dependencies.dsc`。
 
 带作者签名的离线包:
 
@@ -302,8 +304,8 @@ npm 包的要点:
 | 方式 | 入口 | 清单来源 |
 |:---:|:---:|:---:|
 | 从地址安装 | 插件面板底部的「从地址安装」 | 产物自带的 `manifest` 导出 |
-| 从本地安装 | 插件面板底部的「从本地安装」 | `meta.json` 的 `capabilities`;缺该字段时用产物自带的 `manifest`;`contributions` 缺失时同样用产物自带的 `manifest` 补齐 |
-| 插件市场 | 插件面板的「插件市场」标签页 | 由该版本 `meta.json` 推导的清单优先,否则用产物自带的 `manifest`;`contributions` 缺失时用产物自带的 `manifest` 补齐 |
+| 从本地安装 | 插件面板底部的「从本地安装」 | `meta.json` 的 `capabilities`;缺该字段时用产物自带的 `manifest`;`mounts` 缺失时同样用产物自带的 `manifest` 补齐 |
+| 插件市场 | 插件面板的「插件市场」标签页 | 由该版本 `meta.json` 推导的清单优先,否则用产物自带的 `manifest`;`mounts` 缺失时用产物自带的 `manifest` 补齐 |
 | 宿主注册 | 宿主代码调用 `engine.install(manifest, plugin)` | 调用方传入 |
 
 - 通过地址安装成功后插件自动激活;安装记录写入浏览器本地,下次打开页面时自动恢复。
@@ -322,7 +324,7 @@ npm 包的要点:
 |:---:|:---:|:---:|
 | `invalid-manifest` | `id`、`name`、`version` 不符合规则,或产物未导出清单且调用时未传入清单 | 修正清单字段;确保产物导出 `manifest` |
 | `unknown-capability` | 申请了能力表之外的能力,或第三方插件申请 `net:fetch` | 只申请能力清单内的能力 |
-| `unknown-contribution` | `contributions` 不在贡献点表内 | 只使用 `session:changed` 与 `chat:before-request` |
+| `unknown-mount` | `mounts` 不在挂载点表内 | 只使用 `session:changed` 与 `chat:before-request` |
 | `incompatible-version` | `engines` 与宿主 `1.0.0` 不匹配,或写成了 `>=1.0.0 <2.0.0` 这类组合范围 | 把 `engines` 改成单段表达式 |
 | `duplicate` | 同 id 插件已存在 | 先卸载旧插件再安装 |
 | `missing-dependency` | `dependencies` 中的插件未安装 | 先安装依赖 |

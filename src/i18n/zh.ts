@@ -251,7 +251,7 @@ export const zh = {
   pluginUninstallRejected: '插件 {id} 卸载被拒：{reason}',
   pluginReasonInvalidManifest: '插件清单格式不正确',
   pluginReasonUnknownCapability: '申请了引擎不支持的能力',
-  pluginReasonUnknownContribution: '申请了引擎不支持的贡献点',
+  pluginReasonUnknownMount: '申请了引擎不支持的挂载点',
   pluginReasonIncompatibleVersion: '与当前 dsc 版本不兼容',
   pluginReasonDuplicate: '已安装同 id 的插件',
   pluginReasonConflict: '与已安装的插件冲突',

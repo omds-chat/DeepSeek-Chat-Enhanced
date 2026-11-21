@@ -22,19 +22,19 @@ export const MAX_PLUGIN_CODE_BYTES = 2 * 1024 * 1024
 export const MAX_PLUGIN_CODE_MB = MAX_PLUGIN_CODE_BYTES / (1024 * 1024)
 
 /**
- * 贡献点；插件可订阅的核心事件与可介入的请求前环节。
- * chat:before-request 不是事件，它在每次发请求前同步调用一次。
+ * 挂载点；插件声明要挂到宿主哪个回调位置。
+ * session:changed 是核心事件，chat:before-request 不是事件，它在每次发请求前同步调用一次。
  */
-export type ContributionPoint = 'session:changed' | 'chat:before-request'
+export type MountPoint = 'session:changed' | 'chat:before-request'
 
-/** 全部贡献点 */
-export const CONTRIBUTION_POINTS: readonly ContributionPoint[] = [
+/** 全部挂载点 */
+export const MOUNT_POINTS: readonly MountPoint[] = [
   'session:changed',
   'chat:before-request',
 ]
 
 /** 事件处理器 */
-export type ContributionHandler = (event: CoreEvent) => void
+export type MountHandler = (event: CoreEvent) => void
 
 /** 调用选项 */
 export type CallOptions = { signal?: AbortSignal }
@@ -93,10 +93,10 @@ export type PluginManifest = {
    */
   capabilities: CoreCapabilityId[]
   /**
-   * 订阅的贡献点；必须在贡献点表内。
+   * 挂载点；插件声明要挂到宿主哪个回调位置，取值必须在挂载点表内。
    * 由 meta.json 推导的安装清单可以缺该字段，安装阶段会用产物导出的 manifest 补齐。
    */
-  contributions?: ContributionPoint[]
+  mounts?: MountPoint[]
 }
 
 /** 会话能力 */
@@ -108,7 +108,7 @@ export type SessionsCapability = {
 
 /** 事件能力 */
 export type EventsCapability = {
-  on(point: ContributionPoint, handler: ContributionHandler): () => void
+  on(point: MountPoint, handler: MountHandler): () => void
 }
 
 /** 提示能力 */
@@ -239,7 +239,7 @@ export type PluginState = 'registered' | 'active' | 'inactive' | 'failed'
 export type InstallRejection =
   | 'invalid-manifest'
   | 'unknown-capability'
-  | 'unknown-contribution'
+  | 'unknown-mount'
   | 'incompatible-version'
   | 'duplicate'
   | 'missing-dependency'
@@ -325,6 +325,7 @@ export type PluginStateView = {
   /** 清单声明的依赖插件 id */
   dependencies: string[]
   capabilities: CoreCapabilityId[]
-  contributions: ContributionPoint[]
+  /** 清单声明的挂载点 */
+  mounts: MountPoint[]
   error?: string
 }

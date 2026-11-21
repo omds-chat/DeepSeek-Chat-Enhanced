@@ -10,7 +10,7 @@ type ReasonSpec = { key: TranslationKey; param?: string }
 const REASONS: Record<string, ReasonSpec> = {
   'invalid-manifest': { key: 'pluginReasonInvalidManifest' },
   'unknown-capability': { key: 'pluginReasonUnknownCapability' },
-  'unknown-contribution': { key: 'pluginReasonUnknownContribution' },
+  'unknown-mount': { key: 'pluginReasonUnknownMount' },
   'incompatible-version': { key: 'pluginReasonIncompatibleVersion' },
   duplicate: { key: 'pluginReasonDuplicate' },
   conflict: { key: 'pluginReasonConflict' },

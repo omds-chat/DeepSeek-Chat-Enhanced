@@ -23,8 +23,8 @@ import { isHttpsOrLocalUrl } from '../../utils/url.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/types.js'
 import { toPluginId } from '../dsc-plugin-engine/pluginId.js'
 import {
-  CONTRIBUTION_POINTS,
-  type ContributionPoint,
+  MOUNT_POINTS,
+  type MountPoint,
   type NetCapability,
   type PluginManifest,
   type PluginSourceType,
@@ -297,25 +297,25 @@ const readCapabilities = (value: unknown): CoreCapabilityId[] | null => {
 }
 
 /**
- * 读清单里的贡献点声明；缺字段或含未知贡献点时返回 null。
- * 返回 null 时清单不带 contributions 字段，由引擎在安装阶段用产物导出的 manifest 补齐，
+ * 读清单里的挂载点声明；缺字段或含未知挂载点时返回 null。
+ * 返回 null 时清单不带 mounts 字段，由引擎在安装阶段用产物导出的 manifest 补齐，
  * 与能力的回落口径一致：市场侧不猜、也不丢弃产物自己的声明。
  */
-const readContributions = (value: unknown): ContributionPoint[] | null => {
+const readMounts = (value: unknown): MountPoint[] | null => {
   if (!Array.isArray(value)) {
     return null
   }
-  const contributions: ContributionPoint[] = []
+  const mounts: MountPoint[] = []
   for (const item of value) {
-    if (typeof item !== 'string' || !CONTRIBUTION_POINTS.includes(item as ContributionPoint)) {
+    if (typeof item !== 'string' || !MOUNT_POINTS.includes(item as MountPoint)) {
       return null
     }
-    const point = item as ContributionPoint
-    if (!contributions.includes(point)) {
-      contributions.push(point)
+    const point = item as MountPoint
+    if (!mounts.includes(point)) {
+      mounts.push(point)
     }
   }
-  return contributions
+  return mounts
 }
 
 /** 解析运行时 meta.json；name 与 version 必填 */
@@ -344,14 +344,14 @@ export const parseRuntimeMeta = (
   }
   let manifest: PluginManifest | null = null
   const capabilities = readCapabilities(parsed.capabilities)
-  const contributions = readContributions(parsed.contributions)
+  const mounts = readMounts(parsed.mounts)
   const id = toPluginId(meta.name)
   if (capabilities && id) {
     manifest = { id, name: meta.name, version: meta.version, capabilities }
-    // 贡献点是请求前能力与事件订阅的登记前置条件，缺它会让市场渠道装出的插件什么都登记不了；
+    // 挂载点是请求前能力与事件订阅的登记前置条件，缺它会让市场渠道装出的插件什么都登记不了；
     // meta.json 没声明时留空，由引擎在安装阶段用产物导出的 manifest 补齐
-    if (contributions !== null) {
-      manifest.contributions = contributions
+    if (mounts !== null) {
+      manifest.mounts = mounts
     }
     const dependencies = parsed.dependencies
     if (isRecord(dependencies) && typeof dependencies.dsc === 'string' && dependencies.dsc !== '') {

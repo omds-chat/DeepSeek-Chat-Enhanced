@@ -17,8 +17,8 @@ import type {
   AssetsCapability,
   CallOptions,
   ChatCapability,
-  ContributionPoint,
   EventsCapability,
+  MountPoint,
   NetCapability,
   PluginContext,
   ProviderCapability,
@@ -180,9 +180,9 @@ export const createPluginContext = ({
     }
   }
 
-  /** 贡献点必须同时在清单里声明，缺声明与缺能力同样按未授权处理 */
-  const ensureContribution = (capability: CoreCapabilityId, point: ContributionPoint) => {
-    if (!(manifest.contributions ?? []).includes(point)) {
+  /** 挂载点必须同时在清单里声明，缺声明与缺能力同样按未授权处理 */
+  const ensureMount = (capability: CoreCapabilityId, point: MountPoint) => {
+    if (!(manifest.mounts ?? []).includes(point)) {
       report('pluginCapabilityDenied', { id: manifest.id, capability })
       throw new PluginCapabilityError(capability)
     }
@@ -272,11 +272,11 @@ export const createPluginContext = ({
      */
     on: (point, handler) => {
       ensureGranted('events:session')
-      ensureContribution('events:session', point)
+      ensureMount('events:session', point)
       takeToken('events:session')
-      const handlers = record.contributions.get(point) ?? new Set()
+      const handlers = record.mounts.get(point) ?? new Set()
       handlers.add(handler)
-      record.contributions.set(point, handlers)
+      record.mounts.set(point, handlers)
       const dispose = () => {
         handlers.delete(handler)
       }
@@ -292,7 +292,7 @@ export const createPluginContext = ({
      */
     onBeforeRequest: (handler) => {
       ensureGranted('chat:request')
-      ensureContribution('chat:request', 'chat:before-request')
+      ensureMount('chat:request', 'chat:before-request')
       takeToken('chat:request')
       record.requestHandlers.add(handler)
       const dispose = () => {

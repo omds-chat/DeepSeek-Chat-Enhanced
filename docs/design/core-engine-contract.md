@@ -115,24 +115,26 @@ core 原本只按「插件能力」执行，识别的是数据形状（会话、
 
 引擎为每个插件构造一个上下文对象。成员调用时的顺序固定：清单授予判定、限流窗口、取消检查、超时包装、签发票据、core 验凭证与票据。引擎不缓存会话、不聚合数据、不拼装业务视图，也不直接读写聊天历史库。
 
+表中的「挂载点判定」指：挂载点是插件声明要挂到宿主哪个回调位置，插件登记处理器前先核对该位置是否写在清单的 `mounts` 里。
+
 | 上下文成员 | 能力标识 | 门控 | 转发形态 |
 |:---:|:---:|:---:|:---:|
 | `sessions.list` | `sessions:list` | 授予、限流、超时 | 一次调用 |
 | `sessions.read` | `sessions:read` | 授予、限流、超时 | 一次调用 |
 | `sessions.rename` | `sessions:rename` | 授予、限流 | 一次同步调用 |
-| `events.on` | `events:session` | 授予、贡献点判定、限流（仅登记） | 登记处理器，不逐次调用；每次登记占一个限流名额 |
+| `events.on` | `events:session` | 授予、挂载点判定、限流（仅登记） | 登记处理器，不逐次调用；每次登记占一个限流名额 |
 | `ui.notify` | `notify` | 授予、限流 | 一次同步调用 |
 | `settings.locale` | `settings:locale` | 授予、限流、超时 | 一次调用 |
 | `net.getText` | `net:fetch` | 授予、限流、内置限定、超时 | 一次调用 |
 | `net.postJson` | `net:fetch-post` | 授予（按 `net:fetch`）、限流、内置限定、超时 | 一次调用 |
 | `assets.readText`、`assets.readBytes` | `assets:read` | 授予、限流、超时 | 一次调用；两个成员共用一个标识 |
 | `storage.get`、`set`、`remove` | `plugins:storage` | 授予、限流 | 一次同步调用，按操作区分 |
-| `chat.onBeforeRequest` | `chat:request` | 授予、贡献点判定、限流（仅登记） | 登记处理器；每次请求前由 core 回调一次，带 10 毫秒预算 |
+| `chat.onBeforeRequest` | `chat:request` | 授予、挂载点判定、限流（仅登记） | 登记处理器；每次请求前由 core 回调一次，带 10 毫秒预算 |
 | `provider.registerSource` | `provider:source` | 授予、限流（仅登记）、描述形态检查 | 登记一份供应端点描述；core 侧没有对应实现，合并与冲突判定都在引擎注册表里 |
 
 “1:1”指的是调用链一一对应，不是成员与能力标识一一对应。四处例外值得记住：
 
-- 事件只在引擎启动时向 core 订阅一次，之后由引擎按贡献点分发给各插件；插件登记处理器不产生 core 调用。
+- 事件只在引擎启动时向 core 订阅一次，之后由引擎按挂载点分发给各插件；插件登记处理器不产生 core 调用。
 - 插件数据的三个成员共用一个能力标识，core 侧按操作字段分派。
 - 计数请求用独立的能力标识与独立限流窗口，但授予口径仍按 `net:fetch`，插件清单无法单独申请它。
 - 资产读取的两个成员共用一个能力标识，core 侧按形态分派实现；读取结果的三态不是异常，`status` 与 `no-status` 都按返回值交给插件，只有引擎侧能确定的拒绝才抛错。

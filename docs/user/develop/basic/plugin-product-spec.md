@@ -12,12 +12,14 @@
 |:---:|:---:|
 | 产物形态:单文件、ESM、编码、运行位置、依赖与资源、存放与恢复 | 运行时规范 1. 产物形态 |
 | 导出契约:具名 `activate`、`default` 导出、插件工厂、`manifest` 导出与优先级 | 运行时规范 2. 导出契约 |
-| 清单字段与校验:`id`、`name`、`version`、`engines`、`dependencies`、`conflicts`、`capabilities`、`contributions` | 开发规范 2.1 字段与校验规则 |
-| 能力分档、联网只经宿主网络能力、`net:fetch` 仅内置可见、`plugins:storage` 的存储边界与贡献点范围 | 开发规范 2.1、运行时规范 4、5.4 与 5.5 |
+| 清单字段与校验:`id`、`name`、`version`、`engines`、`dependencies`、`conflicts`、`capabilities`、`mounts` | 开发规范 2.1 字段与校验规则 |
+| 能力分档、联网只经宿主网络能力、`net:fetch` 仅内置可见、`plugins:storage` 的存储边界与挂载点范围 | 开发规范 2.1、运行时规范 4、5.4 与 5.5 |
 | 版本与兼容:三段版本、单段 `engines` 表达式、依赖与冲突按 id 判定 | 开发规范 3. 版本与依赖 |
 | 加载方式的地址判定、清单优先级、跨源分发与 CORS | 运行时规范 2 与 3、开发规范 6.1 |
 | 生命周期状态、能力限流与超时、上下文成员、可见数据范围 | 运行时规范 3、4、5 |
 | 离线包的布局、`meta.json` 的字段规则与预检顺序 | 开发规范 4、6.2 |
+
+挂载点是插件声明要挂到宿主哪个回调位置,清单里对应 `mounts` 字段:只声明位置名,处理器在激活时登记。
 
 ## 本文保留的 dsce 专有内容
 
@@ -30,7 +32,7 @@
 | 安装记录持久化(`<APP_NAME>-plugins` 的字段集合) | 本仓库 IndexedDB 的实现细节 |
 | 引擎安装接口与离线包的两步安装 | 本仓库 `dsc-plugin-engine` 的宿主接口 |
 | 错误与降级的原因代码与用户可见文案 | 与本仓库的 `i18n` 文案键配套 |
-| 请求前补丁(`chat:request` 与贡献点 `chat:before-request`) | 模板规范尚未覆盖,补丁字段、范围裁剪与合并规则由本仓库引擎实现界定,写入路径在 `dsc-core` 的发送路径上 |
+| 请求前补丁(`chat:request` 与挂载点 `chat:before-request`) | 模板规范尚未覆盖,补丁字段、范围裁剪与合并规则由本仓库引擎实现界定,写入路径在 `dsc-core` 的发送路径上 |
 | 资产读取(`assets:read` 的三态结果与首次使用提示) | 模板规范尚未覆盖;三态口径、体积与超时上限、去重提示都由本仓库实现界定 |
 | 插件声明供应端点(`provider:source` 与端点注册表) | 模板规范尚未覆盖;端点描述的字段、基址规范化、合并与冲突口径、凭证按端点与基址绑定且不出宿主的约束都由本仓库的引擎与内核实现界定 |
 
@@ -237,7 +239,7 @@ export const activate = (context) => {
 | 情形 | 行为 |
 |:---:|:---:|
 | 清单非法 | 安装拒绝,原因 `invalid-manifest` |
-| 能力或贡献点未知 | 安装拒绝,原因 `unknown-capability` 或 `unknown-contribution` |
+| 能力或挂载点未知 | 安装拒绝,原因 `unknown-capability` 或 `unknown-mount` |
 | 版本不兼容 | 安装拒绝,原因 `incompatible-version` |
 | 重名、缺依赖、冲突 | 安装拒绝,原因 `duplicate`、`missing-dependency`、`conflict` |
 | 产物字节取不到(网络失败、跨源缺 `Access-Control-Allow-Origin`) | 安装拒绝,原因 `artifact-unreachable` |

@@ -7,7 +7,7 @@
 ```
 dsc-plugin-engine/
 ├── index.ts        # 引擎入口：安装、启停、卸载、启动恢复
-├── types.ts        # 插件契约（manifest、context、contribution）
+├── types.ts        # 插件契约（manifest、context、mount）
 ├── loader.ts       # 浏览器内加载插件运行时 js 产物
 ├── capabilities.ts # 能力白名单与受限代理（安全封装层）
 ├── requestPatch.ts # 请求补丁的白名单、范围裁剪与合并
@@ -28,6 +28,8 @@ dsc-plugin-engine/
 
 ### 清单
 
+挂载点是插件声明要挂到宿主哪个回调位置：清单只用 `mounts` 列出位置名，具体处理器在激活时登记。
+
 | 字段 | 必填 | 说明 |
 |:---:|:---:|:---:|
 | `id` | 是 | 小写字母开头,允许数字与连字符,3 到 64 字符 |
@@ -37,13 +39,13 @@ dsc-plugin-engine/
 | `dependencies` | 否 | 依赖的插件 id,安装时须已存在,激活时须已激活 |
 | `conflicts` | 否 | 冲突的插件 id,同时安装会被拒绝 |
 | `capabilities` | 是 | 申请的能力,必须在核心能力表内且不得重复 |
-| `contributions` | 否 | 订阅的贡献点(`session:changed`、`chat:before-request`),必须在贡献点表内且不得重复 |
+| `mounts` | 否 | 声明的挂载点(`session:changed`、`chat:before-request`),必须在挂载点表内且不得重复 |
 
 清单的 `id` 由插件名收敛而来：去掉 `@scope/` 前缀后转小写,非 `[a-z0-9-]` 的字符折叠为连字符,再去掉首尾连字符。收敛结果立即按清单规则 `^[a-z][a-z0-9-]{2,63}$` 校验,字符形态或长度不合规时安装按 `invalid-manifest` 拒绝,原因说明指向插件命名而不是笼统的清单非法。规则只有 `pluginId.ts` 一处实现,离线包、在线安装与插件市场都引用它,同一插件经不同路径得到同一个 id。
 
 清单可以随产物一起导出：`export const manifest = {...}`,也可以挂在 `default` 导出对象上,模块顶层优先。`installFromUrl(url)` 省略清单时使用产物自带的 `manifest`;两者都没有时安装被拒绝,原因为 `invalid-manifest`。
 
-调用方传入清单时以传入的为准,但 `contributions` 允许后补:传入的清单没有该字段(即 `undefined`,不是空数组)时,安装阶段用产物导出清单的 `contributions` 补齐;传入清单已声明该字段(含空数组)时保持原样,产物多出来的贡献点不会越过调用方的声明。插件市场与离线包都由 `meta.json` 推导清单,`meta.json` 可能没写 `contributions`,这条补齐规则让两种渠道装出的插件照样能登记事件处理器与请求前处理器。
+调用方传入清单时以传入的为准,但 `mounts` 允许后补:传入的清单没有该字段(即 `undefined`,不是空数组)时,安装阶段用产物导出清单的 `mounts` 补齐;传入清单已声明该字段(含空数组)时保持原样,产物多出来的挂载点不会越过调用方的声明。插件市场与离线包都由 `meta.json` 推导清单,`meta.json` 可能没写 `mounts`,这条补齐规则让两种渠道装出的插件照样能登记事件处理器与请求前处理器。
 
 `installFromUrl(url, manifest?, source?)` 的 `source` 携带来源类型、来源信任判定与签名材料：`sourceType` 取 `inner`、`awesome`、`outer`、`local` 之一,缺省按 `outer` 处理;`trust` 与 `trustFailure` 是插件市场给出的信任清单判定,只用于界面展示来源是否被官方认可,不参与来源结论。签名材料共五项：`eec` 是信任清单登记的合集 EEC 证书 PEM,`eecUrls` 是来源自带的证书地址列表,按顺序为 `<base>/certs/<合集 id>/<合集 id>-eec.crt`、`<base>/certs/<合集 id>-eec.crt` 与兜底的 `<base>/eec.pem`: 第一档是当前公开发布布局,优先取它;第二档的扁平路径只在旧站点存在,留作兼容;第三档是最早的布局,只作最后兜底;三档都取不到才算拿不到证书。前两档的取舍在于兼容范围: 保留扁平路径是为了不必逼迫旧站点与仓库同时迁移,代价是新旧两种布局都要尝试,新来源只应提供嵌套路径。`eec` 与 `eecUrls` 都有时优先用 `eec`,省一次请求;拿到证书后先用内置根 CA 校验证书链,通过才做合集 CMS 分离验签,链不通过时结论为 `failed` 且不发起 CMS 验签。`sigUrl` 是 `plugin.js.sig` 地址(缺省为 `<url>.sig`);`authorPubUrl` 与 `authorSigUrl` 是作者公钥与作者签名地址(后者缺省为 `<url>.author.sig`),两者齐全时做作者裸签名验签;作者签名是可选材料,缺其中任一项或验签不通过都不阻断安装。安装阶段先校验产物签名,不通过只提示用户,仍照常安装,签名状态标记为 `failed`。
 
@@ -56,7 +58,7 @@ dsc-plugin-engine/
 ```
 install      → registered
 activate     → active     （依赖未激活或抛错、超时则 failed）
-deactivate   → inactive   （先调插件 deactivate，再执行 disposers 并清空贡献点）
+deactivate   → inactive   （先调插件 deactivate，再执行 disposers 并清空挂载点）
 unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 ```
 
@@ -126,7 +128,7 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 ### 请求前补丁
 
-`chat:request` 只服务一个成员：`context.chat.onBeforeRequest(handler)`。插件在激活时登记处理器,引擎在每次发请求前同步调用一次,把处理器返回的补丁交给 `dsc-core` 写进请求参数。登记要求清单同时申请能力 `chat:request` 与贡献点 `chat:before-request`,缺任一项抛 `PluginCapabilityError`;登记与 `events.on` 一样返回释放函数,停用或卸载时由引擎执行。
+`chat:request` 只服务一个成员：`context.chat.onBeforeRequest(handler)`。插件在激活时登记处理器,引擎在每次发请求前同步调用一次,把处理器返回的补丁交给 `dsc-core` 写进请求参数。登记要求清单同时申请能力 `chat:request` 与挂载点 `chat:before-request`,缺任一项抛 `PluginCapabilityError`;登记与 `events.on` 一样返回释放函数,停用或卸载时由引擎执行。
 
 处理器拿到的切片只有一项：
 
@@ -161,13 +163,13 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 
 选择「core 在发送前向引擎索取」而不是「引擎把补丁交给 core 的方法」的理由:请求在 `src/services/chat/store.ts` 的发送路径里同步构造并立即发出,同一时刻可能有多个会话并发流式,失败重试还会重新构造一次;若由引擎把补丁预先交给 core,core 必须缓存补丁并按请求归属,而归属信息只在构造点才存在。索取形态不保存任何请求状态,core 侧的落点是一个只做字段写入的纯函数。
 
-### 供应端点挂载点与注册表
+### 供应端点能力与注册表
 
 插件可以声明它能提供哪些供应端点（provider endpoint，下称端点），但只交描述、不交执行代码：装配请求与解析回流的实现在 `dsc-core`，凭证由引擎在执行时取用，插件两头都碰不到。这里的「端点」与插件安装来源（`inner`、`outer` 等）不是同一个概念，文档与界面不用「来源」指代它。
 
 | 环节 | 位置 | 说明 |
 |:---:|:---:|:---:|
-| 挂载点 | `provider:source` | 插件清单申请的能力；未申请时调用注册接口抛 `PluginCapabilityError` |
+| 能力 | `provider:source` | 插件清单申请的能力；未申请时调用注册接口抛 `PluginCapabilityError` |
 | 注册接口 | `context.provider.registerSource(descriptor)` | 登记一份端点描述；只登记，不执行，不发起网络请求 |
 | 注册表 | `sources.ts` | 合并全部插件的声明，能力清单按端点 id 取并集 |
 | 凭证 | `credentials.ts` | 按「端点 id + 规范化后的基址」存 IndexedDB，只在执行时读取；不从引擎门面导出 |
@@ -356,7 +358,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 
 只有一半签名材料时,引擎日志会记一条说明。预检通过后返回待安装信息,包含 id、名称、版本、作者、许可证、签名状态与「是否已安装同 id」;同 id 已存在时提交返回 `duplicate`,不覆盖已有记录。
 
-提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝;`meta.json` 没写 `contributions` 时,用产物导出清单的贡献点补齐,规则与在线安装一致。安装记录写入 `source_type: "local"`、留空 `source_url`、`data_base` 与 `plugin_base`,按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
+提交阶段用包内代码建 Blob URL 加载模块。清单优先由 `meta.json` 的 `capabilities` 推导(与插件市场同一 id 规则),缺该字段时用产物导出的 `manifest`,两者都没有时按 `invalid-manifest` 拒绝;`meta.json` 没写 `mounts` 时,用产物导出清单的挂载点补齐,规则与在线安装一致。安装记录写入 `source_type: "local"`、留空 `source_url`、`data_base` 与 `plugin_base`,按包内材料填 `author_pub` 与 `author_sig`,并保存 `code`;离线包不写 `eec` 与 `sig`。
 
 ### 内置插件
 
@@ -364,7 +366,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 
 ### 隔离与降级
 
-- `activate` 与 `deactivate` 各自有超时,抛错只把该插件标记为 `failed`,引擎与其他插件继续工作;激活中途失败会先撤销已注册的贡献点与释放函数,再标记失败。
+- `activate` 与 `deactivate` 各自有超时,抛错只把该插件标记为 `failed`,引擎与其他插件继续工作;激活中途失败会先撤销已注册的挂载点与释放函数,再标记失败。
 - 事件分发逐个插件、逐个处理器隔离,同步抛错与异步拒绝都只写入该插件日志。
 - 请求前处理器同样逐个插件隔离:超时与抛错只让本次补丁作废,请求按原参数发出,引擎与其他插件继续工作。
 - 能力调用失败不会破坏核心状态：核心侧只做只读视图转换或既有 store 方法调用。
@@ -379,7 +381,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 注册与加载 | `plugin-manager` 的安装操作、`cordis-plugin-loader`、`client/modules` 的懒注册表 | `install()` 注册实例;`installFromUrl()` 运行时 `import` | `index.ts`、`loader.ts` |
 | 生命周期 | Cordis fiber 的挂载、激活与 `ctx.effect` 释放 | `registered` / `active` / `inactive` / `failed`,停用时执行 disposers | `index.ts`、`registry.ts` |
 | 服务与依赖注入 | `ctx.<key>` 服务与 `inject` 依赖 | `PluginContext` 能力对象与 `dependencies` 校验 | `capabilities.ts`、`registry.ts` |
-| 能力/贡献点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册贡献点并返回释放函数 | `capabilities.ts` |
+| 能力/挂载点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册挂载点并返回释放函数 | `capabilities.ts` |
 | 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;联网只经 `context.net`(第三方插件不可用)与 `context.assets`(只读远端资产);插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
 | 供应端点注册 | 服务注册与 `ctx.provide`,按提供方合并 | 插件交端点描述,引擎合并成注册表并给出能力矩阵与冲突 | `sources.ts`、`../dsc-core/source-catalog.ts` |
@@ -412,7 +414,7 @@ engine?.install(
     version: '1.0.0',
     engines: '^1.0.0',
     capabilities: ['sessions:list', 'events:session'],
-    contributions: ['session:changed'],
+    mounts: ['session:changed'],
   },
   {
     activate(context) {
@@ -424,7 +426,7 @@ engine?.install(
 )
 await engine?.activate('demo-plugin')
 
-// 请求前补丁：申请 chat:request 并声明贡献点 chat:before-request
+// 请求前补丁：申请 chat:request 并声明挂载点 chat:before-request
 engine?.install(
   {
     id: 'demo-patch',
@@ -432,7 +434,7 @@ engine?.install(
     version: '1.0.0',
     engines: '^1.0.0',
     capabilities: ['chat:request'],
-    contributions: ['chat:before-request'],
+    mounts: ['chat:before-request'],
   },
   {
     activate(context) {

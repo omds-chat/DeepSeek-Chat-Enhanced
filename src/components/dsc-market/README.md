@@ -72,16 +72,16 @@ dsc-market/
 | `name` | `id`、`name` | `name` 收敛不出合规 id 时整份清单为 null |
 | `version` | `version` | 不是三段数字时整份清单为 null |
 | `capabilities` | `capabilities` | 缺字段或含能力表外的名字时整份清单为 null;重复项自动去重 |
-| `contributions` | `contributions` | 缺字段或含贡献点表外的名字时清单不带该字段;重复项自动去重 |
+| `mounts` | `mounts` | 缺字段或含挂载点表外的名字时清单不带该字段;重复项自动去重 |
 | `dependencies.dsc` | `engines` | 缺字段时不填 |
 
-能力与贡献点的关系是「能力必须齐全、贡献点可以后补」:
+能力与挂载点的关系是「能力必须齐全、挂载点可以后补」:
 
 - `capabilities` 决定清单能否由 `meta.json` 推出来。它缺失或不合规时市场不给清单,安装时由引擎整份使用产物导出的 `manifest`。
-- `contributions` 是独立字段。`meta.json` 声明了就原样带进清单,并且显式空数组按「不订阅任何贡献点」处理;没声明时清单不带该字段,由引擎在安装阶段用产物导出的 `manifest.contributions` 补齐。因此市场里尚未补 `contributions` 的旧条目仍能登记事件处理器与请求前处理器;想让市场侧解析结果直接反映贡献点,在 `meta.json` 里补上即可。
-- 清单里的贡献点仍然要过引擎的安装校验:名字必须在贡献点表内,否则安装被拒,原因为 `unknown-contribution`。
+- `mounts` 是独立字段。`meta.json` 声明了就原样带进清单,并且显式空数组按「不声明任何挂载点」处理;没声明时清单不带该字段,由引擎在安装阶段用产物导出的 `manifest.mounts` 补齐。因此市场里尚未补 `mounts` 的旧条目仍能登记事件处理器与请求前处理器;想让市场侧解析结果直接反映挂载点,在 `meta.json` 里补上即可。
+- 清单里的挂载点仍然要过引擎的安装校验:名字必须在挂载点表内,否则安装被拒,原因为 `unknown-mount`。
 
-市场与离线包共用同一条清单规则:两处都由 `meta.json` 推导清单,都靠引擎在安装阶段补齐 `contributions`,因此同一份 `meta.json` 经两条安装路径得到同一份贡献点。
+市场与离线包共用同一条清单规则:两处都由 `meta.json` 推导清单,都靠引擎在安装阶段补齐 `mounts`,因此同一份 `meta.json` 经两条安装路径得到同一份挂载点。
 
 ### 三层清单校验
 
@@ -243,7 +243,7 @@ client?.addSource('自定义', ['https://example.com/plugins/'])
 client?.setBaseUrls('awesome-dsc-plugin', ['https://cdn.example.com/'])
 client?.moveSource('dsc-inner-plugin', -1)
 client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
-client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(嵌套路径优先,旧站点的扁平路径兼容,最旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单;manifest 由该版本 meta.json 推导,缺 contributions 时由引擎在安装阶段用产物导出的 manifest 补齐
+client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(嵌套路径优先,旧站点的扁平路径兼容,最旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单;manifest 由该版本 meta.json 推导,缺 mounts 时由引擎在安装阶段用产物导出的 manifest 补齐
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 await client?.checkUpdates([{ id: 'demo', version: '1.0.0', sourceUrl: 'https://example.com/plugins/a/demo/1.0.0/plugin.js' }]) // 更新检查：Map<id, { status: 'outdated' | 'latest', latest }>
 client?.reinstallPlan(target, '1.1.0')  // 重新安装计划：{ plan, trust, trustFailure }，地址结构不符时为 null

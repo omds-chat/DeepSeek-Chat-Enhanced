@@ -329,13 +329,13 @@ export const installPluginEngine = (): PluginEngine => {
     })
   }
 
-  /** 把核心事件分发给声明了贡献点的插件；单个插件出错不影响其他插件 */
+  /** 把核心事件分发给声明了该挂载点的插件；单个插件出错不影响其他插件 */
   const dispatch = (event: CoreEvent): void => {
     for (const record of store.all()) {
       if (record.state !== 'active') {
         continue
       }
-      const handlers = record.contributions.get(event.type)
+      const handlers = record.mounts.get(event.type)
       if (!handlers) {
         continue
       }
@@ -510,7 +510,7 @@ export const installPluginEngine = (): PluginEngine => {
       return true
     } catch (error) {
       // 激活中途失败时同样要撤销已注册的处理器与端点声明，避免残留订阅与端点
-      store.clearContributions(record)
+      store.clearMounts(record)
       store.runDisposers(record)
       forgetSources(id)
       store.markFailed(record, describeError(error))
@@ -536,7 +536,7 @@ export const installPluginEngine = (): PluginEngine => {
     } catch (error) {
       store.pushLog(record, describeError(error))
     } finally {
-      store.clearContributions(record)
+      store.clearMounts(record)
       store.runDisposers(record)
       // 停用后不再提供端点：声明随停用撤销，注册表随即回到其他声明方给出的定义
       forgetSources(id)
@@ -608,7 +608,7 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 运行时安装：清单以宿主传入的为准，未传时用产物自带的 manifest 导出，
-   * 传入的清单缺 contributions 时用产物导出清单的贡献点补齐，两者都没有则按清单非法拒绝。
+   * 传入的清单缺 mounts 时用产物导出清单的挂载点补齐，两者都没有则按清单非法拒绝。
    * 安装阶段下载产物字节并保存代码文本，带签名材料时先对原始字节验签，通过后才加载模块。
    */
   const installFromUrl = async (
@@ -694,9 +694,9 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id: target, reason: pluginReasonText('invalid-plugin') })
       return { ok: false, reason: 'invalid-plugin', detail }
     }
-    // 清单以调用方传入的为准；meta.json 推导的清单可能没有 contributions，用产物导出的清单补齐
+    // 清单以调用方传入的为准；meta.json 推导的清单可能没有 mounts，用产物导出的清单补齐
     const resolved =
-      manifest === undefined ? loaded.manifest : store.withArtifactContributions(manifest, loaded.manifest)
+      manifest === undefined ? loaded.manifest : store.withArtifactMounts(manifest, loaded.manifest)
     if (!resolved) {
       report('pluginManifestMissing', { id: url })
       return { ok: false, reason: 'invalid-manifest' }
@@ -739,7 +739,7 @@ export const installPluginEngine = (): PluginEngine => {
 
   /**
    * 提交离线包：用包内代码建模块并注册。
-   * 包内 meta.json 推导的清单缺 contributions 时，用产物导出的清单补齐。
+   * 包内 meta.json 推导的清单缺 mounts 时，用产物导出的清单补齐。
    * 同 id 已存在时直接拒绝，不覆盖已有记录。
    */
   const commitLocalPackage = async (inspection: PackageInspection): Promise<InstallResult> => {
@@ -759,11 +759,11 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id: fallbackId, reason: pluginReasonText('load-failed') })
       return { ok: false, reason: 'load-failed', detail }
     }
-    // 离线包由 meta.json 推导的清单同样可能缺 contributions，按同一口径用产物导出的清单补齐
+    // 离线包由 meta.json 推导的清单同样可能缺 mounts，按同一口径用产物导出的清单补齐
     const resolved =
       inspection.manifest === null
         ? loaded.manifest
-        : store.withArtifactContributions(inspection.manifest, loaded.manifest)
+        : store.withArtifactMounts(inspection.manifest, loaded.manifest)
     if (!resolved) {
       // 插件名收敛不出合规 id 时，把原因指向命名而不是笼统的清单非法
       if (inspection.manifestProblem) {
@@ -1095,7 +1095,7 @@ export const installPluginEngine = (): PluginEngine => {
       enabled: record.enabled,
       dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],
-      contributions: [...record.contributions.keys()],
+      mounts: [...record.mounts.keys()],
       error: record.error,
     }))
 
@@ -1150,14 +1150,14 @@ export type {
   BeforeRequestPreview,
   CallOptions,
   ChatCapability,
-  ContributionHandler,
-  ContributionPoint,
   DscPlugin,
   EventsCapability,
   InstallResult,
   LoadedPlugin,
   LocalPackageInfo,
   LocalPackageInspection,
+  MountHandler,
+  MountPoint,
   NetCapability,
   NetResponse,
   PluginContext,
@@ -1179,7 +1179,7 @@ export type {
   StorageCapability,
   UiCapability,
 } from './types.js'
-export { CONTRIBUTION_POINTS } from './types.js'
+export { MOUNT_POINTS } from './types.js'
 /** 供应端点注册表：冲突判定与执行错误；注册表的读写入口经 engine.sourceRegistry() 暴露 */
 export { PluginSourceError } from './sources.js'
 export type {
