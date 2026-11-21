@@ -10,6 +10,7 @@ dsc-plugin-engine/
 ├── types.ts        # 插件契约（manifest、context、contribution）
 ├── loader.ts       # 浏览器内加载插件运行时 js 产物
 ├── capabilities.ts # 能力白名单与受限代理（安全封装层）
+├── requestPatch.ts # 请求补丁的白名单、范围裁剪与合并
 ├── registry.ts     # 插件注册表、依赖与冲突校验、内置 id 集合
 ├── db.ts           # 安装记录持久化（IndexedDB，不可用时降级为内存）
 ├── storage.ts      # 旧版 localStorage 记录的读取与清理，仅用于迁移
@@ -34,7 +35,7 @@ dsc-plugin-engine/
 | `dependencies` | 否 | 依赖的插件 id,安装时须已存在,激活时须已激活 |
 | `conflicts` | 否 | 冲突的插件 id,同时安装会被拒绝 |
 | `capabilities` | 是 | 申请的能力,必须在核心能力表内且不得重复 |
-| `contributions` | 否 | 订阅的贡献点,必须在贡献点表内且不得重复 |
+| `contributions` | 否 | 订阅的贡献点(`session:changed`、`chat:before-request`),必须在贡献点表内且不得重复 |
 
 清单的 `id` 由插件名收敛而来：去掉 `@scope/` 前缀后转小写,非 `[a-z0-9-]` 的字符折叠为连字符,再去掉首尾连字符。收敛结果立即按清单规则 `^[a-z][a-z0-9-]{2,63}$` 校验,字符形态或长度不合规时安装按 `invalid-manifest` 拒绝,原因说明指向插件命名而不是笼统的清单非法。规则只有 `pluginId.ts` 一处实现,离线包、在线安装与插件市场都引用它,同一插件经不同路径得到同一个 id。
 
@@ -68,12 +69,13 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
 | `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
 | `plugins:storage` | 100 次 / 10 秒 | 同步调用 | `context.storage.get`、`set`、`remove` |
+| `chat:request` | 10 次 / 10 秒(仅登记) | 同步调用,单次预算 10 毫秒 | `context.chat.onBeforeRequest` |
 
 表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session` 只登记处理器、不逐次调用,同样没有超时。超时只对异步成员生效。
 
 超限抛 `PluginRateLimitError`,未授予抛 `PluginCapabilityError`,超时抛 `PluginTimeoutError`,取消抛 `PluginAbortError`;限流与超时同时用既有 Toast 提示。
 
-`plugins:data-clear` 是引擎管理专用能力,不在 `CORE_CAPABILITIES` 内,插件清单申请它时按 `unknown-capability` 拒绝,也不会出现在插件上下文中。`net:fetch-post` 同理：它是 `context.net.postJson` 背后的独立能力标识,有自己的限流窗口与超时,插件清单不能申请,只能通过 `net:fetch` 的授予间接使用。
+`plugins:data-clear` 是引擎管理专用能力,不在 `CORE_CAPABILITIES` 内,插件清单申请它时按 `unknown-capability` 拒绝,也不会出现在插件上下文中。`net:fetch-post` 同理：它是 `context.net.postJson` 背后的独立能力标识,有自己的限流窗口与超时,插件清单不能申请,只能通过 `net:fetch` 的授予间接使用。`chat:request-source` 是第三个引擎专用标识,只在启动时登记一次补丁来源,同样不进入插件上下文。
 
 ### net:fetch 的可见性
 
@@ -84,6 +86,43 @@ unload       → 移除记录   （存在已激活的下游依赖时拒绝）
 请求约束全部由 `dsc-core` 的 `net.ts` 落实：只允许 https 与 GET,不发送 Cookie 与自定义请求头(`credentials: 'omit'`),只接受 `text/*` 与 `application/json` 响应,响应体上限 512KB,超时 10 秒并用 `AbortController` 真正中止请求。网络失败与解析失败由插件自行降级,引擎不弹宿主提示。
 
 `context.net.postJson` 面向不计结果的计数请求：只允许 https 与 JSON 请求体,请求体与响应体上限各 4KB,超时 5 秒,不跟随重定向,响应体丢弃只回传状态码。它复用 `net:fetch` 的授予口径,但用自己的限流窗口,避免计数请求挤占读取预算。
+
+### 请求前补丁
+
+`chat:request` 只服务一个成员：`context.chat.onBeforeRequest(handler)`。插件在激活时登记处理器,引擎在每次发请求前同步调用一次,把处理器返回的补丁交给 `dsc-core` 写进请求参数。登记要求清单同时申请能力 `chat:request` 与贡献点 `chat:before-request`,缺任一项抛 `PluginCapabilityError`;登记与 `events.on` 一样返回释放函数,停用或卸载时由引擎执行。
+
+处理器拿到的切片只有一项：
+
+| 切片字段 | 内容 | 只给这一项的理由 |
+|:---:|:---:|:---:|
+| `lastUserMessage` | 当前请求里最后一条用户消息的文本 | 补丁一般按本轮提问决定是否生效,给出整段会话等于把裁剪责任移出 core |
+
+补丁字段与收敛规则：越界按边界裁剪,未知字段静默丢弃,空白字符串按未提供处理。
+
+| 字段 | 形态 | 范围 | 落到请求的字段 |
+|:---:|:---:|:---:|:---:|
+| `temperature` | 数字 | 0 到 2 | `temperature` |
+| `topP` | 数字 | 0 到 1 | `top_p` |
+| `maxTokens` | 正整数 | 1 到 4096,小数四舍五入 | `max_tokens` |
+| `stop` | 字符串数组 | 最多 4 条,每条最多 32 字符 | `stop_sequences` |
+| `systemPromptAppend` | 字符串 | 最多 2000 字符 | 追加到 `system` 之后,以换行分隔 |
+| `systemPromptReplace` | 字符串 | 最多 8000 字符 | 整体替换 `system`;与追加同时存在时追加落在替换之后 |
+
+多个插件同时登记时按登记顺序合并：标量以后登记者为准,`stop` 取并集并在 4 条处截断,`systemPromptAppend` 按顺序以换行拼接后再按长度截断,`systemPromptReplace` 以后登记者为准。
+
+| 约束 | 规定 |
+|:---:|:---:|
+| 时机 | 请求参数构造完成后、真正 `fetch` 之前,每个请求一次 |
+| 预算 | 全部处理器共用 10 毫秒;调用前与返回后各判一次,单个处理器自身超预算同样按超时处理 |
+| 超时或抛错 | 整份补丁作废,请求按原参数发出,不阻断请求 |
+| 日志 | 超时、抛错、越界都写引擎日志;抛错同时写该插件的插件日志 |
+| 提示 | 超时与越界各按插件第一次出现时提示一次(`pluginCallTimeout`、`pluginRequestPatchClamped`),不逐次打扰 |
+
+同步计算无法中断:10 毫秒是引擎在处理器之间与处理器返回后能判定的边界,不是强制终止;超预算的处理器仍会跑完当前语句,它的返回值被丢弃。
+
+落点在 `dsc-core`:引擎启动时经 `chat:request-source` 登记一个「给切片、返回补丁」的回调,`dsc-core/request-patch.ts` 在发送路径上调用它并写进请求。方向与 `events:session` 的订阅一致——core 在需要时回调引擎,引擎既不缓存请求,也不持有请求对象。
+
+选择「core 在发送前向引擎索取」而不是「引擎把补丁交给 core 的方法」的理由:请求在 `src/services/chat/store.ts` 的发送路径里同步构造并立即发出,同一时刻可能有多个会话并发流式,失败重试还会重新构造一次;若由引擎把补丁预先交给 core,core 必须缓存补丁并按请求归属,而归属信息只在构造点才存在。索取形态不保存任何请求状态,core 侧的落点是一个只做字段写入的纯函数。
 
 ### 持久化与启动恢复
 
@@ -217,6 +256,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 
 - `activate` 与 `deactivate` 各自有超时,抛错只把该插件标记为 `failed`,引擎与其他插件继续工作;激活中途失败会先撤销已注册的贡献点与释放函数,再标记失败。
 - 事件分发逐个插件、逐个处理器隔离,同步抛错与异步拒绝都只写入该插件日志。
+- 请求前处理器同样逐个插件隔离:超时与抛错只让本次补丁作废,请求按原参数发出,引擎与其他插件继续工作。
 - 能力调用失败不会破坏核心状态：核心侧只做只读视图转换或既有 store 方法调用。
 - 插件日志按插件保存在内存,上限 100 条,经 `engine.logs(id)` 读取,不写控制台;引擎自身日志经 `engine.engineLogs()` 读取。
 - 启动恢复逐个插件隔离,单个插件加载失败不影响其余插件与宿主渲染。
@@ -272,6 +312,29 @@ engine?.install(
   }
 )
 await engine?.activate('demo-plugin')
+
+// 请求前补丁：申请 chat:request 并声明贡献点 chat:before-request
+engine?.install(
+  {
+    id: 'demo-patch',
+    name: 'Demo Patch',
+    version: '1.0.0',
+    engines: '^1.0.0',
+    capabilities: ['chat:request'],
+    contributions: ['chat:before-request'],
+  },
+  {
+    activate(context) {
+      context.chat.onBeforeRequest((preview) => {
+        if (!preview.lastUserMessage.includes('简短')) {
+          return null
+        }
+        return { maxTokens: 256, systemPromptAppend: '请尽量简短。' }
+      })
+    },
+  }
+)
+await engine?.activate('demo-patch')
 
 // 运行时安装：清单由产物自带的 manifest 导出提供
 await engine?.installFromUrl('https://example.com/demo-plugin.js')

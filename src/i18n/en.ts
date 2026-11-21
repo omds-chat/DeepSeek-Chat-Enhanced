@@ -196,6 +196,7 @@ export const en = {
   pluginCapabilityDenied: 'Plugin {id} was not granted {capability}',
   pluginCallRateLimited: 'Plugin {id} called {capability} too often',
   pluginCallTimeout: 'Plugin {id} timed out calling {capability}',
+  pluginRequestPatchClamped: 'The request patch of plugin {id} was out of range and got clipped',
   pluginRestoreFailed: 'Plugin {id} failed to restore: {reason}',
   pluginDataQuotaExceeded: 'Local data for plugin {id} exceeds the 64KB limit',
   pluginDataInvalid: 'Data written by plugin {id} cannot be serialized',

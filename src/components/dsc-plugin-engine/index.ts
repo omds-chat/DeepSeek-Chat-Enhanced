@@ -14,6 +14,8 @@ import {
   type CoreApi,
   type CoreCredential,
   type CoreEvent,
+  type CoreRequestPatch,
+  type CoreRequestPreview,
 } from '../dsc-core/index.js'
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
@@ -30,6 +32,7 @@ import {
   type PackageInspection,
 } from './localPackage.js'
 import { isPluginSourceAllowed, loadPluginModuleFromCode, resolvePluginModule } from './loader.js'
+import { convergePatch, mergePatch, REQUEST_PATCH_BUDGET_MS } from './requestPatch.js'
 import { toPluginId } from './pluginId.js'
 import * as store from './registry.js'
 import {
@@ -315,6 +318,79 @@ export const installPluginEngine = (): PluginEngine => {
     }
   }
 
+  /** 补丁相关的提示按「插件 + 原因」去重，每项只提示一次，避免每次请求都打扰用户 */
+  const patchNotices = new Set<string>()
+
+  const noticeOnce = (key: string, notify: () => void) => {
+    if (patchNotices.has(key)) {
+      return
+    }
+    patchNotices.add(key)
+    notify()
+  }
+
+  /**
+   * 请求前收集补丁：按登记顺序调用各已激活插件的处理器，全部处理器共用一份时间预算。
+   * 任一处超时或抛错时整份补丁作废，请求按原参数发出；两种情形都只写引擎日志，不阻断请求。
+   * 同步调用无法中断，超时按「处理点已超预算」判定：调用前与调用后各判一次，
+   * 因此单个处理器自身超时也按超时处理。
+   */
+  const collectRequestPatch = (preview: CoreRequestPreview): CoreRequestPatch | null => {
+    const startedAt = Date.now()
+    const overdue = () => Date.now() - startedAt > REQUEST_PATCH_BUDGET_MS
+    const abandoned = (id: string, called: number): null => {
+      pushEngineLog(
+        'chat:before-request: budget ' +
+          String(REQUEST_PATCH_BUDGET_MS) +
+          'ms exceeded after ' +
+          String(called) +
+          ' handler(s), request kept unchanged'
+      )
+      noticeOnce(id + ':timeout', () =>
+        report('pluginCallTimeout', { id, capability: 'chat:before-request' })
+      )
+      return null
+    }
+    let merged: CoreRequestPatch | null = null
+    let called = 0
+    for (const record of store.all()) {
+      if (record.state !== 'active' || record.requestHandlers.size === 0) {
+        continue
+      }
+      const id = record.manifest.id
+      for (const handler of [...record.requestHandlers]) {
+        if (overdue()) {
+          return abandoned(id, called)
+        }
+        called += 1
+        let raw: unknown
+        try {
+          raw = handler(preview)
+        } catch (error) {
+          const detail = describeError(error)
+          pushEngineLog(
+            'chat:before-request ' + id + ': handler threw, request kept unchanged: ' + detail
+          )
+          store.pushLog(record, 'chat:before-request: ' + detail)
+          return null
+        }
+        if (overdue()) {
+          return abandoned(id, called)
+        }
+        const converged = convergePatch(raw)
+        if (!converged) {
+          continue
+        }
+        if (converged.clamped) {
+          pushEngineLog('chat:before-request ' + id + ': patch clamped to limits')
+          noticeOnce(id + ':clamped', () => warn('pluginRequestPatchClamped', { id }))
+        }
+        merged = merged === null ? converged.patch : mergePatch(merged, converged.patch)
+      }
+    }
+    return merged
+  }
+
   const register = (
     manifest: PluginManifest,
     plugin: DscPlugin,
@@ -445,6 +521,8 @@ export const installPluginEngine = (): PluginEngine => {
       return { removed: false, hasLeftoverData: leftover }
     }
     // 卸载只移除注册表与持久化记录；插件本地数据保留，交由设置的数据管理清理
+    patchNotices.delete(id + ':timeout')
+    patchNotices.delete(id + ':clamped')
     persist()
     return { removed: true, hasLeftoverData: leftover }
   }
@@ -968,6 +1046,11 @@ export const installPluginEngine = (): PluginEngine => {
 
   // 引擎与应用同生命周期，事件订阅不需要单独释放
   void core.subscribe({ credential, ticket: issueTicket('events:session') }, dispatch)
+  // 请求补丁：core 在发请求前同步索取一次，引擎只负责收集与合并，不接触请求对象
+  core.setRequestPatchSource(
+    { credential, ticket: issueTicket('chat:request-source') },
+    collectRequestPatch
+  )
 
   for (const id of BUILTIN_PLUGIN_IDS) {
     store.markBuiltinPlugin(id)
@@ -1004,7 +1087,10 @@ export const installPluginEngine = (): PluginEngine => {
 export const getPluginEngine = (): PluginEngine | null => engine
 
 export type {
+  BeforeRequestHandler,
+  BeforeRequestPreview,
   CallOptions,
+  ChatCapability,
   ContributionHandler,
   ContributionPoint,
   DscPlugin,
@@ -1022,6 +1108,7 @@ export type {
   PluginSourceType,
   PluginState,
   PluginStateView,
+  RequestPatch,
   SessionsCapability,
   SettingsCapability,
   SignatureState,

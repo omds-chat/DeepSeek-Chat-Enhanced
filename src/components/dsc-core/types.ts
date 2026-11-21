@@ -14,9 +14,11 @@ export type CoreCapabilityId =
   | 'settings:locale'
   | 'net:fetch'
   | 'plugins:storage'
+  | 'chat:request'
   // 引擎管理专用，不在 CORE_CAPABILITIES 内，插件申请时按未知能力拒绝
   | 'net:fetch-post'
   | 'plugins:data-clear'
+  | 'chat:request-source'
 
 /** 全部核心能力；引擎据此校验插件申请 */
 export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
@@ -28,6 +30,7 @@ export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
   'settings:locale',
   'net:fetch',
   'plugins:storage',
+  'chat:request',
 ]
 
 /** 会话摘要视图 */
@@ -73,6 +76,25 @@ export type CorePostResult = {
   status: number
 }
 
+/** 请求前的只读切片；只给最后一条用户消息文本，不给整段会话 */
+export type CoreRequestPreview = { readonly lastUserMessage: string }
+
+/**
+ * 请求补丁；字段由引擎收敛到白名单与范围内，core 只把它们写进请求。
+ * 每个字段都可缺省，缺省表示不改这一项。
+ */
+export type CoreRequestPatch = {
+  temperature?: number
+  topP?: number
+  maxTokens?: number
+  stop?: string[]
+  systemPromptAppend?: string
+  systemPromptReplace?: string
+}
+
+/** 请求补丁来源；core 在发请求前同步调用一次，返回 null 表示不改请求 */
+export type CoreRequestPatchSource = (preview: CoreRequestPreview) => CoreRequestPatch | null
+
 /** 插件数据操作；三条能力共用 plugins:storage 服务 */
 export type CoreStorageCall =
   | { op: 'read'; pluginId: string; key: string }
@@ -100,4 +122,6 @@ export type CoreApi = {
   removePluginEntry(call: CoreCall, pluginId: string, key: string): void
   /** 清除单个插件的全部数据；只给引擎用于卸载清理 */
   clearPluginData(call: CoreCall, pluginId: string): void
+  /** 登记请求补丁来源；只有引擎可以登记，传 null 撤销登记 */
+  setRequestPatchSource(call: CoreCall, source: CoreRequestPatchSource | null): void
 }

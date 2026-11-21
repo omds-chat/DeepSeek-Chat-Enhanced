@@ -104,7 +104,7 @@ export const activate = (context) => {
 |:---:|:---:|
 | `export const manifest` | 安装依据。用户从地址安装时不必再提供清单;写在 `default` 导出对象上也能识别,模块顶层的具名导出优先 |
 | `capabilities` | 申请的能力,必须在核心能力表内且不得重复。未申请的能力被调用时抛 `PluginCapabilityError` |
-| `contributions` | 声明订阅的贡献点。只有声明了 `session:changed` 才能调用 `context.events.on('session:changed', ...)` |
+| `contributions` | 声明订阅的贡献点。只有声明了 `session:changed` 才能调用 `context.events.on('session:changed', ...)`;只有声明了 `chat:before-request` 才能调用 `context.chat.onBeforeRequest(...)` |
 | `activate(context)` | 启动入口,可返回 Promise;抛错或超过 5 秒会让插件进入 `failed`,引擎与其他插件继续运行 |
 | `deactivate()` | 停用入口,可选,可返回 Promise,超时 3 秒;之后引擎执行 `events.on` 返回的释放函数并清空贡献点 |
 
@@ -123,17 +123,71 @@ export const activate = (context) => {
 | `notify` | 全部插件 | `context.ui.notify` | 10 次 / 10 秒 |
 | `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
+| `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
 | `net:fetch` | 仅内置插件 | `context.net.getText`、`context.net.postJson` | 10 次 / 10 秒 |
 
 `context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
 
 上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时。
 
+`chat:request` 的限流只算登记次数,引擎每次请求前调用处理器不再占用名额;处理器本身有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
+
 `net:fetch` 只对内置插件开放。第三方插件在清单里申请它时,安装结果为 `unknown-capability`,与申请一个不存在的能力表现一致;调用层还会再校验一次。第三方插件需要联网时由宿主决定是否开放,口径见上文「[联网](#联网)」。
 
 `context.net.postJson` 只发一次 JSON 请求体,不等待响应内容:只允许 https,请求体与响应体上限各 4KB,超时 5 秒,不跟随重定向,响应体被丢弃。它面向不计结果的计数类请求,插件清单仍然只声明 `net:fetch`。
 
 各能力的完整签名与可见数据范围见 [dsc 插件开发规范](../basic/plugin-develop-spec.md)。
+
+### 请求前补丁
+
+申请 `chat:request` 并在清单里声明贡献点 `chat:before-request` 后,插件可以为每次请求提供参数补丁:
+
+```js
+export const manifest = {
+  id: 'dsc-demo-patch',
+  name: 'Demo Patch',
+  version: '1.0.0',
+  engines: '^1.0.0',
+  capabilities: ['chat:request'],
+  contributions: ['chat:before-request'],
+}
+
+export const activate = (context) => {
+  context.chat.onBeforeRequest((preview) => {
+    // 只在用户要求简短时才收紧输出上限
+    if (!preview.lastUserMessage.includes('简短')) {
+      return null
+    }
+    return { maxTokens: 256, systemPromptAppend: '请尽量简短。' }
+  })
+}
+```
+
+处理器拿到的切片只有一项 `lastUserMessage`,即本轮请求里最后一条用户消息的文本;不给整段会话,也不给模型、思考与工具开关。返回 `null` 或什么都不返回表示不改请求。
+
+补丁字段与范围:越界按边界裁剪,未知字段静默丢弃,空白字符串按未提供处理。
+
+| 字段 | 形态 | 范围 | 效果 |
+|:---:|:---:|:---:|:---:|
+| `temperature` | 数字 | 0 到 2 | 采样温度 |
+| `topP` | 数字 | 0 到 1 | 核采样 |
+| `maxTokens` | 正整数 | 1 到 4096 | 单轮输出上限 |
+| `stop` | 字符串数组 | 最多 4 条,每条最多 32 字符 | 停止词 |
+| `systemPromptAppend` | 字符串 | 最多 2000 字符 | 追加到系统提示词之后 |
+| `systemPromptReplace` | 字符串 | 最多 8000 字符 | 整体替换系统提示词 |
+
+多个插件同时登记时按登记顺序合并:标量以后登记者为准,`stop` 取并集,`systemPromptAppend` 按顺序拼接。
+
+调用约束:
+
+| 情形 | 行为 |
+|:---:|:---:|
+| 未申请 `chat:request` 或未声明 `chat:before-request` | 抛 `PluginCapabilityError`,并提示 `pluginCapabilityDenied` |
+| 全部处理器共用 10 毫秒预算 | 超预算时整份补丁作废,请求按原参数发出 |
+| 处理器抛错 | 整份补丁作废,请求按原参数发出 |
+| 补丁被裁剪 | 按边界裁剪后生效,首次提示一次 `pluginRequestPatchClamped` |
+
+补丁不阻断请求:超时或抛错时请求照常发出,原因只写引擎日志(抛错同时写该插件的插件日志),插件列表里不会因此变成 `failed`。同步计算无法中断,10 毫秒是引擎在处理器返回后能判定的边界,不是强制终止。
 
 ## 本地加载验证
 
@@ -221,7 +275,7 @@ npm 包的要点:
 |:---:|:---:|:---:|
 | `invalid-manifest` | `id`、`name`、`version` 不符合规则,或产物未导出清单且调用时未传入清单 | 修正清单字段;确保产物导出 `manifest` |
 | `unknown-capability` | 申请了能力表之外的能力,或第三方插件申请 `net:fetch` | 只申请能力清单内的能力 |
-| `unknown-contribution` | `contributions` 不在贡献点表内 | 只使用 `session:changed` |
+| `unknown-contribution` | `contributions` 不在贡献点表内 | 只使用 `session:changed` 与 `chat:before-request` |
 | `incompatible-version` | `engines` 与宿主 `1.0.0` 不匹配,或写成了 `>=1.0.0 <2.0.0` 这类组合范围 | 把 `engines` 改成单段表达式 |
 | `duplicate` | 同 id 插件已存在 | 先卸载旧插件再安装 |
 | `missing-dependency` | `dependencies` 中的插件未安装 | 先安装依赖 |
@@ -246,6 +300,8 @@ npm 包的要点:
 | 抛 `PluginTimeoutError` | 单次异步调用超过 3 秒 | 缩短单次调用耗时 |
 | 抛 `PluginAbortError` | 传入的 `signal` 已取消 | 检查取消逻辑 |
 | 抛 `PluginDataError` | 数据超过 64KB,或值无法 JSON 序列化 | 精简数据;移除函数、`undefined` 与循环引用 |
+| 请求参数没有变化 | 处理器超过 10 毫秒预算,或抛错;越界值被裁剪 | 查看引擎日志里的 `chat:before-request` 记录,把耗时压到 10 毫秒内并检查抛错 |
+| 系统提示词被整体替换 | 同时返回了 `systemPromptReplace` | 只想补充说明时改用 `systemPromptAppend` |
 | 卸载被拒绝 | 有已启用的插件依赖它 | 先停用依赖方再卸载 |
 
 ## 延伸阅读

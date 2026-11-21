@@ -30,6 +30,7 @@
 | 安装记录持久化(`<APP_NAME>-plugins` 的字段集合) | 本仓库 IndexedDB 的实现细节 |
 | 引擎安装接口与离线包的两步安装 | 本仓库 `dsc-plugin-engine` 的宿主接口 |
 | 错误与降级的原因代码与用户可见文案 | 与本仓库的 `i18n` 文案键配套 |
+| 请求前补丁(`chat:request` 与贡献点 `chat:before-request`) | 模板规范尚未覆盖,补丁字段、范围裁剪与合并规则由本仓库引擎实现界定,写入路径在 `dsc-core` 的发送路径上 |
 
 ## 引擎安装接口
 
@@ -176,6 +177,9 @@
 | 离线包 `plugin.js` 超过 2 MB | 预检拒绝,原因 `package-too-large` |
 | 激活抛错或超时 | 插件标记 `failed`,引擎与其他插件继续运行 |
 | 未授予的能力被调用 | 抛 `PluginCapabilityError`,并提示 `pluginCapabilityDenied` |
+| 未声明 `chat:before-request` 却登记请求前处理器 | 抛 `PluginCapabilityError`,并提示 `pluginCapabilityDenied` |
+| 请求前补丁越界 | 按边界裁剪后生效,首次提示 `pluginRequestPatchClamped` |
+| 请求前处理器超时或抛错 | 整份补丁作废,请求按原参数发出,原因写入引擎日志 |
 | 超出限流 | 抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited` |
 | 调用超时或被取消 | 抛 `PluginTimeoutError` 或 `PluginAbortError` |
 | 事件处理器抛错 | 只写入该插件日志,不影响其他处理器 |

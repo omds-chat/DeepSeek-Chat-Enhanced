@@ -10,6 +10,8 @@ import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import { isBuiltinPlugin, type PluginRecord } from './registry.js'
 import type {
   CallOptions,
+  ChatCapability,
+  ContributionPoint,
   EventsCapability,
   NetCapability,
   PluginContext,
@@ -41,6 +43,10 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'plugins:storage': { limit: 100, windowMs: 10000 },
   // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
   'plugins:data-clear': { limit: 0, windowMs: 10000 },
+  // 限制的是登记次数；每次请求前调用处理器由引擎发起，不逐次占用名额
+  'chat:request': { limit: 10, windowMs: 10000 },
+  // 引擎启动时登记一次补丁来源，同样不经过插件上下文
+  'chat:request-source': { limit: 0, windowMs: 10000 },
 }
 
 /** 能力未授予 */
@@ -143,6 +149,14 @@ export const createPluginContext = ({
     }
   }
 
+  /** 贡献点必须同时在清单里声明，缺声明与缺能力同样按未授权处理 */
+  const ensureContribution = (capability: CoreCapabilityId, point: ContributionPoint) => {
+    if (!(manifest.contributions ?? []).includes(point)) {
+      report('pluginCapabilityDenied', { id: manifest.id, capability })
+      throw new PluginCapabilityError(capability)
+    }
+  }
+
   const takeToken = (capability: CoreCapabilityId) => {
     const policy = POLICIES[capability]
     const now = Date.now()
@@ -221,15 +235,30 @@ export const createPluginContext = ({
   const events: EventsCapability = {
     on: (point, handler) => {
       ensureGranted('events:session')
-      if (!(manifest.contributions ?? []).includes(point)) {
-        report('pluginCapabilityDenied', { id: manifest.id, capability: 'events:session' })
-        throw new PluginCapabilityError('events:session')
-      }
+      ensureContribution('events:session', point)
       const handlers = record.contributions.get(point) ?? new Set()
       handlers.add(handler)
       record.contributions.set(point, handlers)
       const dispose = () => {
         handlers.delete(handler)
+      }
+      record.disposers.add(dispose)
+      return dispose
+    },
+  }
+
+  const chat: ChatCapability = {
+    /**
+     * 登记请求前处理器；与 events.on 一样只登记、不逐次调用，
+     * 因此只在登记时占用一次限流名额。
+     */
+    onBeforeRequest: (handler) => {
+      ensureGranted('chat:request')
+      ensureContribution('chat:request', 'chat:before-request')
+      takeToken('chat:request')
+      record.requestHandlers.add(handler)
+      const dispose = () => {
+        record.requestHandlers.delete(handler)
       }
       record.disposers.add(dispose)
       return dispose
@@ -294,6 +323,7 @@ export const createPluginContext = ({
     settings,
     net,
     storage,
+    chat,
     log: (message) => {
       record.logs.push(message)
       if (record.logs.length > 100) {

@@ -12,6 +12,7 @@ import {
   removePluginEntry,
   writePluginEntry,
 } from './plugin-data.js'
+import { registerRequestPatchSource } from './request-patch.js'
 import { registerCoreService, requireCoreService } from './registry.js'
 import {
   CORE_VERSION,
@@ -125,6 +126,7 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     registerCoreService('net:fetch-post', postJson)
     registerCoreService('plugins:storage', pluginDataService)
     registerCoreService('plugins:data-clear', clearPluginData)
+    registerCoreService('chat:request-source', registerRequestPatchSource)
     opened = true
   }
   return {
@@ -152,6 +154,8 @@ export const openCore = (credential: CoreCredential): CoreApi => {
     },
     clearPluginData: (call, pluginId) =>
       requireCoreService(call, 'plugins:data-clear')(pluginId),
+    setRequestPatchSource: (call, source) =>
+      requireCoreService(call, 'chat:request-source')(source),
   }
 }
 
@@ -163,10 +167,21 @@ export type {
   CoreEvent,
   CoreFetchResult,
   CoreMessageView,
+  CoreRequestPatch,
+  CoreRequestPatchSource,
+  CoreRequestPreview,
   CoreSessionSummary,
   CoreSessionView,
   CoreStorageCall,
 } from './types.js'
+/** 请求补丁的宿主侧入口：发送路径直接调用，不经凭证门面 */
+export {
+  applyRequestPatch,
+  collectRequestPatch,
+  patchRequestForSend,
+  readRequestPreview,
+  registerRequestPatchSource,
+} from './request-patch.js'
 export { PluginFetchError } from './net.js'
 export type { FetchRejectReason, FetchTextResult } from './net.js'
 export { PluginDataError } from './plugin-data.js'

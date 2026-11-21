@@ -15,11 +15,17 @@ export const MAX_PLUGIN_CODE_BYTES = 2 * 1024 * 1024
 /** 代码上限的 MB 数,供文案使用；由字节常量派生,调整上限只改上一处 */
 export const MAX_PLUGIN_CODE_MB = MAX_PLUGIN_CODE_BYTES / (1024 * 1024)
 
-/** 贡献点；插件可订阅的核心事件 */
-export type ContributionPoint = 'session:changed'
+/**
+ * 贡献点；插件可订阅的核心事件与可介入的请求前环节。
+ * chat:before-request 不是事件，它在每次发请求前同步调用一次。
+ */
+export type ContributionPoint = 'session:changed' | 'chat:before-request'
 
 /** 全部贡献点 */
-export const CONTRIBUTION_POINTS: readonly ContributionPoint[] = ['session:changed']
+export const CONTRIBUTION_POINTS: readonly ContributionPoint[] = [
+  'session:changed',
+  'chat:before-request',
+]
 
 /** 事件处理器 */
 export type ContributionHandler = (event: CoreEvent) => void
@@ -129,6 +135,38 @@ export type StorageCapability = {
   remove(key: string): void
 }
 
+/** 请求前的只读切片；只给最后一条用户消息文本，不给整段会话 */
+export type BeforeRequestPreview = { readonly lastUserMessage: string }
+
+/**
+ * 请求补丁；插件可返回的全部字段，全部可缺省。
+ * 引擎按白名单收敛：未知字段丢弃，越界值按边界裁剪，超时或抛错时整份补丁作废。
+ */
+export type RequestPatch = {
+  /** 0 到 2 */
+  temperature?: number
+  /** 0 到 1 */
+  topP?: number
+  /** 1 到 4096 的正整数 */
+  maxTokens?: number
+  /** 最多 4 条，每条最多 32 字符 */
+  stop?: string[]
+  /** 追加到系统提示词之后，最多 2000 字符 */
+  systemPromptAppend?: string
+  /** 整体替换系统提示词，最多 8000 字符 */
+  systemPromptReplace?: string
+}
+
+/** 请求前处理器；返回补丁、null 或什么都不返回，三者都表示不改请求 */
+export type BeforeRequestHandler = (
+  preview: BeforeRequestPreview
+) => RequestPatch | null | undefined
+
+/** 请求前能力；登记处理器，返回释放函数 */
+export type ChatCapability = {
+  onBeforeRequest(handler: BeforeRequestHandler): () => void
+}
+
 /** 插件上下文；能力对象由引擎封装 */
 export type PluginContext = {
   readonly id: string
@@ -139,6 +177,7 @@ export type PluginContext = {
   readonly settings: SettingsCapability
   readonly net: NetCapability
   readonly storage: StorageCapability
+  readonly chat: ChatCapability
   readonly log: (message: string) => void
 }
 

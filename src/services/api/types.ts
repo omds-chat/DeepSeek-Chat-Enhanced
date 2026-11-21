@@ -180,6 +180,14 @@ export type CreateMessageRequest = {
   tools: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
   safety_check: { level: 'high' }
   title?: { enabled: boolean }
+  /**
+   * 以下四个字段由请求补丁写入，没有补丁时不出现，服务端按默认值处理。
+   * 取值在引擎侧收敛，这里只声明协议形态。
+   */
+  temperature?: number
+  top_p?: number
+  max_tokens?: number
+  stop_sequences?: string[]
 }
 
 // ---------- 响应：流式事件 ----------

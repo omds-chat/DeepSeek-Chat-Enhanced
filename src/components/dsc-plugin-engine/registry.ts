@@ -3,6 +3,7 @@ import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
 import { RANGE_PATTERN } from './versionRange.js'
 import {
   CONTRIBUTION_POINTS,
+  type BeforeRequestHandler,
   type ContributionHandler,
   type ContributionPoint,
   type DscPlugin,
@@ -91,6 +92,8 @@ export type PluginRecord = {
   state: PluginState
   error?: string
   contributions: Map<ContributionPoint, Set<ContributionHandler>>
+  /** 请求前处理器；按登记顺序调用，与事件处理器分开存放 */
+  requestHandlers: Set<BeforeRequestHandler>
   disposers: Set<() => void>
   logs: string[]
 }
@@ -287,6 +290,7 @@ export const add = (
     enabled: false,
     state: 'registered',
     contributions: new Map(),
+    requestHandlers: new Set(),
     disposers: new Set(),
     logs: [],
   }
@@ -313,6 +317,7 @@ export const addFailed = (
     state: 'failed',
     error: reason,
     contributions: new Map(),
+    requestHandlers: new Set(),
     disposers: new Set(),
     logs: [reason],
   }
@@ -342,9 +347,10 @@ export const markFailed = (record: PluginRecord, reason: string) => {
   record.error = reason
 }
 
-/** 清空贡献点 */
+/** 清空贡献点；请求前处理器同属贡献点，一并清空 */
 export const clearContributions = (record: PluginRecord) => {
   record.contributions.clear()
+  record.requestHandlers.clear()
 }
 
 /** 追加日志；超出上限丢弃最早一条 */

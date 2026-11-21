@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { patchRequestForSend } from '../../components/dsc-core/request-patch.js'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import type { ChatModel, CreateMessageRequest } from '../api/types.js'
@@ -996,9 +997,10 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           initial.thinking ?? false,
           latestReminder
         )
+        // 请求参数只在发出前经过一次补丁：补丁由插件引擎收集，这里不判断内容
         const events = streamMessage(
           useSettings.getState().apiKey ?? '',
-          {
+          patchRequestForSend({
             model: initial.model ?? MODEL,
             system: SYSTEM_PROMPT,
             messages,
@@ -1006,7 +1008,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             safety_check: SAFETY_CHECK,
             tools: serverTools(initial.search ?? false),
             ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
-          },
+          }),
           controller.signal
         )
         const blockIndexes = new Map<number, number>()

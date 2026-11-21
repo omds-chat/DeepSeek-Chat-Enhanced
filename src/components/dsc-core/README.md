@@ -29,6 +29,7 @@ dsc-core/
 ├── index.ts       # 唯一对外门面，只给 dsc-plugin-engine 使用
 ├── types.ts       # 核心接口与能力类型
 ├── registry.ts    # 核心服务注册表
+├── request-patch.ts # 请求补丁的落点：取切片、向引擎索取、写进请求
 ├── guard.ts       # 调用凭证与绕过检测
 ├── net.ts         # net:fetch 的唯一实现：https GET 读文本与受限 POST、体积与超时约束
 ├── plugin-data.ts # plugins:storage 的唯一实现：localStorage 与 64KB 配额
@@ -51,6 +52,9 @@ dsc-core/
 | `net:fetch-post` | `postJson` | 发送一次 JSON POST,响应体丢弃,只回传状态码 | 仅引擎 |
 | `plugins:storage` | `readPluginEntry`、`writePluginEntry`、`removePluginEntry` | 插件自身的键值数据,单插件 64KB | 需限流 |
 | `plugins:data-clear` | `clearPluginData` | 清除单个插件的全部数据,只供宿主设置的数据管理调用 | 仅宿主 |
+| `chat:request-source` | `setRequestPatchSource` | 登记请求补丁来源,登记与撤销都只由引擎发起 | 仅引擎 |
+
+`chat:request` 是插件可见能力,但它在 core 侧没有对应方法:登记与调用都在引擎内完成,core 只在发送路径上向引擎索取一次补丁。同一份补丁的字段白名单与范围裁剪也只由引擎实现,core 不重复判定。
 
 永久不开放：API Key、`zustand` store 原始句柄、IndexedDB 句柄与事务、附件上传与原件、任意网络请求(`net:fetch` 是唯一例外,且只对内置插件开放)、任意 DOM 操作。
 
