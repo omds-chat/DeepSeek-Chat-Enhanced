@@ -11,7 +11,7 @@
 .notice {
   box-sizing: border-box;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-left-width: 3px;
   font-size: 13px;
@@ -71,12 +71,16 @@
   white-space: nowrap;
 }
 
-/* 全局面板通知栈: 右上角悬浮卡片, 按插件分组, 不拦截页面点击 */
+/*
+ * 全局面板通知栈: 右上角悬浮卡片, 按插件分组, 不拦截页面点击。
+ * 顶部让开轻提示: Toast 顶边 40px、高 36px(20 行高 + 7x2 内距 + 2 边框)故底边 76px, 栈从 80px 起;
+ * 层级低于 VersionNotice 的 1800, 两张浮层叠在一起时更新提示始终在上。
+ */
 .overlayStack {
   position: fixed;
-  top: calc(72px + env(safe-area-inset-top));
+  top: calc(80px + env(safe-area-inset-top));
   right: 16px;
-  z-index: 1800;
+  z-index: 1700;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -118,7 +122,7 @@
   width: 6px;
   height: 6px;
   margin-top: 7px;
-  border-radius: 50%;
+  border-radius: 999px;
   background-color: var(--dsw-alias-brand-primary);
 }
 
@@ -134,15 +138,15 @@
 .messageActions {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .messageActionButton {
-  padding: 0 6px;
+  padding: 3px 6px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 12px;
-  line-height: 24px;
+  line-height: 18px;
   color: var(--dsw-alias-label-secondary);
   background-color: transparent;
   cursor: pointer;
@@ -163,12 +167,12 @@
 .settingsPageRow {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   box-sizing: border-box;
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
+  border-radius: 12px;
   text-align: left;
   background-color: transparent;
   cursor: pointer;

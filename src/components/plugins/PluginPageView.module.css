@@ -1,13 +1,17 @@
 /* 插件会话视图: 复用设置表面的样式 token, 只补页面区块自身的少量布局 */
 
-/* 侧边栏收起时让开左上角的悬浮按钮组; 取值与会话页标题的同一处让位一致 */
+/*
+ * 侧边栏收起时让开左上角的悬浮按钮组。
+ * 悬浮组右边界 = 16(左边距) + 34(面板图标列) + 12(组间距) + 78(胶囊: 2px 边框 + 2x2px 内距 + 2x34px 圆钮 + 4px 间距) = 140px;
+ * 本页自带 24px 左内距，故让位 119px: 24 + 119 = 143px，与会话页标题文字同一起点，且离开悬浮组 3px。
+ */
 .headerCollapsed {
-  margin-left: 113px;
+  margin-left: 119px;
 }
 
 .text {
   margin: 0;
-  padding: 14px 0;
+  padding: 12px 0;
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
@@ -59,5 +63,5 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 14px 0;
+  padding: 12px 0;
 }

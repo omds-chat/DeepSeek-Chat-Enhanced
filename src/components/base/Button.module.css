@@ -2,10 +2,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   box-sizing: border-box;
   min-width: 72px;
   padding: 0 14px;
-  border-radius: 4096px;
+  border-radius: 999px;
   border: 1px solid transparent;
   font: inherit;
   font-size: 14px;

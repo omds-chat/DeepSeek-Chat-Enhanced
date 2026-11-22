@@ -3,15 +3,23 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   margin-left: auto;
-  padding-right: 18px;
+  padding-right: 0;
+}
+
+/* 窄屏标签栏落在移动端顶栏下方，右缩进跟顶栏的 10px 对齐 */
+@media not all and (min-width: 768px) {
+  .bar {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
 }
 
 .tab {
   padding: 4px 12px;
   border: none;
-  border-radius: 9px;
+  border-radius: 10px;
   background-color: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
