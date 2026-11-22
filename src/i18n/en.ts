@@ -352,6 +352,7 @@ export const en = {
   pluginMarketSourceMoveUp: 'Move up',
   pluginMarketSourceMoveDown: 'Move down',
   pluginMarketSourceNoUrl: 'No usable URL',
+  pluginMarketSourceIdle: 'Not fetched yet',
   pluginMarketSourceInvalid:
     'At least one valid URL is required; URLs must start with https://, or use http://localhost, http://127.0.0.1 or http://[::1] for local debugging',
   pluginMarketSourceFailed: 'Every URL of this source failed',

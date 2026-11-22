@@ -331,6 +331,7 @@ export const zh = {
   pluginMarketSourceMoveUp: '上移',
   pluginMarketSourceMoveDown: '下移',
   pluginMarketSourceNoUrl: '暂无可用地址',
+  pluginMarketSourceIdle: '尚未拉取',
   pluginMarketSourceInvalid:
     '至少需要一个有效地址；地址需以 https:// 开头，本地地址可用 http://localhost、http://127.0.0.1 或 http://[::1]',
   pluginMarketSourceFailed: '该来源的所有地址都拉取失败',

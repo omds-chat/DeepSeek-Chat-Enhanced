@@ -161,7 +161,7 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 | `ui:page` | 20 次 / 10 秒(仅登记) | 同步调用 | `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` |
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
 | `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
-| `assets:read` | 20 次 / 10 秒 | 内层 10 秒后中止请求 | `context.assets.readText`、`context.assets.readBytes` |
+| `assets:read` | 120 次 / 10 秒 | 内层 10 秒后中止请求 | `context.assets.readText`、`context.assets.readBytes` |
 | `plugins:storage` | 100 次 / 10 秒 | 同步调用 | `context.storage.get`、`set`、`remove` |
 | `chat:request` | 10 次 / 10 秒(仅登记) | 同步调用,单次预算 10 毫秒 | `context.chat.onBeforeRequest` |
 | `provider:source` | 50 次 / 10 秒(仅登记) | 同步调用 | `context.provider.registerSource` |

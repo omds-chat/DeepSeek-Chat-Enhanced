@@ -184,9 +184,12 @@ export const MarketPlugins = ({
 
   useEffect(() => {
     const instance = market()
-    const id = instance?.selected() ?? null
-    if (instance && id !== null) {
-      void instance.refresh(id)
+    if (!instance) {
+      return
+    }
+    // 打开市场时把每个来源都拉一次，来源列表才不会显示成「未拉取」的空白行
+    for (const source of instance.sources()) {
+      void instance.refresh(source.id)
     }
   }, [])
 
@@ -382,7 +385,9 @@ export const MarketPlugins = ({
                 >
                   <span className={styles.sourceName}>{source.name}</span>
                   <span className={styles.caption}>
-                    {state?.baseUrl ?? t('pluginMarketSourceNoUrl')}
+                    {state === null
+                      ? t('pluginMarketSourceIdle')
+                      : (state.baseUrl ?? t('pluginMarketSourceNoUrl'))}
                   </span>
                 </button>
                 <div className={styles.sourceBadges}>

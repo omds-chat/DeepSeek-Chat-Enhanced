@@ -133,7 +133,7 @@ export const activate = (context) => {
 | `ui:page` | 全部插件 | `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` | 20 次 / 10 秒(仅登记) |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
 | `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
-| `assets:read` | 全部插件 | `context.assets.readText`、`context.assets.readBytes` | 20 次 / 10 秒 |
+| `assets:read` | 全部插件 | `context.assets.readText`、`context.assets.readBytes` | 120 次 / 10 秒 |
 | `provider:source` | 全部插件 | `context.provider.registerSource` | 50 次 / 10 秒(仅登记) |
 | `provider:run` | 全部插件 | `context.provider.run` | 10 次 / 10 秒 |
 | `net:fetch` | 仅内置插件 | `context.net.getText`、`context.net.postJson` | 10 次 / 10 秒 |

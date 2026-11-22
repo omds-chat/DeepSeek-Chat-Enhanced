@@ -71,8 +71,9 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'net:fetch': { limit: 10, windowMs: 10000, timeoutMs: 12000 },
   // 内层 5 秒超时由 dsc-core 的计数请求自己中止，POST 与 GET 各用一个窗口，避免互相挤占
   'net:fetch-post': { limit: 10, windowMs: 10000, timeoutMs: 7000 },
-  // 内层 10 秒超时由 dsc-core 的资产读取自己中止请求，这里只做外层兜底
-  'assets:read': { limit: 20, windowMs: 10000, timeoutMs: 12000 },
+  // 内层 10 秒超时由 dsc-core 的资产读取自己中止请求，这里只做外层兜底。
+  // 装一个资产包要逐个取版本目录里的文件，几十次读取是正常用量，上限按此放宽。
+  'assets:read': { limit: 120, windowMs: 10000, timeoutMs: 12000 },
   'plugins:storage': { limit: 100, windowMs: 10000 },
   // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
   'plugins:data-clear': { limit: 0, windowMs: 10000 },

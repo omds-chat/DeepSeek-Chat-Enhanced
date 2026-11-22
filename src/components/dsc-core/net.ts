@@ -1,5 +1,11 @@
-/** 外源请求只允许的协议 */
-const ALLOWED_PROTOCOL = 'https:'
+/**
+ * 外源请求的地址规则：https 任意主机，http 仅回环主机。
+ * 与 assets:read、市场来源地址共用同一判定，本地联调才可能走回环。
+ */
+import { isHttpsOrLocalUrl } from '../../utils/url.js'
+
+const ALLOWED_ORIGIN_TEXT = 'https or loopback http'
+const isAllowedUrl = (target: URL): boolean => isHttpsOrLocalUrl(target.href)
 /** 单次响应体上限（字节） */
 const MAX_BODY_BYTES = 512 * 1024
 /** 单次请求超时（毫秒） */
@@ -99,8 +105,8 @@ export const fetchText = async (url: string, signal?: AbortSignal): Promise<Fetc
   } catch {
     throw new PluginFetchError('url', 'target is not an absolute URL')
   }
-  if (target.protocol !== ALLOWED_PROTOCOL) {
-    throw new PluginFetchError('protocol', `target must use ${ALLOWED_PROTOCOL}`)
+  if (!isAllowedUrl(target)) {
+    throw new PluginFetchError('protocol', `target must use ${ALLOWED_ORIGIN_TEXT}`)
   }
   if (signal?.aborted) {
     throw new PluginFetchError('aborted', 'request was aborted before it started')
@@ -121,8 +127,8 @@ export const fetchText = async (url: string, signal?: AbortSignal): Promise<Fetc
       signal: controller.signal,
     })
     const finalUrl = response.url === '' ? target : new URL(response.url)
-    if (finalUrl.protocol !== ALLOWED_PROTOCOL) {
-      throw new PluginFetchError('protocol', 'response came from a non-https URL')
+    if (!isAllowedUrl(finalUrl)) {
+      throw new PluginFetchError('protocol', 'response came from a disallowed URL')
     }
     if (!response.ok) {
       throw new PluginFetchError('status', `response status ${response.status}`)
@@ -194,8 +200,8 @@ export const postJson = async (
   } catch {
     throw new PluginFetchError('url', 'target is not an absolute URL')
   }
-  if (target.protocol !== ALLOWED_PROTOCOL) {
-    throw new PluginFetchError('protocol', `target must use ${ALLOWED_PROTOCOL}`)
+  if (!isAllowedUrl(target)) {
+    throw new PluginFetchError('protocol', `target must use ${ALLOWED_ORIGIN_TEXT}`)
   }
   let payload: string
   try {

@@ -61,8 +61,11 @@ import type {
   UpdateTarget,
 } from './types.js'
 
-/** 单个请求的最长等待时间（毫秒）；超时立刻切下一个 base_url */
-export const REQUEST_TIMEOUT = 1000
+/**
+ * 单个请求的最长等待时间（毫秒）；超时立刻切下一个 base_url。
+ * 取值要容得下冷启动与本地静态服务，过短会把可达的来源误判成不可达。
+ */
+export const REQUEST_TIMEOUT = 8000
 /** 目录缓存有效期（毫秒）；只做内存缓存 */
 const CACHE_TTL = 5 * 60 * 1000
 /** 目录并发拉取上限 */
