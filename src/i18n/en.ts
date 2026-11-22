@@ -195,6 +195,7 @@ export const en = {
   settingsLocaleEnUS: 'English',
   pluginBypassDetected: 'A call bypassed the plugin engine to reach the core; blocked: {capability}',
   pluginInstallRejected: 'Plugin {id} failed to install: {reason}',
+  pluginToggleApplied: '{state}',
   pluginAssetInstalled: 'Asset package {id} installed.',
   pluginAssetInstallFailed: 'Asset package {id} could not be installed: {reason}',
   pluginActivateFailed: 'Plugin {id} failed to start: {reason}',
