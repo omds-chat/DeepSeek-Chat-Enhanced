@@ -48,14 +48,14 @@ jobs:
             echo "::error::发布 tag ${RELEASE_TAG} 不符合格式;正式发行格式为 dsc-主版本.次版本.修订版本,预发行格式为 dsc-主版本.次版本.修订版本-XXX.序号(XXX 为小写字母串,序号为十进制数),例如 dsc-1.0.0 或 dsc-1.0.0-alpha.1"
             exit 1
           fi
+          prerelease=false
           if [[ "${RELEASE_TAG}" =~ -[a-z]+\.[0-9]+$ ]]; then
-            echo "prerelease=true" >> "${GITHUB_OUTPUT}"
-          else
-            echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+            prerelease=true
           fi
+          echo "prerelease=${prerelease}" >> "${GITHUB_OUTPUT}"
           if [ "${{ github.event_name }}" = "release" ]; then
             flag="${{ github.event.release.prerelease }}"
-            if [ "${flag}" != "${{ steps.tagcheck.outputs.prerelease }}" ]; then
+            if [ "${flag}" != "${prerelease}" ]; then
               echo "::error::发行类型与 tag 不匹配:Release 的预发行标记为 ${flag},而 tag ${RELEASE_TAG} 的后缀格式与之不一致;两者必须对应"
               exit 1
             fi
@@ -65,7 +65,7 @@ jobs:
               exit 1
             fi
           fi
-          if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ]; then
+          if [ "${prerelease}" = "true" ]; then
             echo "tag ${RELEASE_TAG} 是预发行,附件将上传到对应 Release"
           else
             echo "tag ${RELEASE_TAG} 是正式发行,附件将上传到对应 Release"
