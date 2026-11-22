@@ -319,9 +319,7 @@ jobs:
             git -C "${DIST_HISTORY_WORKTREE}" commit -m "publish dist-history ${RELEASE_TAG}"
           fi
           git -C "${DIST_HISTORY_WORKTREE}" tag "${archive_tag}"
-          # 不使用 --force;push 失败时由 set -e 中止整个流程
-          git -C "${DIST_HISTORY_WORKTREE}" push origin HEAD:dist-history
-          git -C "${DIST_HISTORY_WORKTREE}" push origin "refs/tags/${archive_tag}"
+          # push 统一挪到流程末尾的 Push archive branches 步骤
 
       # certs 分支归档: 清理 -> 重建 version 目录 -> 复制主仓库 certs/ -> 裁剪历史版本 -> commit、打 tag、push
       # 正式发行: 根目录 certs/、version/latest、version/<tag> 三份内容完全一致。
@@ -356,8 +354,7 @@ jobs:
             git -C "${CERTS_WORKTREE}" commit -m "publish certs ${RELEASE_TAG}"
           fi
           git -C "${CERTS_WORKTREE}" tag "${archive_tag}"
-          git -C "${CERTS_WORKTREE}" push origin HEAD:certs
-          git -C "${CERTS_WORKTREE}" push origin "refs/tags/${archive_tag}"
+          # push 统一挪到流程末尾的 Push archive branches 步骤
 
       # trusted-manifest 分支归档: 生成 index.json -> 渲染 README -> 分发到根目录与 version 目录
       # 正式发行: 清理工作树,根目录 index.json/README.md、version/latest、version/<tag> 三份内容完全一致。
@@ -431,8 +428,7 @@ jobs:
             git -C "${TRUSTED_MANIFEST_WORKTREE}" commit -m "publish trusted-manifest ${RELEASE_TAG}"
           fi
           git -C "${TRUSTED_MANIFEST_WORKTREE}" tag "${archive_tag}"
-          git -C "${TRUSTED_MANIFEST_WORKTREE}" push origin HEAD:trusted-manifest
-          git -C "${TRUSTED_MANIFEST_WORKTREE}" push origin "refs/tags/${archive_tag}"
+          # push 统一挪到流程末尾的 Push archive branches 步骤
 
       # 组装 Pages 目录: 三条分支的内容合成一个页面包
       # - 站点根目录是构建产物,certs/ 与 index.json 也落在站点根
@@ -450,14 +446,16 @@ jobs:
           rm -rf "${pages}"
           mkdir -p "${pages}" "${pages}/version"
           cp -a "${BUILD_DIR}/." "${pages}/"
-          # 缺证书目录或缺清单时页面包不完整,直接中止而不是上传半份信任材料
-          if [ ! -d "${CERTS_WORKTREE}/certs" ] || [ ! -f "${TRUSTED_MANIFEST_WORKTREE}/index.json" ]; then
-            echo "::error::归档分支缺少 certs/ 目录或 index.json,页面包不完整,中止"
+          # 站点根信任材料统一取自本版快照目录 version/<tag>:
+          # 正式发行时该目录与分支根目录三份一致,预发行时分支根目录不被触碰,本版材料只在这里;
+          # 已发布过的 tag 重跑时归档步骤整体跳过,本版材料仍然在本版目录里,口径不随重跑改变
+          if [ ! -d "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" ] || [ ! -f "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" ]; then
+            echo "::error::归档分支缺少本版信任材料(version/${RELEASE_TAG}/certs 与 version/${RELEASE_TAG}/index.json),页面包不完整,中止"
             exit 1
           fi
-          # 当前证书目录与当前信任清单
-          cp -a "${CERTS_WORKTREE}/certs" "${pages}/certs"
-          cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${pages}/index.json"
+          mkdir -p "${pages}/certs"
+          cp -a "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs/." "${pages}/certs/"
+          cp -a "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" "${pages}/index.json"
           # 三个归档分支的 version 目录全部释放进页面包:
           # version/<tag>/ 因此是该版本的完整快照(构建产物 + certs/ + index.json + README.md),
           # 同名文件按「产物 -> 证书 -> 清单」的顺序后者覆盖前者(清单分支的 README.md 最终生效)
@@ -475,6 +473,24 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: ${{ runner.temp }}/pages
+
+      # 归档推送: 放在流程最末尾,组装与上传全部成功后才推三条分支与归档 tag,
+      # 中途任何一步失败都不会在归档分支留下半套提交或 tag 污染。
+      # 已发布过的 tag 重跑时本步为幂等推送(远端同名 tag 指向同一对象,推送结果为 up-to-date)。
+      - name: Push archive branches
+        run: |
+          set -euo pipefail
+          push_archive() {
+            local worktree="$1"
+            local branch="$2"
+            local suffix="$3"
+            git -C "${worktree}" push origin "HEAD:${branch}"
+            git -C "${worktree}" push origin "refs/tags/${RELEASE_TAG}${suffix}"
+          }
+          push_archive "${DIST_HISTORY_WORKTREE}" dist-history "${DIST_HISTORY_TAG_SUFFIX}"
+          push_archive "${CERTS_WORKTREE}" certs "${CERTS_TAG_SUFFIX}"
+          push_archive "${TRUSTED_MANIFEST_WORKTREE}" trusted-manifest "${TRUSTED_MANIFEST_TAG_SUFFIX}"
+          echo "三条归档分支与归档 tag 已推送"
 
   deploy:
     needs: build
