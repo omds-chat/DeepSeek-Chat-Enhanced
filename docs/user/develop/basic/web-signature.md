@@ -33,7 +33,7 @@
 | 根 CA 密钥 | ECDSA P-256 |
 | 根证书 | X.509 自签名,`keyUsage=critical,keyCertSign,cRLSign`,`basicConstraints=critical,CA:TRUE,pathlen:0`,有效期 3650 天 |
 | EEC 密钥 | ECDSA P-256 |
-| EEC 证书 | X.509 由根 CA 签发,`keyUsage=critical,digitalSignature`,`basicConstraints=critical,CA:FALSE`,有效期 365 天 |
+| EEC 证书 | X.509 由根 CA 签发,`keyUsage=critical,digitalSignature`,`basicConstraints=critical,CA:FALSE`,有效期 365 天;实际到期时间以签发参数为准,现行材料的到期列见组织仓 [.github/public/certs/README.md](https://github.com/omds-chat/.github/blob/main/public/certs/README.md) |
 | 签名格式 | CMS 分离签名,`openssl cms -sign -binary -outform DER -nocerts -noattr` |
 
 根 CA 与 EEC 统一用 ECDSA P-256:浏览器 WebCrypto 对 P-256 支持最广,而证书链校验必须能在浏览器里完成。CMS 签名按文件原始字节计算,不做换行规范化;`-outform DER` 让签名文件是裸 DER,浏览器端可直接解析;`-nocerts` 让签名不带证书,证书由分发结构单独提供。

@@ -130,7 +130,7 @@ export const activate = (context) => {
 | `events:session` | 全部插件 | `context.events.on` | 5 次 / 10 秒(仅登记) |
 | `notify` | 全部插件 | `context.ui.notify` | 10 次 / 10 秒 |
 | `settings:locale` | 全部插件 | `context.settings.locale` | 60 次 / 10 秒 |
-| `settings:surface` | 全部插件 | `context.settings.register`、`context.settings.values` | 60 次 / 10 秒 |
+| `settings:surface` | 全部插件 | `context.settings.register`、`context.settings.values`、`context.settings.overrides`、`context.settings.onChange` | 60 次 / 10 秒 |
 | `ui:slot` | 全部插件 | `context.ui.registerSlot`、`context.ui.onSlotAction`、`context.ui.onSlotData` | 20 次 / 10 秒(仅登记) |
 | `plugins:storage` | 全部插件 | `context.storage.get`、`set`、`remove` | 100 次 / 10 秒 |
 | `chat:request` | 全部插件 | `context.chat.onBeforeRequest` | 10 次 / 10 秒(仅登记) |
@@ -141,7 +141,7 @@ export const activate = (context) => {
 
 `context.id` 与 `context.version` 是引擎注入的两个只读成员,分别取自清单的 `id` 与 `version`,不需要申请能力,也不占用限流名额。
 
-上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止,`context.provider.run` 的 15 秒只覆盖「建立调用」这一段(`text.generate` 的回流在调用返回后惰性产出,不占这个预算);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时;`context.settings.register`、`context.settings.values` 与 `context.ui` 的三个槽位成员(`registerSlot`、`onSlotAction`、`onSlotData`)同为同步调用。
+上表的限流只约束调用次数。单次超时只对异步成员生效: `context.sessions.list`、`context.sessions.read`、`context.settings.locale`、`context.settings.overrides` 各 3 秒,外源请求由内核自己的超时中止(读取 10 秒、计数请求 5 秒),资产读取同样由内核在 10 秒后中止,`context.provider.run` 的 15 秒只覆盖「建立调用」这一段(`text.generate` 的回流在调用返回后惰性产出,不占这个预算);`context.sessions.rename`、`context.ui.notify` 与 `context.storage.get`、`set`、`remove` 是同步调用,没有超时;`context.settings.register`、`context.settings.values`、`context.settings.onChange` 与 `context.ui` 的三个槽位成员(`registerSlot`、`onSlotAction`、`onSlotData`)同为同步调用。
 
 `events:session` 与 `chat:request` 的限流只算登记次数:每次 `context.events.on`、每次 `context.chat.onBeforeRequest` 各占一个名额,之后的事件回调与请求前调用由引擎发起,不再占用名额。`ui:slot` 同为登记型成员:每次 `context.ui.registerSlot`、`context.ui.onSlotAction`、`context.ui.onSlotData` 各占一个名额,槽位动作回调与页面数据索取由引擎发起,不占名额。同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError` 并提示 `pluginCallRateLimited`,窗口滚过之后可以继续登记。请求前处理器另有 10 毫秒的单次预算,见下文「[请求前补丁](#请求前补丁)」。
 
@@ -358,14 +358,15 @@ export const activate = (context) => {
 
 值的语义:
 
-- 插件侧只有 `context.settings.values()` 一个只读入口,读自身命名空间:用户覆盖值优先,否则默认值;其他插件的设置不可见,secret 字段不返回任何值。
+- 插件侧的读取入口有两个:`context.settings.values()` 同步读自身命名空间,用户覆盖值优先,否则默认值;`context.settings.overrides()` 异步读逐字段的覆盖状态,`overridden` 与宿主详情页的「已修改」徽标同一口径;secret 字段没有默认值,`overridden` 恒为 `false`,只回答是否已配置,不返回值。其他插件的设置不可见,secret 字段不返回任何值。
+- 插件可以用 `context.settings.onChange(handler)` 订阅设置变更:宿主写侧落盘成功后由引擎回调一次,载荷带本次变化的字段键、变化种类(`added`、`changed`、`reset`)与新覆盖状态;返回释放函数,停用随引擎清理,回调由引擎发起、不占限流名额。
 - 写侧在宿主:用户在设置页改动,保存前引擎按描述校验,非法值拒绝落盘;`secret` 字段的值进凭证存储,只写不读。
 - 脏值生命周期:改动即脏、保存才落盘、保存失败保留草稿、离开页面丢弃草稿;每个字段可「重置为默认」。
 - 登记只在激活期有效:插件未激活时详情页显示「本插件没有可配置项」。
 
 ### 注册插件 UI 槽位
 
-插件可以给宿主贡献一块自己的界面:清单申请能力 `ui:slot`,并用 `slots` 白名单逐个声明要登记的槽位,激活期用 `context.ui.registerSlot(descriptor)` 登记一份声明式描述。描述里的 `slot` 决定落点。本版开放八个槽位,按描述形态分两类:页面型(带区块模型,宿主渲染整页或设置里的一页)与位置型(不带区块,宿主渲染成工具条按钮、通知条、消息操作行或菜单项)。这是可选项:不登记就没有任何入口,插件不碰 `ui:slot` 时界面与现在没有区别。与设置表面同法,插件只交描述、不交控件,不写任何界面代码。
+插件可以给宿主贡献一块自己的界面:清单申请能力 `ui:slot`,并用 `slots` 白名单逐个声明要登记的槽位,激活期用 `context.ui.registerSlot(descriptor)` 登记一份声明式描述。描述里的 `slot` 决定落点。本版开放十个槽位,按描述形态分两类:页面型(带区块模型,宿主渲染整页、设置里的一页或会话右栏的段落与标签)与位置型(不带区块,宿主渲染成工具条按钮、通知条、消息操作行或菜单项)。这是可选项:不登记就没有任何入口,插件不碰 `ui:slot` 时界面与现在没有区别。与设置表面同法,插件只交描述、不交控件,不写任何界面代码。
 
 可用槽位:
 
@@ -374,13 +375,15 @@ export const activate = (context) => {
 | `nav.panel` | 页面型 | 侧边栏会话分组之上的导航行 + 主区整页 | `id`、`titleKey` 或 `title`、`iconKey`?、`order`?、`blocks` |
 | `conversation.tabs` | 页面型 | 会话视图标签栏里的一个标签 + 主区整页 | 同上 |
 | `settings.page` | 页面型 | 系统设置的「插件」分组里的一页 | 同上 |
+| `session.panel.section` | 页面型 | 会话视图可收起右栏里的一个带标题段落 | 同上 |
+| `nav.side` | 页面型 | 会话视图右栏标签栏里的一个可切换标签 | 同上 |
 | `composer.toolbar` | 位置型 | 输入框下方工具条里的一个按钮 | `id`、`labelKey` 或 `label`、`actionKey`、`order`? |
 | `composer.notice` | 位置型 | 输入框上方的一条通知条 | `id`、`tone`(`info`/`warning`/`error`)、`textKey` 或 `text`、`order`? |
 | `overlay.notice` | 位置型 | 右上角的全局面板通知栈(按插件分组) | `id`、`level`(取值同上)、`textKey` 或 `text`、`order`? |
 | `message.actions` | 位置型 | 助手消息底部的操作行 | `id`、`items`(1 到 8 个 `{ key, labelKey 或 label }`)、`order`? |
 | `menu.item` | 位置型 | 会话行与消息的右键菜单 | `id`、`target`(`message`/`session`)、`labelKey` 或 `label`、`actionKey`、`order`? |
 
-页面型槽位选中后主区整块渲染该页面(设置里的插件页渲染在设置分组内),页面顶部是回到会话的面包屑;位置型槽位没有整页,只渲染一个按钮、一条通知或一项菜单,点击经 `ui:slot-action` 回调插件。
+页面型槽位选中后渲染该页面:`nav.panel`、`conversation.tabs` 与 `settings.page` 在主区整块渲染(设置里的插件页渲染在设置分组内),页面顶部是回到会话的面包屑;`session.panel.section` 与 `nav.side` 渲染在会话视图可收起的右栏,前者按 `order` 排成带标题的段落,后者以标签切换且不改主区与会话上下文,两者都没有登记时右栏不渲染;位置型槽位没有整页,只渲染一个按钮、一条通知或一项菜单,点击经 `ui:slot-action` 回调插件。
 
 ```ts
 export const manifest = {
@@ -448,7 +451,7 @@ export const activate = (context) => {
 }
 ```
 
-页面型槽位(`nav.panel`、`conversation.tabs`、`settings.page`)的描述规则:
+页面型槽位(`nav.panel`、`conversation.tabs`、`settings.page`、`session.panel.section`、`nav.side`)的描述规则:
 
 | 字段 | 必填 | 说明 |
 |:---:|:---:|:---:|

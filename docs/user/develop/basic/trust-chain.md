@@ -21,7 +21,7 @@
 | 根 CA 密钥 | ECDSA P-256(OpenSSL 原生 PEM) | 与 EEC 同一算法;浏览器 WebCrypto 对 P-256 支持最广,证书链校验必须能在浏览器里完成 |
 | 根证书 | X.509 自签名,`keyUsage=critical,keyCertSign,cRLSign`,`basicConstraints=critical,CA:TRUE,pathlen:0`,有效期 3650 天 | 只允许签 EEC,不允许再派生下级 CA |
 | EEC 密钥 | ECDSA P-256(OpenSSL 原生 PEM) | OpenSSL 的 CMS 实现对 Ed25519 报 `provider signature failure`,实测不可用 |
-| EEC 证书 | X.509 由根 CA 签发,`keyUsage=critical,digitalSignature`,`basicConstraints=critical,CA:FALSE`,有效期 365 天 | 终端签名证书只需要签名用途 |
+| EEC 证书 | X.509 由根 CA 签发,`keyUsage=critical,digitalSignature`,`basicConstraints=critical,CA:FALSE`,有效期 365 天;实际到期时间以签发参数为准,现行材料的到期列见组织仓 [.github/public/certs/README.md](https://github.com/omds-chat/.github/blob/main/public/certs/README.md) | 终端签名证书只需要签名用途 |
 | 合集签名 | CMS 分离签名,`openssl cms -sign -binary -outform DER -nocerts -noattr` | 逐字节语义,签名与验签都必须带 `-binary`;`-outform DER` 输出裸 CMS,浏览器端可直接解析 |
 | 作者签名 | 裸公钥分离签名,`openssl pkeyutl -sign -rawin`(Ed25519) | 作者不需要证书,公钥随合集分发 |
 
@@ -286,13 +286,7 @@ CRL 生成后写入分发结构的 `crl.pem`,并在 `index.json` 的 `crl` 字�
 
 ### 三条并行分支
 
-`dist-history`、`certs`、`trusted-manifest` 三条分支都与 `main` 没有公共祖先,各自只承载一类数据,由发布流水线写入,不从 `main` 派生,也不合并回 `main`。命名与职责遵循组织仓库的 `repo-spec/side-branches.md`,本仓库的对应关系与工作区位置见 [并行分支的命名与布局](../../../design/side-branches.md)。
-
-| 分支 | 放什么 | 内容来源 |
-|:---:|:---:|:---:|
-| `dist-history` | 每次发布的网页产物副本,按发布 tag 分目录 | 发布流水线的构建产物 |
-| `certs` | `main` 分支 `certs` 目录的逐字节副本,保留 `certs/` 前缀 | `main` 分支的 `certs` 目录整体复制 |
-| `trusted-manifest` | 信任清单 `index.json` 与可选的 `crl.pem` | `.github/scripts/build-trust-index.mjs` 依据 `certs/manifest.json` 生成 |
+`dist-history`、`certs`、`trusted-manifest` 三条并行分支的职责、命名与归档口径由组织仓库的 `.github/docs/repo-spec/side-branches.md` 规定;本仓库的旧名对应、测试版归档口径、页面包合并口径与运行时取材口径见 [并行分支的命名与布局](../../../design/side-branches.md)。
 
 `certs` 分支的结构:
 

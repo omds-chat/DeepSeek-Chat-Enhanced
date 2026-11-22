@@ -105,13 +105,13 @@ certs/
 
 ## Building plugins
 
-Every dsc plugin is an independent project during **development**. You can write the plugin logic in **any programming language**, as long as the **built runtime artifact** conforms to the [**dsc plugin artifact specification**](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) so the plugin is recognized and runs.
+Every dsc plugin is an independent project during **development**. You can write the plugin logic in **any programming language**, as long as the **built runtime artifact** conforms to the [**dsc plugin runtime specification**](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) so the plugin is recognized and runs.
 
 To keep plugins standardized and maintainable, and to make your plugin easier for others to use and build upon, we recommend developing plugins with the [dsc plugin template](https://github.com/omds-chat/dsc-plugin-template) provided by omds-chat.
 
-Every dsc plugin is a `js script` conforming to the [dsc plugin artifact specification](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) during **runtime**.
+Every dsc plugin is a `js script` conforming to the [dsc plugin runtime specification](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) during **runtime**.
 
-A plugin artifact can export a named `manifest`, so users do not need to supply one when installing from a URL; see the [dsc plugin artifact specification](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) for the manifest fields and export forms, and [building a plugin from scratch](docs/user/develop/framework/build-a-plugin.md) for a minimal example.
+A plugin artifact can export a named `manifest`, so users do not need to supply one when installing from a URL; see the [dsc plugin runtime specification](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) for the manifest fields and export forms, and [building a plugin from scratch](docs/user/develop/framework/build-a-plugin.md) for a minimal example.
 
 A dsc plugin is loaded by `dsc-plugin-engine` and controls the whole Chat and its pages in a limited way through the standard interfaces provided by `dsc-plugin-engine`. Bypassing `dsc-plugin-engine` to interact with `dsc-core` directly is inappropriate; `dsc-plugin-engine` detects this behavior and raises an alert to the user.
 

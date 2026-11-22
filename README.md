@@ -104,13 +104,13 @@ certs/
 
 ## 制作插件
 
-每一个dsc插件在 **开发阶段** 都是一个独立的项目,你可以用 **任何编程语言** 编写插件的逻辑,只需要保证 **构建的运行时产物** 符合 [**dsc插件产物规范**](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) 即可保证插件的识别和运行。
+每一个dsc插件在 **开发阶段** 都是一个独立的项目,你可以用 **任何编程语言** 编写插件的逻辑,只需要保证 **构建的运行时产物** 符合 [**插件运行时规范**](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) 即可保证插件的识别和运行。
 
 为保证插件的规范性、可维护性,方便你的插件能被更多人使用和二次开发,我们更推荐你使用 omds-chat 提供的 [dsc插件模板](https://github.com/omds-chat/dsc-plugin-template) 进行插件开发。
 
-每一个dsc插件在 **运行阶段** 都是一个符合 [dsc插件产物规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) 的 `js脚本` 。
+每一个dsc插件在 **运行阶段** 都是一个符合 [插件运行时规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) 的 `js脚本` 。
 
-插件产物可以导出具名 `manifest`,用户从地址安装时就不需要再提供清单,清单字段与导出形态见 [dsc插件产物规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) ,最小示例见 [从零编写一个 dsc 插件](docs/user/develop/framework/build-a-plugin.md) 。
+插件产物可以导出具名 `manifest`,用户从地址安装时就不需要再提供清单,清单字段与导出形态见 [插件运行时规范](https://github.com/omds-chat/dsc-plugin-template/blob/main/specs/plugin-runtime-spec.md) ,最小示例见 [从零编写一个 dsc 插件](docs/user/develop/framework/build-a-plugin.md) 。
 
 dsc插件由 `dsc-plugin-engine` 负责引入,并通过交互 `dsc-plugin-engine` 提供的标准接口来有限地控制整个Chat及其页面。绕过 `dsc-plugin-engine` 直接交互 `dsc-core` 是不合适的,该行为会被 `dsc-plugin-engine` 识别并报出警报给用户。
 

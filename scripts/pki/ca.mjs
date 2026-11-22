@@ -7,7 +7,7 @@
  * 自检与错误汇总;底层封装见同目录 pki.mjs。
  *
  * 约定见 .agents/signing-conventions.md:
- * - 根 CA 密钥 Ed25519,自签名,有效期 3650 天
+ * - 根 CA 密钥 ECDSA P-256,自签名,有效期 3650 天
  * - EEC 密钥 ECDSA P-256,由根 CA 签发,有效期 365 天
  * - 合集与网页签名 openssl cms -sign -binary -nocerts -noattr,产出 <文件>.sig
  */
