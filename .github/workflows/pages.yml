@@ -268,7 +268,12 @@ jobs:
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${DIST_HISTORY_TAG_SUFFIX}"
-          # 幂等重建: 本版目录与本地旧 tag 一律先清再建
+          # 幂等重建: 本版目录与本地旧 tag 一律先清再建;旧目录暂存一份供「仅签名不同」判定用
+          prev_dir="${RUNNER_TEMP}/prev-dist-history"
+          rm -rf "${prev_dir}"
+          if [ -d "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}" ]; then
+            cp -a "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}" "${prev_dir}"
+          fi
           rm -rf "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
           git -C "${DIST_HISTORY_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
           mkdir -p "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
@@ -285,6 +290,13 @@ jobs:
               cp -a "${BUILD_DIR}/." "${target}/"
             done
           fi
+          # 仅签名字节不同不构成变更: ECDSA 每次签名字节随机,内容一致时还原上一版目录,不产生噪音 commit
+          if [ -d "${prev_dir}" ] && diff -r --exclude='*.sig' "${prev_dir}" "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}" > /dev/null 2>&1; then
+            rm -rf "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
+            mv "${prev_dir}" "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
+            echo "本版内容与上一轮完全一致(仅签名字节不同),还原旧目录,不产生 commit"
+          fi
+          rm -rf "${prev_dir}"
           # 版本留存: 只保留最近的 MAX_VERSIONS 个版本目录(latest 不参与计数);
           # 裁剪发生在 commit 之前,删除与新增因此进入同一个 commit
           node .github/scripts/prune-versions.mjs --dir "${DIST_HISTORY_WORKTREE}/version"
