@@ -23,7 +23,8 @@ name: Deploy GitHub Pages
 # - 版本留存: 三条并行分支的 version 目录各自只保留最近 1000 个版本,裁剪在 commit 之前完成
 # - 组装 RUNNER_TEMP/pages: 构建产物在站点根,certs/ 与 index.json 同样放在站点根,
 #   使 index.json 里 certs/... 的相对路径在站点根、version/latest 与 version/<tag> 内都成立;
-#   两条归档分支的 version 目录在页面包里合并成一份历史;组装完成后上传并用 actions/deploy-pages 部署
+#   三条归档分支的 version 目录全部释放合并进页面包,/version/<tag>/ 是该版本的完整快照
+#   (构建产物、certs/、index.json);组装完成后上传并用 actions/deploy-pages 部署
 
 on:
   release:
@@ -435,8 +436,8 @@ jobs:
 
       # 组装 Pages 目录: 三条分支的内容合成一个页面包
       # - 站点根目录是构建产物,certs/ 与 index.json 也落在站点根
-      # - 两条信任分支的 version 目录在页面包里合并成一份历史:/version/<tag>/ 内同时有 certs/ 与 index.json,
-      #   与 index.json 里 certs/... 的相对路径口径一致
+      # - 三条归档分支的 version 目录在页面包里合并成一份历史:/version/<tag>/ 内是该版本的完整快照
+      #   (构建产物、certs/、index.json),与 index.json 里 certs/... 的相对路径口径一致
       # - 组装目录放在 RUNNER_TEMP 下,不落在任何一个工作树内,避免污染归档分支
       # - version 目录随发布线性增长,站点体积与仓库体积都随历史版本累积:
       #   GitHub Pages 站点上限为 1 GB,单次发布同时写入构建产物与 certs 的全量副本;
@@ -457,7 +458,11 @@ jobs:
           # 当前证书目录与当前信任清单
           cp -a "${CERTS_WORKTREE}/certs" "${pages}/certs"
           cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${pages}/index.json"
-          # 两个归档分支的历史版本合并;先证书后清单,同名说明取清单分支的 README.md
+          # 三个归档分支的 version 目录全部释放进页面包:
+          # version/<tag>/ 因此是该版本的完整快照(构建产物 + certs/ + index.json + README.md),
+          # 同名文件按「产物 -> 证书 -> 清单」的顺序后者覆盖前者(清单分支的 README.md 最终生效)
+          mkdir -p "${DIST_HISTORY_WORKTREE}/version" "${CERTS_WORKTREE}/version" "${TRUSTED_MANIFEST_WORKTREE}/version"
+          tar -C "${DIST_HISTORY_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
           tar -C "${CERTS_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
           tar -C "${TRUSTED_MANIFEST_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
           # 排除 .git;末尾的删除是兜底,确保 git 元数据不会进入站点
