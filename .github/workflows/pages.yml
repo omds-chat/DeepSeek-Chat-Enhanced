@@ -23,9 +23,9 @@ name: Deploy GitHub Pages
 # - 版本留存: 三条并行分支的 version 目录各自只保留最近 1000 个版本,裁剪在 commit 之前完成
 # - 组装 RUNNER_TEMP/pages: 正式发行时站点根是本轮构建产物,certs/ 与 index.json 同样放在站点根,
 #   预发行时站点根维持最近一次正式发行的产物,不把预发行构建顶上站点根;
-#   index.json 里 certs/... 的相对路径在站点根、version/latest 与 version/<tag> 内都成立;
-#   三条归档分支的 version 目录全部释放合并进页面包,/version/<tag>/ 是该版本的完整快照
-#   (构建产物、certs/、index.json);组装完成后上传并用 actions/deploy-pages 部署
+#   index.json 里 certs/... 的相对路径在站点根与各版本目录内都成立;
+#   三条归档分支的 version 目录内容全部释放到页面包根目录,/<tag>/ 是该版本的完整快照
+#   (构建产物、certs/、index.json),latest/ 指向最近一次正式发行;组装完成后上传并用 actions/deploy-pages 部署
 
 on:
   release:
@@ -414,8 +414,8 @@ jobs:
 
       # 组装 Pages 目录: 三条分支的内容合成一个页面包
       # - 站点根目录是构建产物,certs/ 与 index.json 也落在站点根
-      # - 三条归档分支的 version 目录在页面包里合并成一份历史:/version/<tag>/ 内是该版本的完整快照
-      #   (构建产物、certs/、index.json),与 index.json 里 certs/... 的相对路径口径一致
+      # - 三条归档分支的 version 内容释放到包根:/<tag>/ 内是该版本的完整快照
+      #   (构建产物、certs/、index.json),latest/ 指向最近一次正式发行,与 index.json 里 certs/... 的相对路径口径一致
       # - 组装目录放在 RUNNER_TEMP 下,不落在任何一个工作树内,避免污染归档分支
       # - version 目录随发布线性增长,站点体积与仓库体积都随历史版本累积:
       #   GitHub Pages 站点上限为 1 GB,单次发布同时写入构建产物与 certs 的全量副本;
@@ -426,7 +426,7 @@ jobs:
           set -euo pipefail
           pages="${RUNNER_TEMP}/pages"
           rm -rf "${pages}"
-          mkdir -p "${pages}" "${pages}/version"
+          mkdir -p "${pages}"
           # 站点根: 正式发行用本轮构建产物;预发行用最近一次正式发行的产物(dist-history 分支根),
           # 不把预发行构建顶上站点根——预发行对站点根的唯一改动是新增 version/<tag>/。
           # 尚无任何正式发行时(分支根只有 README),退回本轮构建产物兜底。
@@ -452,13 +452,14 @@ jobs:
             echo "::error::页面包缺少 certs/ 或 index.json,中止"
             exit 1
           fi
-          # 三个归档分支的 version 目录全部释放进页面包:
-          # version/<tag>/ 因此是该版本的完整快照(构建产物 + certs/ + index.json + README.md),
+          # 三个归档分支的 version 目录内容全部释放到页面包根目录:
+          # 每个版本成为站点根下的 <tag>/ 目录,是该版本的完整快照(构建产物 + certs/ + index.json + README.md),
+          # 访问 /<tag>/ 即可,不再有 version/ 这一层;latest/ 同样来自分支的 version/latest。
           # 同名文件按「产物 -> 证书 -> 清单」的顺序后者覆盖前者(清单分支的 README.md 最终生效)
           mkdir -p "${DIST_HISTORY_WORKTREE}/version" "${CERTS_WORKTREE}/version" "${TRUSTED_MANIFEST_WORKTREE}/version"
-          tar -C "${DIST_HISTORY_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
-          tar -C "${CERTS_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
-          tar -C "${TRUSTED_MANIFEST_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}/version" -xf -
+          tar -C "${DIST_HISTORY_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}" -xf -
+          tar -C "${CERTS_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}" -xf -
+          tar -C "${TRUSTED_MANIFEST_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}" -xf -
           # 排除 .git;末尾的删除是兜底,确保 git 元数据不会进入站点
           rm -rf "${pages}/certs/.git" "${pages}/version/.git"
 
