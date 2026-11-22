@@ -3,6 +3,7 @@ import { useTranslate } from '../../i18n/index.js'
 import { MobileHeader } from '../session/MobileHeader.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { returnToChat, type SlotPageRef } from './pluginViewState.js'
+import { ConversationTabs } from './ConversationTabs.js'
 import { PluginPageBody, useSlotPageModel } from './PluginPageBlocks.js'
 import detailStyles from './settings/PluginSettings.module.css'
 import styles from './PluginPageView.module.css'
@@ -37,6 +38,8 @@ export const PluginPageView = ({
         >
           {t('pluginViewBackToChat')}
         </button>
+        {/* 会话标签页与全局面板页共用页头, 标签栏只在会话标签页出现, 位置与会话视图一致 */}
+        {page.slot === 'conversation.tabs' ? <ConversationTabs /> : null}
       </div>
       {state.kind === 'loading' ? (
         <div className={detailStyles.loading}>{t('pluginPagesLoading')}</div>

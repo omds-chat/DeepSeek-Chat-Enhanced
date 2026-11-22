@@ -4,6 +4,7 @@ import { useTranslate } from '../../i18n/index.js'
 import type { Session } from '../../services/chat/types.js'
 import { ChatInput } from '../chatInput/ChatInput.js'
 import { MessageList } from '../messages/MessageList.js'
+import { ConversationTabs } from '../plugins/ConversationTabs.js'
 import { MobileHeader } from './MobileHeader.js'
 import styles from './SessionView.module.css'
 
@@ -23,12 +24,17 @@ export const SessionView = ({
   return (
     <div className={styles.view}>
       {isMobile ? (
-        <MobileHeader title={title} />
+        <>
+          <MobileHeader title={title} />
+          {/* 会话视图标签栏属于会话自身的页头，不单独占一行主区 */}
+          <ConversationTabs />
+        </>
       ) : (
         <div className={styles.header}>
           <div className={clsx(styles.title, siderCollapsed && styles.withCollapsedSider)}>
             {title}
           </div>
+          <ConversationTabs />
         </div>
       )}
       <MessageList

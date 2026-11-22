@@ -16,7 +16,6 @@ import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
-import { ConversationTabs } from '../components/plugins/ConversationTabs.js'
 import { PluginPanel } from '../components/plugins/PluginPanel.js'
 import { PluginPageView } from '../components/plugins/PluginPageView.js'
 import { bindPluginViewLifecycle } from '../components/plugins/pluginViewLifecycle.js'
@@ -58,10 +57,6 @@ export const App = () => {
   const activeId = useChatStore((state) => state.activeId)
   // 主区面板的单一命名空间: null 是会话, 'plugins' 是插件面板, 其余是插件槽位页
   const activePanelId = usePluginView((state) => state.activePanelId)
-  // 会话视图标签栏跟着会话走: 会话(null)与会话标签页上渲染, 全局面板(nav.panel、插件面板)上不渲染
-  const conversationTabsVisible =
-    activePanelId === null ||
-    (typeof activePanelId === 'object' && activePanelId.slot === 'conversation.tabs')
 
   usePreventPageScroll(isMobile)
 
@@ -106,7 +101,6 @@ export const App = () => {
               </Button>
             </div>
           ) : null}
-          {conversationTabsVisible ? <ConversationTabs /> : null}
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
             {activePanelId !== null && typeof activePanelId === 'object' ? (
