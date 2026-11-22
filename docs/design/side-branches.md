@@ -33,7 +33,22 @@
 | 站点根 | 构建产物(页面、静态资源、`LICENSE`) |
 | 站点根 `certs/` | 当前证书目录,来自 `certs` 分支 |
 | 站点根 `index.json` | 当前信任清单,来自 `trusted-manifest` 分支 |
-| 站点根 `version/latest/`、`version/<tag>/` | 两条信任分支的历史版本合并成一份,目录内同时有 `certs/` 与 `index.json` |
+| 站点根 `version/latest/`、`version/<tag>/` | 三条归档分支的历史版本释放合并成一份,每个版本目录是该版本的完整快照:构建产物(来自 `dist-history`)、`certs/`(来自 `certs` 分支)、`index.json` 与 `README.md`(来自 `trusted-manifest` 分支) |
+
+站点 `version/<tag>/` 的结构:
+
+```text
+version/
+└── dsc-1.0.0-alpha.1/
+    ├── index.html          # 本版页面入口
+    ├── assets/             # 本版静态资源
+    ├── LICENSE
+    ├── certs/              # 本版证书副本,结构与站点根 certs/ 一致
+    ├── index.json          # 本版信任清单
+    └── README.md           # 本版清单说明
+```
+
+同名文件的合并顺序是「产物 -> 证书 -> 清单」,清单分支的 `README.md` 最终生效;各来源互不覆盖对方独有的文件。
 
 这样 `index.json` 里 `certs/ds-chat/ds-chat-root-ca.crt` 这类相对路径在三个位置都成立,消费方用同一个前缀即可取齐证书与清单。
 
