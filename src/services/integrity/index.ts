@@ -109,8 +109,12 @@ export const verifyWebIntegrity = async (): Promise<void> => {
     return
   }
   started = true
+  // 开发服务器不产出 web_files.json 与逐文件签名，校验无从谈起，直接跳过
+  if (typeof __DEV__ === 'boolean' && __DEV__) {
+    return
+  }
   const anchorPem = embeddedRootCa()
-  // 本地开发与未注入根证书的构建不做校验，也不加载校验模块
+  // 未注入根证书的构建不做校验，也不加载校验模块
   if (anchorPem.trim() === '') {
     return
   }

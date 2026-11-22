@@ -56,6 +56,8 @@ const DEV_LINK_KEYS = [
   'DS_CHAT_PAGES_LINK',
   'DSC_INNER_PLUGIN_PAGES_LINK',
   'AWESOME_DSC_PLUGIN_PAGES_LINK',
+  'DS_CHAT_CERTS_LINK',
+  'DS_CHAT_TRUSTED_MANIFEST_LINK',
 ] as const
 
 type DevLinkKey = (typeof DEV_LINK_KEYS)[number]
@@ -102,6 +104,8 @@ const readDevLinks = (dev: boolean, envPath: string | null): DevLinks => {
     DS_CHAT_PAGES_LINK: '',
     DSC_INNER_PLUGIN_PAGES_LINK: '',
     AWESOME_DSC_PLUGIN_PAGES_LINK: '',
+    DS_CHAT_CERTS_LINK: '',
+    DS_CHAT_TRUSTED_MANIFEST_LINK: '',
   }
   if (!dev || envPath === null) {
     return links
@@ -240,6 +244,9 @@ export const createConfig = ({
         __DS_CHAT_PAGES_LINK__: JSON.stringify(links.DS_CHAT_PAGES_LINK),
         __DSC_INNER_PLUGIN_PAGES_LINK__: JSON.stringify(links.DSC_INNER_PLUGIN_PAGES_LINK),
         __AWESOME_DSC_PLUGIN_PAGES_LINK__: JSON.stringify(links.AWESOME_DSC_PLUGIN_PAGES_LINK),
+        __DS_CHAT_CERTS_LINK__: JSON.stringify(links.DS_CHAT_CERTS_LINK),
+        __DS_CHAT_TRUSTED_MANIFEST_LINK__: JSON.stringify(links.DS_CHAT_TRUSTED_MANIFEST_LINK),
+        __DEV__: JSON.stringify(dev),
       }),
       new rspack.CopyRspackPlugin({
         patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],

@@ -7,16 +7,42 @@ import type { TrustCollection, TrustFailureReason, TrustList } from './types.js'
  * 信任清单的镜像地址；按顺序尝试，前者失败才用后者。
  * 信任清单在 trusted-manifest 分支，证书与公钥在 certs 分支，两者是两条独立的并行分支。
  */
-export const TRUST_MANIFEST_MIRRORS: readonly string[] = [
+const PRODUCTION_MANIFEST_MIRRORS: readonly string[] = [
   'https://cdn.jsdelivr.net/gh/omds-chat/DeepSeek-Chat-Enhanced@trusted-manifest/',
   'https://raw.githubusercontent.com/omds-chat/DeepSeek-Chat-Enhanced/trusted-manifest/',
 ]
 
-/** 证书与公钥的镜像地址；与 TRUST_MANIFEST_MIRRORS 一一对应，下标相同即同一个镜像源 */
-export const CERT_MIRRORS: readonly string[] = [
+const PRODUCTION_CERT_MIRRORS: readonly string[] = [
   'https://cdn.jsdelivr.net/gh/omds-chat/DeepSeek-Chat-Enhanced@certs/',
   'https://raw.githubusercontent.com/omds-chat/DeepSeek-Chat-Enhanced/certs/',
 ]
+
+/** 构建注入的地址；非字符串或空串视为未提供 */
+const injected = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+
+const devBuild = (): boolean => typeof __DEV__ === 'boolean' && __DEV__
+
+const manifestLink = (): string =>
+  injected(typeof __DS_CHAT_TRUSTED_MANIFEST_LINK__ === 'string' ? __DS_CHAT_TRUSTED_MANIFEST_LINK__ : '')
+
+const certLink = (): string =>
+  injected(typeof __DS_CHAT_CERTS_LINK__ === 'string' ? __DS_CHAT_CERTS_LINK__ : '')
+
+/**
+ * 解析某一类镜像地址：注入了本地地址就只用本地那一个，dev 且未注入时返回空列表（不请求任何地址），
+ * production 用线上镜像。空列表让上层自然降级到构建内嵌的根证书与网页 EEC。
+ */
+const resolveMirrors = (local: string, production: readonly string[]): readonly string[] =>
+  local !== '' ? [local] : devBuild() ? [] : production
+
+/** 信任清单的镜像地址；按顺序尝试，前者失败才用后者。空列表表示本次不请求信任清单 */
+export const TRUST_MANIFEST_MIRRORS: readonly string[] = resolveMirrors(
+  manifestLink(),
+  PRODUCTION_MANIFEST_MIRRORS
+)
+
+/** 证书与公钥的镜像地址；与 TRUST_MANIFEST_MIRRORS 一一对应，下标相同即同一个镜像源 */
+export const CERT_MIRRORS: readonly string[] = resolveMirrors(certLink(), PRODUCTION_CERT_MIRRORS)
 
 /** 合集并发校验上限 */
 const CONCURRENCY = 4

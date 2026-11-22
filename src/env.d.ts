@@ -23,6 +23,15 @@ declare const __DSC_INNER_PLUGIN_PAGES_LINK__: string
 /** 本地开发时 awesome-dsc-plugin 来源的地址，仅 dev 从 .env 的 AWESOME_DSC_PLUGIN_PAGES_LINK 注入；为空串时用线上地址 */
 declare const __AWESOME_DSC_PLUGIN_PAGES_LINK__: string
 
+/** 是否为开发构建；dev 下不拉取线上信任材料与网页签名清单 */
+declare const __DEV__: boolean
+
+/** 本地开发时的证书镜像地址，仅 dev 从 .env 的 DS_CHAT_CERTS_LINK 注入；为空串且为 dev 时不请求任何镜像 */
+declare const __DS_CHAT_CERTS_LINK__: string
+
+/** 本地开发时的信任清单镜像地址，仅 dev 从 .env 的 DS_CHAT_TRUSTED_MANIFEST_LINK 注入；为空串且为 dev 时不请求任何镜像 */
+declare const __DS_CHAT_TRUSTED_MANIFEST_LINK__: string
+
 /** Prism 语言包通过副作用注册到全局 Prism */
 declare module 'prismjs/components/*' {}
 
