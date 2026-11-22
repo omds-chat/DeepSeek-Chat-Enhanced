@@ -12,6 +12,7 @@
 |:---:|:---:|
 | 正式发行 tag | `dsc-主版本.次版本.修订版本`,三段均为十进制数,例如 `dsc-1.0.0` |
 | 预发行 tag | 正式格式后追加 `-XXX.序号`,`XXX` 为小写字母串(不限定具体词表,保留 alpha、beta、rc 等扩展性),序号为十进制数,例如 `dsc-1.0.0-alpha.1` |
+| 预发行与仓库版本号 | 预发行不推进仓库的版本号字段(`package.json` 等):打 `dsc-X.Y.Z-XXX.n` 时版本号字段锁定在目标正式版本 `X.Y.Z`,只在正式发行打 `dsc-X.Y.Z` 时推进 |
 | 格式校验 | 两条工作流用同一个正则校验 tag 格式,不符直接中止,避免不合规的 tag 进入 version 目录并污染后续归档(pages.yml「Validate release tag format」步、release-assets.yml「Validate tag and release kind」步) |
 | release 事件对应性 | tag 后缀判出的发行类型必须与 Release 的预发行标记一致,不一致拒绝执行(两条工作流同一条口径) |
 | 手动触发 | 按 tag 后缀判定发行类型,不读 Release 标记;附件流程额外要求该 tag 的 Release 已存在,否则拒绝补传 |
