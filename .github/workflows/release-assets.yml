@@ -111,8 +111,7 @@ jobs:
             echo "::error::构建产物目录 dist 不存在"
             exit 1
           fi
-          zip -r "${RUNNER_TEMP}/${RELEASE_TAG}.zip" .
-        working-directory: dist
+          (cd dist && zip -r "${RUNNER_TEMP}/${RELEASE_TAG}.zip" .)
 
       - name: Upload to release
         run: |
