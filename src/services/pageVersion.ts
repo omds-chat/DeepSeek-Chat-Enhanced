@@ -8,8 +8,6 @@ import { APP_NAME } from '../brand.js'
 
 /** 构建时注入页面版本的 meta 标签名，取值形如 dsc-1.0.0 */
 const VERSION_META = 'application-version'
-/** 发布流水线留存历史版本页面的目录名，旧版本页面位于 <站点根>/version/<tag>/ */
-const VERSION_DIR = 'version'
 /** 历史版本目录的 tag 前缀；package.json 的版本号不带前缀，统一补成 tag 后再比较 */
 const VERSION_TAG_PREFIX = 'dsc-'
 /** 上次使用的页面版本 */
@@ -20,9 +18,6 @@ const ACK_KEY = `${APP_NAME}:page-version-ack`
 const REFRESH_KEY = `${APP_NAME}:page-version-refreshing`
 /** 版本 tag 的取值规则，与发布流水线的 tag 校验保持一致 */
 const VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z._-]*$/
-/** 页面目录末尾的历史版本目录，用于判断当前页面是否已经在旧版本里 */
-const VERSION_DIR_PATTERN = /(?:^|\/)version\/[^/]+\/?$/
-
 /** 待处理的版本不一致；pending 非空时界面显示提示 */
 export type PageVersionPending = {
   /** 当前实际加载的页面版本 */
@@ -109,18 +104,24 @@ const pageDirectory = (href: string): URL => {
   return url
 }
 
-/** 站点根地址；部署在子路径下时保留子路径，已处在 version/<tag>/ 时先去掉版本目录 */
-export const siteRootHref = (href: string = document.baseURI): string => {
+/** 站点根地址；部署在子路径下时保留子路径，当前页面已在 <站点根>/<tag>/ 快照目录里时先去掉该目录 */
+export const siteRootHref = (
+  href: string = document.baseURI,
+  tag: string | null = readPageVersion()
+): string => {
   const url = pageDirectory(href)
-  if (VERSION_DIR_PATTERN.test(url.pathname)) {
-    url.pathname = url.pathname.replace(VERSION_DIR_PATTERN, '/')
+  // 页面目录的末段与当前加载版本的 tag 一致即视为本版快照目录，直接剥掉；tag 未知时保持目录不变
+  const dir = url.pathname.slice(0, -1)
+  const slash = dir.lastIndexOf('/')
+  if (tag !== null && dir.slice(slash + 1) === tag) {
+    url.pathname = slash <= 0 ? '/' : dir.slice(0, slash + 1)
   }
   return url.href
 }
 
-/** 历史版本页面地址：<站点根>/version/<tag>/ */
+/** 历史版本页面地址：<站点根>/<tag>/，部署包已扁平化，不再有 version/ 这一层 */
 export const versionPageHref = (version: string, href: string = document.baseURI): string =>
-  `${siteRootHref(href)}${VERSION_DIR}/${encodeURIComponent(version)}/`
+  `${siteRootHref(href)}${encodeURIComponent(version)}/`
 
 /** 最新版页面地址：站点根目录，附加一次性查询串绕开可能被缓存的 index.html */
 export const latestPageHref = (

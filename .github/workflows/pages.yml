@@ -231,8 +231,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # 前端展示版本: CI 传入发布 tag 剥掉 dsc- 前缀后的版本串(如 1.0.0-alpha.1),预发行如实展示;
+      # env 块的值不经过 bash 展开,剥前缀的参数展开只能写在 run 脚本里
       - name: Build
-        run: pnpm build
+        run: |
+          DS_CHAT_DISPLAY_VERSION="${RELEASE_TAG#dsc-}" pnpm build
 
       # 网页签名: 私钥写入被 git 忽略的 temp/ 临时文件,签名结束立即删除
       - name: Sign web files

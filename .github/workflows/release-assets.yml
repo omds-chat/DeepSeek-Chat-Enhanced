@@ -100,8 +100,11 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # 前端展示版本: CI 传入发布 tag 剥掉 dsc- 前缀后的版本串(如 1.0.0-alpha.1),预发行如实展示;
+      # env 块的值不经过 bash 展开,剥前缀的参数展开只能写在 run 脚本里
       - name: Build
-        run: pnpm build
+        run: |
+          DS_CHAT_DISPLAY_VERSION="${RELEASE_TAG#dsc-}" pnpm build
 
       # 打包: dist/ 内容为 zip 根,附件名 web-<tag>.zip
       - name: Package dist

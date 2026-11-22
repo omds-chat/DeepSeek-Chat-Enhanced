@@ -13,6 +13,12 @@ const { version } = JSON.parse(
   readFileSync(new URL('./package.json', import.meta.url), 'utf8')
 ) as { version: string }
 
+/**
+ * 前端展示版本: CI 从发布 tag 剥掉前缀后经 DS_CHAT_DISPLAY_VERSION 传入,预发行如实展示;
+ * 未设置时回落 package.json 的版本号,本地开发语义不变
+ */
+const displayVersion = process.env.DS_CHAT_DISPLAY_VERSION?.trim() || version
+
 const cssLoader = {
   loader: 'builtin:lightningcss-loader',
   options: { targets },
@@ -233,7 +239,7 @@ export const createConfig = ({
       new rspack.HtmlRspackPlugin({
         template: './src/index.html',
         scriptLoading: 'defer',
-        meta: { 'application-version': `${VERSION_TAG_PREFIX}${version}` },
+        meta: { 'application-version': `${VERSION_TAG_PREFIX}${displayVersion}` },
       }),
       new rspack.DefinePlugin({
         __API_ORIGIN__: JSON.stringify(apiOrigin),
