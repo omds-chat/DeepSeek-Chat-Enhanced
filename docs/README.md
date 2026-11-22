@@ -22,7 +22,8 @@
 | [dsc-core 与 dsc-plugin-engine 的职责契约](design/core-engine-contract.md) | 设计与契约记录: 内核与引擎的分工、能力粒度与演进方向 | 职责边界现状(薄门面、业务域级能力粒度、两层凭证、引擎的转发与门控、供应端点的放行边界)、能力清单手写副本的现状与改动面、未定稿的六条演进方向与已排除做法、已知口径冲突 | 增删能力标识、改动能力白名单,或评估契约如何演进时 | 维护者 |
 | [插件安装与存储](design/plugin-install-and-storage.md) | 设计与契约记录: 两条安装入口的预检顺序与安装记录形态 | 在线安装与离线包的入口对照、在线安装顺序及每步位置的理由、离线包预检顺序、安装记录与 IndexedDB、启动恢复的三段、代码 2 MB 上限的来由、未定稿、已知口径冲突 | 改动安装流程或储存结构、排查恢复失败、复核代码上限时 | 维护者 |
 | [信任与签名: 网页产物与插件产物](design/trust-and-signature.md) | 设计与契约记录: 两条签名链路的结论口径与失败处理 | 共用信任锚与四段链路、网页链路、插件链路、签名结论与来源结论、失败只警告不阻断、作者签名只覆盖单文件的后果、未定稿、已知口径冲突 | 判定签名与来源结论该如何呈现,或核对「只警告不阻断」的取舍时 | 维护者 |
-| [并行分支的命名与布局](design/side-branches.md) | 设计与契约记录: 并行分支的落地口径,职责与命名指回组织级文档 | 旧名与新名的对应(含工作区目录)、归档 tag 后缀、测试版归档口径、页面包与运行时的取材口径、与主干 `certs/` 的区别 | 改动发布流水线、增删并行分支或核对旧名时 | 维护者 |
+| [并行分支的命名与布局](design/side-branches.md) | 设计与契约记录: 并行分支的落地口径,职责与命名指回组织级文档 | 旧名与新名的对应(含工作区目录)、归档 tag 后缀、页面包的合并与运行时的取材口径、与主干 `certs/` 的区别;预发行双态行为指向 [发布流水线的双态行为](design/release-pipeline.md) | 改动发布流水线、增删并行分支或核对旧名时 | 维护者 |
+| [发布流水线的双态行为](design/release-pipeline.md) | 设计与契约记录: 发布流水线对正式发行与预发行的双态行为总纲 | tag 规范与触发对应性、双态行为矩阵(站点根、三条归档分支、信任材料、附件)、站点结构与版本快照、重跑幂等、push 末位、版本留存裁剪、发行附件打包 | 改动发布工作流或核对预发行与正式发行的行为差异时 | 维护者 |
 | [README](../README.md) | 仓库主说明,中文版为基准 | 相对上游的增强内容、内置插件、在线体验与本地使用、插件面板、插件市场、证书与信任数据、制作插件、版权与许可、安全政策、贡献指南 | 第一次了解项目,或需要对外统一口径时 | 产品用户、插件开发者、维护者 |
 | [README (English)](../README.en-US.md) | 主说明的英文版 | 与中文版同构的英文说明与链接 | 面向英文读者时;内容冲突以中文版为准 | 英文读者 |
 | [dsc-core 说明](../src/components/dsc-core/README.md) | 内核层的实现说明与约束 | 归属边界与对插件的可见性、目录结构、内部接口、外源请求约束(含计数请求)、资产读取约束与三态结果、插件数据约束、凭证与绕过检测 | 改动内核能力出口、外源请求与资产读取约束或插件数据配额时 | 维护者 |
@@ -39,7 +40,7 @@
 |:---:|:---:|:---:|:---:|
 | 用户使用指南 | `user/guide/index.md`、`user/guide/plugins.md` | 产品用户 | 只描述界面上的可见行为,不引规范条文 |
 | 插件开发者文档 | `user/develop/index.md`、`user/develop/basic/` 五篇、`user/develop/framework/build-a-plugin.md` | 插件开发者、合集维护者 | 契约条文以模板仓库 `dsc-plugin-template` 的 specs 为准;本仓库只承担指针,以及签名、验签、版本继承、安装持久化这些 dsce 专有机制的说明 |
-| 维护者设计文档 | `design/core-engine-contract.md`、`design/plugin-install-and-storage.md`、`design/trust-and-signature.md`、`design/side-branches.md`,以及 `intro/dsc-architecture.md`、`intro/dsc-diff-dsh.md` | 维护者 | 记录已成立的契约现状、理由与未定稿方向,不定义对外条文,也不构成承诺 |
+| 维护者设计文档 | `design/core-engine-contract.md`、`design/plugin-install-and-storage.md`、`design/trust-and-signature.md`、`design/release-pipeline.md`、`design/side-branches.md`,以及 `intro/dsc-architecture.md`、`intro/dsc-diff-dsh.md` | 维护者 | 记录已成立的契约现状、理由与未定稿方向,不定义对外条文,也不构成承诺 |
 | 指向模板仓库的占位文档 | `user/develop/basic/plugin-develop-spec.md`,以及 `plugin-product-spec.md` 的前半部分 | 插件开发者 | 只保留指针、迁移说明与「已迁往模板」对照,正文在模板仓库 |
 
 规范正文的归属需要单独交代:

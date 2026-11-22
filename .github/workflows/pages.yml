@@ -451,6 +451,8 @@ jobs:
             # 预发行: 站点根维持最近一次发行版的内容;从未有过发行版时不拷贝任何页面内容
             if [ -f "${DIST_HISTORY_WORKTREE}/index.html" ]; then
               cp -a "${DIST_HISTORY_WORKTREE}/." "${pages}/"
+              # 分支根的 README.md 是归档仓库占位说明,不属于站点内容,与正式发行站点根口径对齐
+              rm -f "${pages}/README.md"
             fi
             # 信任材料是基础设施,始终在站点根提供: 取最近发行版的,从未有发行版时取本版生成的
             if [ -d "${CERTS_WORKTREE}/certs" ]; then

@@ -1,15 +1,10 @@
 # 并行分支的命名与布局
 
-本文记录本仓库三条并行分支(`dist-history`、`certs`、`trusted-manifest`)的落地口径。分支的职责、命名规则与归档流程由组织仓库的 `.github/docs/repo-spec/side-branches.md` 规定,本文不重复其条文,只记本仓库的落地情况;三条分支都只由 `.github/workflows/pages.yml` 写入,不从 `main` 派生,也不合并回 `main`,发布流水线发现某条分支缺失时报错中止,不代为创建。
+本文记录本仓库三条并行分支(`dist-history`、`certs`、`trusted-manifest`)的落地口径。分支的职责、命名规则与归档流程由组织仓库的 `.github/docs/repo-spec/side-branches.md` 规定,本文不重复其条文,只记本仓库的落地情况;三条分支都只由 `.github/workflows/pages.yml` 写入,不从 `main` 派生,也不合并回 `main`,发布流水线发现某条分支缺失时报错中止,不代为创建。发布行为本身(触发校验、双态矩阵、站点结构、幂等、推送、留存、附件)由 [发布流水线的双态行为](release-pipeline.md) 承载。
 
 ## 预发行的归档口径
 
-组织级规范之外,本仓库的发布流水线对预发行产物(tag 形如 dsc-x.y.z-XXX.n,XXX 为小写字母串)有两条补充口径:
-
-| 事项 | 口径 |
-|:---:|:---:|
-| `dist-history`(预发行) | 预发行的产物只落在 `version/<tag>/` 一个目录里,不替换分支根目录,不替换 `version/latest/` |
-| 归档(预发行) | 预发行 tag 在三条分支的口径对齐:各自只在 `version/` 下新增 `version/<tag>/` 一个目录(`dist-history` 存产物、`certs` 存证书副本、`trusted-manifest` 存清单),不清理工作树、不动任何分支的根目录与 `version/latest/`,页面包照常合并发布 |
+预发行(tag 形如 `dsc-x.y.z-XXX.n`,`XXX` 为小写字母串)在发布流水线里的归档形态、站点根行为、重跑幂等与留存裁剪,已统一迁入 [发布流水线的双态行为](release-pipeline.md) 的双态行为矩阵;此处不再另立口径,以该文为准。
 
 ## 旧名与新名的对应关系
 
@@ -30,16 +25,15 @@
 
 | 位置 | 内容 |
 |:---:|:---:|
-| 站点根 | 发行版的构建产物(页面、静态资源、`LICENSE`)。只有发行版进站点根;预发行绝不进站点根——站点根维持最近一次发行版的内容(来自 `dist-history` 分支根),从未有发行版时站点根没有页面内容,只有信任材料与版本入口,没有兜底 |
+| 站点根 | 发行版的构建产物(页面、静态资源、`LICENSE`)。只有发行版进站点根;预发行的双态行为以 [发布流水线的双态行为](release-pipeline.md) 的双态行为矩阵为准 |
 | 站点根 `certs/` | 当前证书目录,来自 `certs` 分支根目录 |
 | 站点根 `index.json` | 当前信任清单,来自 `trusted-manifest` 分支根目录 |
-| 站点根 `version/latest/`、`version/<tag>/` | 三条归档分支的历史版本释放合并成一份,每个版本目录是该版本的完整快照:构建产物(来自 `dist-history`)、`certs/`(来自 `certs` 分支)、`index.json` 与 `README.md`(来自 `trusted-manifest` 分支) |
+| 站点根 `latest/`、`/<tag>/` | 三条归档分支 `version/` 下的内容释放到包根:归档分支自身保留 `version/` 这一层,页面包不保留,每个版本在站点根下是 `latest/` 或 `/<tag>/` 一个目录,是该版本的完整快照:构建产物(来自 `dist-history`)、`certs/`(来自 `certs` 分支)、`index.json` 与 `README.md`(来自 `trusted-manifest` 分支) |
 
-站点 `version/<tag>/` 的结构:
+站点 `latest/` 指向最近一次正式发行;`/<tag>/` 的结构:
 
 ```text
-version/
-└── dsc-1.0.0-alpha.1/
+dsc-1.0.0-alpha.1/
     ├── index.html          # 本版页面入口
     ├── assets/             # 本版静态资源
     ├── LICENSE
