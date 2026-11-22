@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 2,
+  "rootCa": "certs/ds-chat/ds-chat-root-ca.crt",
+  "crl": null,
+  "collections": [
+    {
+      "id": "awesome-dsc-plugin",
+      "eec": "certs/awesome-dsc-plugin/awesome-dsc-plugin-eec.crt"
+    }
+  ]
+}
