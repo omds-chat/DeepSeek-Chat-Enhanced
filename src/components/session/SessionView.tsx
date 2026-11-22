@@ -5,6 +5,7 @@ import type { Session } from '../../services/chat/types.js'
 import { ChatInput } from '../chatInput/ChatInput.js'
 import { MessageList } from '../messages/MessageList.js'
 import { ConversationTabs } from '../plugins/ConversationTabs.js'
+import { SessionPanel, SessionPanelToggle } from '../plugins/SessionPanel.js'
 import { MobileHeader } from './MobileHeader.js'
 import styles from './SessionView.module.css'
 
@@ -35,18 +36,26 @@ export const SessionView = ({
             {title}
           </div>
           <ConversationTabs />
+          {/* 右栏开关: 没有插件登记右栏内容时自己退出, 页头与既有外观一致 */}
+          <SessionPanelToggle />
         </div>
       )}
-      <MessageList
-        session={session}
-        streaming={streaming}
-        footer={
-          <div className={styles.inputContainer}>
-            <ChatInput sessionId={session.id} />
-            <div className={styles.caveat}>{t('contentCaveat')}</div>
-          </div>
-        }
-      />
+      {/* 右栏只在有 session.panel.section 或 nav.side 登记时占宽, 否则这段包装不改变既有版面 */}
+      <div className={styles.body}>
+        <div className={styles.conversation}>
+          <MessageList
+            session={session}
+            streaming={streaming}
+            footer={
+              <div className={styles.inputContainer}>
+                <ChatInput sessionId={session.id} />
+                <div className={styles.caveat}>{t('contentCaveat')}</div>
+              </div>
+            }
+          />
+        </div>
+        <SessionPanel />
+      </div>
     </div>
   )
 }

@@ -19,6 +19,8 @@ import {
   declareSettings,
   forgetSettings,
   pluginSettingOverridesForPlugin,
+  pluginSettingOverridesForPlugin,
+  subscribeSettingsChange,
   pluginSettingValuesForPlugin,
   subscribeSettingsChange,
 } from './pluginSettings.js'
@@ -54,10 +56,11 @@ import type {
 } from './types.js'
 
 /**
- * 单能力策略：时间窗内的调用上限，以及异步调用的单次超时。
- * 同步成员没有超时（同步调用不适用），这几项不填 timeoutMs：
  * sessions:rename、notify、plugins:storage，以及只给引擎用的 plugins:data-clear；
- * events:session 与 chat:request 是登记型成员，登记本身同步返回，同样不填。
+ * 同步成员没有超时（同步调用不适用），这几项不填 timeoutMs：
+ * settings:surface 只给它的异步成员 overrides 用超时，登记与读值都是同步成员，不受影响。
+ * 登记型成员的限流语义是「登记次数」：每次 events.on、每次 chat.onBeforeRequest、
+ * 每次 settings.onChange 各占一个名额，之后的事件回调、请求前调用与设置变更回调由引擎发起，不再占用名额。
  * settings:surface 只给它的异步成员 overrides 用超时，登记与读值都是同步成员，不受影响。
  * 登记型成员的限流语义是「登记次数」：每次 events.on、每次 chat.onBeforeRequest、
  * 每次 settings.onChange 各占一个名额，之后的事件回调、请求前调用与设置变更回调由引擎发起，不再占用名额。
@@ -81,8 +84,9 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'assets:read': { limit: 120, windowMs: 10000, timeoutMs: 12000 },
   'plugins:storage': { limit: 100, windowMs: 10000 },
   // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
-  'plugins:data-clear': { limit: 0, windowMs: 10000 },
-  // 限制的是登记次数；每次请求前调用处理器由引擎发起，不逐次占用名额
+  // 登记与读取共用一个窗口：每次 settings.register 占一个名额，settings.values、
+  // settings.overrides 的读取与 settings.onChange 的登记同样计数；超时只对异步成员 overrides 生效
+  'settings:surface': { limit: 60, windowMs: 10000, timeoutMs: 3000 },
   'chat:request': { limit: 10, windowMs: 10000 },
   // 登记与读取共用一个窗口：每次 settings.register 占一个名额，settings.values、
   // settings.overrides 的读取与 settings.onChange 的登记同样计数；超时只对异步成员 overrides 生效
@@ -486,6 +490,23 @@ export const createPluginContext = ({
           forgetSettings(manifest.id)
         }
         record.disposers.add(dispose)
+    /**
+     * 只读自身的覆盖状态; 与 values 共用 settings:surface 的读取窗口。
+     * secret 字段要看「是否已配置」, 要等一次凭证库查询, 因此这个成员是异步的。
+     */
+    overrides: () =>
+      invoke('settings:surface', undefined, () => pluginSettingOverridesForPlugin(manifest.id)),
+    /**
+     * 订阅设置变更。与 register 同法: 登记时占一个限流名额, 之后由引擎在
+     * 每次落盘后回调, 不占名额; 释放函数进入 disposer 集合, 停用随引擎清理。
+     * 回调抛错由引擎捕获并写插件日志, 不影响其他订阅者。
+     */
+    onChange: (handler) =>
+      invokeSync('settings:surface', () => {
+        const dispose = subscribeSettingsChange(manifest.id, handler, pushLog)
+        record.disposers.add(dispose)
+        return dispose
+      }),
         return dispose
       }),
     // 只读自身命名空间: 其他插件的设置值不可见, secret 字段不返回

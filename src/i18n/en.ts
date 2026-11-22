@@ -483,6 +483,9 @@ export const en = {
   panelNavLabel: 'Panels',
   conversationTabChat: 'Chat',
   conversationTabsLabel: 'Conversation views',
+  sessionPanelAsideLabel: 'Session panel',
+  sessionPanelShow: 'Show the session panel',
+  sessionPanelHide: 'Hide the session panel',
   trustListRootMismatch:
     'The trust data of plugin sources does not match this build, so source trust checks were skipped; decide for yourself whether to continue',
   trustListCollectionsUntrusted:

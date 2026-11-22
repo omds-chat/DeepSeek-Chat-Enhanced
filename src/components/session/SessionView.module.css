@@ -5,6 +5,21 @@
   flex-direction: column;
 }
 
+/* 消息区与右栏并排: 右栏没有登记项时不渲染, 消息区独占整行, 版面与既有外观一致 */
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 消息区在这层里撑满; min-width: 0 让长内容压缩自身而不是把右栏挤出视口 */
+.conversation {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .header {
   display: flex;
   align-items: center;

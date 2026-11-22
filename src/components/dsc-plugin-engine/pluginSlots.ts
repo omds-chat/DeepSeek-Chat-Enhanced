@@ -24,6 +24,10 @@ export const SLOT_NAV_PANEL = 'nav.panel'
 export const SLOT_CONVERSATION_TABS = 'conversation.tabs'
 /** 槽位枚举: settings.page 是系统设置里插件自有的一个设置页 */
 export const SLOT_SETTINGS_PAGE = 'settings.page'
+/** 槽位枚举: session.panel.section 是会话右栏面板里带标题的一段 */
+export const SLOT_SESSION_PANEL_SECTION = 'session.panel.section'
+/** 槽位枚举: nav.side 是会话右栏的一个可切换标签页 */
+export const SLOT_NAV_SIDE = 'nav.side'
 /** 槽位枚举: composer.toolbar 是输入框下方工具条里的一个按钮 */
 export const SLOT_COMPOSER_TOOLBAR = 'composer.toolbar'
 /** 槽位枚举: composer.notice 是输入框上方的一条通知 */
@@ -35,11 +39,20 @@ export const SLOT_MESSAGE_ACTIONS = 'message.actions'
 /** 槽位枚举: menu.item 是右键菜单里的一项 */
 export const SLOT_MENU_ITEM = 'menu.item'
 
-/** 页面型槽位: 描述复用区块模型, 宿主渲染整页或页内区块 */
-export type PageSlotName =
+/** 面板入口型槽位: 各自给插件页面一个全局入口(侧边栏导航行、会话标签栏、设置分组) */
+export type PanelEntrySlotName =
   | typeof SLOT_NAV_PANEL
   | typeof SLOT_CONVERSATION_TABS
   | typeof SLOT_SETTINGS_PAGE
+
+/**
+ * 页面型槽位: 描述复用区块模型。
+ * 面板入口型渲染整页, 另外两个落在会话右栏: 段落给一段带标题的内容, 标签给一个可切换页。
+ */
+export type PageSlotName =
+  | PanelEntrySlotName
+  | typeof SLOT_SESSION_PANEL_SECTION
+  | typeof SLOT_NAV_SIDE
 
 /** 槽位名; 封闭词表, 未知名在登记期按 unknown-slot 拒绝 */
 export type SlotName =
@@ -55,6 +68,8 @@ export const SLOT_NAMES: readonly SlotName[] = [
   SLOT_NAV_PANEL,
   SLOT_CONVERSATION_TABS,
   SLOT_SETTINGS_PAGE,
+  SLOT_SESSION_PANEL_SECTION,
+  SLOT_NAV_SIDE,
   SLOT_COMPOSER_TOOLBAR,
   SLOT_COMPOSER_NOTICE,
   SLOT_OVERLAY_NOTICE,
@@ -62,9 +77,13 @@ export const SLOT_NAMES: readonly SlotName[] = [
   SLOT_MENU_ITEM,
 ]
 
+/** 槽位名是否是面板入口型(侧边栏导航行、会话标签栏、设置分组各一个入口) */
+export const isPanelEntrySlot = (slot: SlotName): slot is PanelEntrySlotName =>
+  slot === SLOT_NAV_PANEL || slot === SLOT_CONVERSATION_TABS || slot === SLOT_SETTINGS_PAGE
+
 /** 槽位名是否是页面型(区块模型); 投影与校验按此分流 */
 export const isPageSlot = (slot: SlotName): slot is PageSlotName =>
-  slot === SLOT_NAV_PANEL || slot === SLOT_CONVERSATION_TABS || slot === SLOT_SETTINGS_PAGE
+  isPanelEntrySlot(slot) || slot === SLOT_SESSION_PANEL_SECTION || slot === SLOT_NAV_SIDE
 
 /** 描述是否是页面型; 宿主按此收窄, 只有页面型描述带区块 */
 export const isPageDescriptor = (descriptor: SlotDescriptor): descriptor is PageSlotDescriptor =>
@@ -572,7 +591,8 @@ export const checkSlotDescriptor = (
   }
   const withOrder = order === undefined ? {} : { order }
 
-  // 页面型槽位: 标题、图标键与区块, 与旧行为一致
+  // 页面型槽位: 标题、图标键与区块。会话右栏的段落与标签页共用这一份形态,
+  // 校验口径因此完全一致: 标题二选一、id 形态、order、四种区块、64 区块与 8 KB 上限
   if (isPageSlot(slot)) {
     if (!checkLabel(descriptor, hasTranslationKey, 'title')) {
       return { ok: false, problem: 'invalid-label' }

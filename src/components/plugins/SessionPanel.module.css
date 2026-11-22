@@ -1,0 +1,125 @@
+/*
+ * 会话右栏面板: session.panel.section 的段落与 nav.side 的标签页共用。
+ * 只在有登记项且未收起时渲染, 没有登记时这块版面不存在, 会话页保持既有外观。
+ * 页头高度与会话页头(60px)一致, 两者顶边对齐; 窄屏不渲染(见 SessionPanel.tsx)。
+ */
+.aside {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(320px, 36vw);
+  min-width: 240px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background-color: var(--dsw-alias-bg-base);
+}
+
+.head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  box-sizing: border-box;
+  height: 60px;
+  padding: 0 12px;
+}
+
+.headTitle {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--dsw-font-s-strong-14);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 标签多于一个时才出现; 窄栏里横向滚动, 不换行 */
+.tabs {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tab {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  background-color: transparent;
+  cursor: pointer;
+  outline: none;
+
+  &:hover {
+    color: var(--dsw-alias-label-primary);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+}
+
+.tabActive {
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-interactive-bg-hover);
+}
+
+.tabIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.tabLabel {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 0 12px 16px;
+  overflow-y: auto;
+  scrollbar-color: var(--scroll-color) transparent;
+}
+
+/* 段落之间用一条细线分隔; 第一段不需要上边框 */
+.section + .section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.sectionTitle {
+  margin: 0;
+  padding: 4px 0;
+  font: var(--dsw-font-s-strong-14);
+  color: var(--dsw-alias-label-primary);
+}
+
+.note {
+  padding: 12px 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 页头开关: 左栏面板图标水平镜像后表达右栏 */
+.toggle {
+  flex-shrink: 0;
+  margin-left: 4px;
+
+  & svg {
+    transform: scaleX(-1);
+  }
+}

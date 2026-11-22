@@ -55,6 +55,7 @@ import { convergePatch, mergePatch, REQUEST_PATCH_BUDGET_MS } from './requestPat
 import {
   forgetSettings,
   forgetSettingsChangeListeners,
+  forgetSettingsChangeListeners,
   pluginSettingsFacade,
   settingsDescriptor,
   type PluginSettingsFacade,
@@ -898,6 +899,8 @@ export const installPluginEngine = (): PluginEngine => {
     // 卸载只移除注册表与持久化记录；插件本地数据保留，交由设置的数据管理清理
     // 未激活过的插件不会走 deactivateNow，这里再撤销一次端点声明
     forgetSources(id)
+    // 设置变更订阅随卸载一并撤销: 停用的 disposer 已撤过一次, 这里兜住未激活的残留
+    forgetSettingsChangeListeners(id)
     forgetSettings(id)
     // 设置变更订阅随卸载一并撤销: 停用的 disposer 已撤过一次, 这里兜住未激活的残留
     forgetSettingsChangeListeners(id)
@@ -1657,14 +1660,19 @@ export type { PluginSettingsFacade } from './pluginSettings.js'
 export type {
   SettingDescriptor,
   SettingDescriptorProblem,
+  SettingOverride,
   SettingFieldDescriptor,
   SettingFieldOptions,
   SettingFieldType,
   SettingOverride,
+  SettingsChange,
+  SettingsChangeHandler,
+  SettingsChangeKind,
+  SettingsFieldChange,
   SettingValue,
   SettingValueProblem,
   SettingValueView,
-  SettingWriteResult,
+ * 宿主按登记表列出侧边栏导航行、会话视图标签栏与会话右栏的段落和标签页, 登记变化经订阅通知界面。
   SettingsChange,
   SettingsChangeHandler,
   SettingsChangeKind,
@@ -1681,6 +1689,7 @@ export {
   SLOT_CONVERSATION_TABS,
   SLOT_MENU_ITEM,
   SLOT_MESSAGE_ACTIONS,
+  isPanelEntrySlot,
   SLOT_NAMES,
   SLOT_NAV_PANEL,
   SLOT_OVERLAY_NOTICE,
@@ -1693,6 +1702,7 @@ export {
   subscribeSlotRegistry,
 } from './pluginSlots.js'
 export type {
+  PanelEntrySlotName,
   ComposerNoticeDescriptor,
   ComposerToolbarDescriptor,
   MenuItemDescriptor,
