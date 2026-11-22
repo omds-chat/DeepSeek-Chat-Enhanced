@@ -92,6 +92,7 @@ import type {
   DeactivateOptions,
   DeactivateResult,
   DscPlugin,
+  InstallConflict,
   InstallResult,
   LoadedPlugin,
   LocalPackageInfo,
@@ -505,19 +506,6 @@ export const installPluginEngine = (): PluginEngine => {
   ): InstallResult => {
     const check = store.checkInstallable(manifest, CORE_VERSION)
     if (!check.ok) {
-      // 冲突的两侧与声明方向只进引擎日志；界面按原因码与 detail 提示涉及哪些 id
-      for (const conflict of check.conflicts ?? []) {
-        pushEngineLog(
-          'install ' +
-            manifest.id +
-            ' rejected: ' +
-            conflict.kind +
-            ' conflict ' +
-            conflict.declarer +
-            ' -> ' +
-            conflict.target
-        )
-      }
       // 拒绝原因转成可读文案；原始代码留在 check.reason 与插件日志里
       report('pluginInstallRejected', {
         id: manifest.id,
@@ -526,11 +514,18 @@ export const installPluginEngine = (): PluginEngine => {
       return check
     }
     store.add(manifest, plugin, source, options)
-    return { ok: true }
+    // 冲突不再拒绝安装：检出的冲突对随结果带回，处置（警告、停用、待决定记录）由安装入口按启用状态完成
+    return check.conflicts ? { ok: true, conflicts: check.conflicts } : { ok: true }
   }
 
-  const install = (manifest: PluginManifest, plugin: DscPlugin): InstallResult =>
-    register(manifest, plugin, null)
+  const install = (manifest: PluginManifest, plugin: DscPlugin): InstallResult => {
+    const result = register(manifest, plugin, null)
+    if (result.ok && result.conflicts) {
+      // 宿主直接登记不自动启用，冲突只做警告与待决定记录；新插件本来就以停用状态登记
+      settleInstallConflicts(manifest.id, result.conflicts)
+    }
+    return result
+  }
 
   /**
    * 恢复既有记录：与安装期同一份清单与版本校验，但不判冲突。
@@ -609,6 +604,55 @@ export const installPluginEngine = (): PluginEngine => {
         ' pair(s) dropped for uninstalled plugins'
     )
     persistPending()
+  }
+
+  /**
+   * 安装期冲突的新口径：安装允许成功，冲突只警告不拒绝。
+   * 对方记录处于启用状态时，新插件保持停用，冲突对写入待决定记录，
+   * 由用户以后在插件面板决定保留哪一个（与启用期的保守处置共用同一份存储）；
+   * 对方全部处于停用状态时只警告，不停用任何东西，安装照常自动启用。
+   * 返回 true 表示新插件须保持停用（存在与已启用插件的冲突），安装入口据此跳过自动启用。
+   */
+  const settleInstallConflicts = (id: string, conflicts: readonly InstallConflict[]): boolean => {
+    for (const conflict of conflicts) {
+      pushEngineLog(
+        'install ' + id + ': ' + conflict.kind + ' conflict ' + conflict.declarer + ' -> ' + conflict.target
+      )
+    }
+    const opponentOf = (conflict: InstallConflict): string =>
+      conflict.declarer === id ? conflict.target : conflict.declarer
+    const activeOpponents = conflicts.filter(
+      (conflict) => store.get(opponentOf(conflict))?.state === 'active'
+    )
+    if (activeOpponents.length > 0) {
+      const ids = [...new Set(activeOpponents.map(opponentOf))].sort()
+      pending = mergePendingConflicts(pending, activeOpponents, Date.now())
+      persistPending()
+      warn('pluginInstallConflictDisabled', { id, ids: ids.join(', ') })
+      return true
+    }
+    const ids = [...new Set(conflicts.map(opponentOf))].sort()
+    warn('pluginInstallConflictWarning', { id, ids: ids.join(', ') })
+    return false
+  }
+
+  /**
+   * 登记成功后的公共收尾：按冲突新口径处置，再自动启用。
+   * 与已启用插件冲突时不发起启用，新插件保持停用；启用被拒时安装仍算成功，
+   * 结论交给界面决定提示哪一条。冲突对随结果带回，供界面与调用方核对。
+   */
+  const finishInstall = async (
+    id: string,
+    conflicts: InstallConflict[] | undefined
+  ): Promise<InstallResult> => {
+    const stayDisabled = conflicts ? settleInstallConflicts(id, conflicts) : false
+    if (stayDisabled) {
+      persist()
+      return { ok: true, conflicts }
+    }
+    const activation = await activate(id)
+    persist()
+    return conflicts ? { ok: true, activation, conflicts } : { ok: true, activation }
   }
 
   /**
@@ -1098,10 +1142,7 @@ export const installPluginEngine = (): PluginEngine => {
     if (!result.ok) {
       return result
     }
-    // 安装后自动启用；启用被拒时安装仍算成功，结论交给界面决定提示哪一条
-    const activation = await activate(resolved.id)
-    persist()
-    return { ok: true, activation }
+    return await finishInstall(resolved.id, result.conflicts)
   }
 
   /**
@@ -1175,10 +1216,8 @@ export const installPluginEngine = (): PluginEngine => {
     if (!result.ok) {
       return result
     }
-    // 与在线安装同一口径：启用被拒不影响安装结论，activation 带回拒绝原因
-    const activation = await activate(resolved.id)
-    persist()
-    return { ok: true, activation }
+    // 与在线安装同一口径：冲突处置与自动启用走同一个收尾
+    return await finishInstall(resolved.id, result.conflicts)
   }
 
   /** 离线包预检：只读文件并校验，不改动注册表与安装记录 */

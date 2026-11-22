@@ -43,7 +43,7 @@
 | 方式 | 接口 | 说明 |
 |:---:|:---:|:---:|
 | 直接注册 | `engine.install(manifest, plugin)` | 宿主已持有插件对象时使用,只登记不激活 |
-| 运行时加载 | `engine.installFromUrl(url, manifest?)` | 引擎自身用 `fetch` 取产物字节(安装阶段行为,不占用插件能力),按文本存进安装记录后再以 Blob 地址 `import` 加载,成功后自动激活;超时 10 秒。自动启用命中冲突时安装仍成功,结果里的 `activation` 记录冲突描述,该插件保持停用且冲突双方一并被停用 |
+| 运行时加载 | `engine.installFromUrl(url, manifest?)` | 引擎自身用 `fetch` 取产物字节(安装阶段行为,不占用插件能力),按文本存进安装记录后再以 Blob 地址 `import` 加载,成功后自动激活;超时 10 秒。安装不因冲突被拒绝:检出冲突时发一条警告,对方处于启用状态时该插件保持停用、不发自动启用,结果里的 `conflicts` 记录冲突描述,冲突写进待决定记录;对方全部停用时仅警告,照常自动激活 |
 | 手动激活 | `engine.activate(id)` | 依赖满足且与运行中的插件无冲突时进入 `active`;冲突时按保守策略处置:返回 `conflict` 及结构化冲突列表,同时停用本次冲突涉及的全部已启用插件并写入待决定记录;依赖未满足时不启用,记录标记为 `inactive` 并提示缺哪个 id |
 | 处理待决定冲突 | `engine.pendingConflicts()`、`engine.resolvePendingConflict(groupId, keepId)` | 读取待决定记录(已按卸载清理);选择后删除该组记录并启用保留的那一个,其余保持停用,不连带启用依赖方 |
 | 手动停用 | `engine.deactivate(id, options?)` | 存在已启用的插件依赖它时拒绝,返回 `depended-on` 与依赖方 id;成功时进入 `inactive`。`options.force` 表示用户明确要求强行停用,结论同样是拒绝,引擎不连带停用依赖方 |
@@ -270,7 +270,7 @@ export const activate = (context) => {
 | 能力或挂载点未知 | 安装拒绝,原因 `unknown-capability` 或 `unknown-mount` |
 | 版本不兼容 | 安装拒绝,原因 `incompatible-version` |
 | 重名、缺依赖 | 安装拒绝,原因 `duplicate`、`missing-dependency` |
-| 安装期冲突(两个方向) | 安装拒绝,原因按声明方向分成三条:本插件的 `conflicts` 命中已安装记录为 `install-conflict-declared`,已安装记录声明排斥本插件为 `install-conflict-required`,两边互相声明为 `install-conflict-mutual`;结果另带 `conflicts` 列出全部冲突对(含声明方与方向),`detail` 给出同类冲突里对方插件的 id;已安装记录不分启停都参与,拦的是共存 |
+| 安装期冲突(两个方向) | 安装不拒绝,始终成功并发出警告气泡;检出用两个方向:本插件的 `conflicts` 命中已安装记录、或已安装记录声明排斥本插件,两边互相声明合并为双向;结果另带 `conflicts` 列出全部冲突对(含声明方与方向)。对方记录处于启用状态时新插件保持停用、不发自动启用,冲突对写入待决定记录,由用户以后决定保留哪一个;对方全部处于停用状态时仅警告,双方状态不变,新插件照常自动启用 |
 | 启用时依赖未安装或未启用 | 不启用:记录标记为 `inactive`,错误字段写入 `missing-dependency:<id>`,并提示缺哪个 id;不留下「已启用但启动失败」的记录 |
 | 停用时仍有已启用的插件依赖它 | 停用拒绝,原因 `depended-on`,提示「以下插件正在使用它,请先停用对方」并列出这些插件;强行停用标志同样被拒绝,引擎不连带停用依赖方 |
 | 依赖的插件被停用、卸载或启动失败 | 依赖它的已启用插件自动停用并逐个提示,原因写入 `missing-dependency:<id>`;列表里的「依赖未满足」徽标常驻显示原因 |

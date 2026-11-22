@@ -15,18 +15,6 @@ const REASONS: Record<string, ReasonSpec> = {
   'incompatible-version': { key: 'pluginReasonIncompatibleVersion' },
   duplicate: { key: 'pluginReasonDuplicate' },
   conflict: { key: 'pluginReasonConflict' },
-  'install-conflict-declared': {
-    key: 'pluginReasonInstallConflictDeclared',
-    param: 'id',
-  },
-  'install-conflict-required': {
-    key: 'pluginReasonInstallConflictRequired',
-    param: 'id',
-  },
-  'install-conflict-mutual': {
-    key: 'pluginReasonInstallConflictMutual',
-    param: 'id',
-  },
   'missing-dependency': { key: 'pluginReasonMissingDependency', param: 'id' },
   'depended-on': { key: 'pluginReasonDependedOn', param: 'id' },
   'load-failed': { key: 'pluginReasonLoadFailed' },

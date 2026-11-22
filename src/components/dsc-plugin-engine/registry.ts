@@ -1,6 +1,6 @@
 import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
-import { detectInstallConflicts, installConflictVerdict } from './installConflicts.js'
+import { detectInstallConflicts } from './installConflicts.js'
 import { RANGE_PATTERN } from './versionRange.js'
 import { SLOT_NAMES, type SlotName } from './pluginSlots.js'
 import {
@@ -279,9 +279,10 @@ const validateManifest = (manifest: PluginManifest): InstallRejection | null => 
 }
 
 /**
- * 安装前校验：清单、重名、版本兼容、冲突与依赖。
- * 冲突与启用期同口径地看两个方向：新插件声明的 conflicts，以及已安装插件里声明排斥它的。
- * 判的是「能否共存」，因此已安装记录不分启停都参与；启用期只看 active，判的是「能否同时运行」。
+ * 安装前校验：清单、重名、版本兼容与依赖。
+ * 冲突不再拒绝安装：安装允许冲突共存，检出结果只交给引擎做警告与自动停用决策。
+ * 检测与启用期同口径地看两个方向：新插件声明的 conflicts，以及已安装插件里声明排斥它的；
+ * 已安装记录不分启停都参与检测，启用期只看 active，判的是「能否同时运行」。
  */
 export const checkInstallable = (manifest: PluginManifest, coreVersion: string): InstallResult => {
   const problem = validateManifest(manifest)
@@ -303,21 +304,13 @@ export const checkInstallable = (manifest: PluginManifest, coreVersion: string):
       conflicts: record.manifest.conflicts ?? [],
     }))
   )
-  if (conflicts.length > 0) {
-    const verdict = installConflictVerdict(manifest.id, conflicts)
-    return {
-      ok: false,
-      reason: verdict.reason,
-      detail: verdict.ids.join(','),
-      conflicts,
-    }
-  }
   for (const id of manifest.dependencies ?? []) {
     if (!records.has(id)) {
       return { ok: false, reason: 'missing-dependency', detail: id }
     }
   }
-  return { ok: true }
+  // 冲突原样带回：登记照常成功，处置（警告、自动停用、待决定记录）由引擎按启用状态决定
+  return conflicts.length > 0 ? { ok: true, conflicts } : { ok: true }
 }
 
 /**

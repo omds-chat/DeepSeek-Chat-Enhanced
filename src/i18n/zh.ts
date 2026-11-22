@@ -196,6 +196,10 @@ export const zh = {
     '插件 {declarer} 与插件 {target} 冲突：{declarer} 要求关闭 {target}。已停用本次冲突涉及的 {count} 个插件（{ids}），请在插件面板选择保留哪一个',
   pluginConflictSuspendedMutual:
     '插件 {declarer} 与插件 {target} 互相要求关闭对方。已停用本次冲突涉及的 {count} 个插件（{ids}），请在插件面板选择保留哪一个',
+  pluginInstallConflictDisabled:
+    '插件 {id} 与已启用的插件冲突：{ids}。插件已安装但保持停用，请在插件面板选择保留哪一个',
+  pluginInstallConflictWarning:
+    '插件 {id} 与已安装的插件冲突：{ids}。双方不能同时启用，启用其中一个时会按冲突处置',
   pluginCapabilityDenied: '插件 {id} 未获得能力 {capability}',
   pluginCallRateLimited: '插件 {id} 调用 {capability} 过于频繁',
   pluginCallTimeout: '插件 {id} 调用 {capability} 超时',
@@ -285,9 +289,6 @@ export const zh = {
   pluginReasonIncompatibleVersion: '与当前 dsc 版本不兼容',
   pluginReasonDuplicate: '已安装同 id 的插件',
   pluginReasonConflict: '与已安装的插件冲突',
-  pluginReasonInstallConflictDeclared: '与已安装的插件冲突：本插件声明排斥 {id}',
-  pluginReasonInstallConflictRequired: '与已安装的插件冲突：已安装的插件 {id} 声明排斥本插件',
-  pluginReasonInstallConflictMutual: '与已安装的插件冲突：本插件与已安装的插件 {id} 互相排斥',
   pluginReasonMissingDependency: '需要先安装依赖插件 {id}',
   pluginReasonDependedOn: '以下插件正在使用它，请先停用对方（{id}）',
   pluginReasonLoadFailed: '插件产物加载失败，请检查地址与网络；跨源托管需允许 CORS',

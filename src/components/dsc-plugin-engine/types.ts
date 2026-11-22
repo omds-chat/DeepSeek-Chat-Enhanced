@@ -152,7 +152,7 @@ export type UiCapability = {
    * code 是结构化的问题码。返回带槽位名与页面 id 的句柄，
    * 释放函数进入插件的 disposer 集合，停用随引擎清理。
    */
-  registerSlot(descriptor: SlotDescriptor): SlotHandle
+  registerSlot(slot: SlotName, descriptor: Omit<SlotDescriptor, 'slot'>): SlotHandle
   /** 登记槽位动作回调；用户点击该槽位页面上的动作按钮时由引擎同步调用一次 */
   onSlotAction(slot: SlotName, handler: SlotActionHandler): () => void
   /** 登记槽位数据处理器；宿主进入页面或动作返回刷新指示时同步索取当前模型 */
@@ -309,12 +309,6 @@ export type InstallRejection =
   | 'duplicate'
   | 'missing-dependency'
   | 'conflict'
-  /** 安装期冲突：本插件清单声明排斥已安装的插件（正向），detail 给出对方 id */
-  | 'install-conflict-declared'
-  /** 安装期冲突：已安装插件的清单声明排斥本插件（反向），detail 给出对方 id */
-  | 'install-conflict-required'
-  /** 安装期冲突：两边互相声明排斥对方，detail 给出对方 id */
-  | 'install-conflict-mutual'
   | 'load-failed'
   /** 产物字节取不到：404、网络失败或被跨源策略拦住 */
   | 'artifact-unreachable'
@@ -335,19 +329,19 @@ export type InstallRejection =
 
 /**
  * 安装结果。
- * 安装入口会自动启用插件，activation 记录这次启用的结论：启用被拒（例如与运行中的插件冲突）时
- * 安装本身仍然成功，界面据此避免用「安装完成」提示盖掉启用被拒的原因。
- * 拒绝原因为冲突类（install-conflict-*）时，conflicts 带回全部冲突对，
- * detail 是与原因同类的那几对里对方插件的 id，供界面提示「哪一方声明的、涉及哪些 id」。
+ * 安装入口会自动启用插件，activation 记录这次启用的结论：启用被拒时安装本身仍然成功，
+ * 界面据此避免用「安装完成」提示盖掉启用被拒的原因。
+ * 冲突不再拒绝安装：安装期检出冲突时 ok 仍为 true，conflicts 带回全部冲突对
+ * （kind、declarer、target）；引擎同时按对方的启用状态处置——与已启用插件冲突时新插件
+ * 保持停用并写入待决定记录，此时 activation 缺省（没有发起启用）；
+ * 只与已停用插件冲突时仅警告，插件照常自动启用。
  */
 export type InstallResult =
-  | { ok: true; activation?: ActivateResult }
+  | { ok: true; activation?: ActivateResult; conflicts?: InstallConflict[] }
   | {
       ok: false
       reason: InstallRejection
       detail?: string
-      /** 安装期冲突明细；只有冲突类原因带这个字段 */
-      conflicts?: InstallConflict[]
     }
 
 /**
@@ -364,8 +358,8 @@ export type ActivationConflict = {
 /**
  * 安装期冲突描述，与启用期冲突同形。
  * declarer 是在清单里声明排斥对方的一方，target 是被排斥的一方；mutual 表示两边互相声明。
- * 安装期判的是「能否共存」，已安装记录不论启停都算在内；
- * 启用期的 activationConflicts 判的是「能否同时运行」，只看 active 的记录。
+ * 安装期允许冲突共存：判定只负责检出（已安装记录不论启停都参与），
+ * 处置看对方记录的启用状态；启用期的 activationConflicts 判的是「能否同时运行」，只看 active 的记录。
  */
 export type InstallConflict = ActivationConflict
 

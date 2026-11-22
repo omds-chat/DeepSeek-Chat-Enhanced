@@ -206,6 +206,10 @@ export const en = {
     'Plugin {declarer} conflicts with plugin {target}: {declarer} requires {target} to be disabled. All {count} plugins in this conflict were disabled ({ids}); choose which one to keep in the plugin panel',
   pluginConflictSuspendedMutual:
     'Plugins {declarer} and {target} each require the other to be disabled. All {count} plugins in this conflict were disabled ({ids}); choose which one to keep in the plugin panel',
+  pluginInstallConflictDisabled:
+    'Plugin {id} conflicts with enabled plugins: {ids}. It was installed but stays disabled; choose which one to keep in the plugin panel',
+  pluginInstallConflictWarning:
+    'Plugin {id} conflicts with installed plugins: {ids}. They cannot run at the same time; enabling either one will be handled as a conflict',
   pluginCapabilityDenied: 'Plugin {id} was not granted {capability}',
   pluginCallRateLimited: 'Plugin {id} called {capability} too often',
   pluginCallTimeout: 'Plugin {id} timed out calling {capability}',
@@ -300,12 +304,6 @@ export const en = {
   pluginReasonIncompatibleVersion: 'The plugin is not compatible with this dsc version',
   pluginReasonDuplicate: 'A plugin with the same id is already installed',
   pluginReasonConflict: 'The plugin conflicts with an installed plugin',
-  pluginReasonInstallConflictDeclared:
-    'Conflict with installed plugins: this plugin declares {id} as incompatible',
-  pluginReasonInstallConflictRequired:
-    'Conflict with installed plugins: {id} declares this plugin as incompatible',
-  pluginReasonInstallConflictMutual:
-    'Conflict with installed plugins: this plugin and {id} declare each other incompatible',
   pluginReasonMissingDependency: 'Install the required plugin first: {id}',
   pluginReasonDependedOn: 'In use by the following enabled plugin(s) ({id}); disable them first',
   pluginReasonLoadFailed:

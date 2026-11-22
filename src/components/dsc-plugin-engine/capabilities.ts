@@ -407,10 +407,10 @@ export const createPluginContext = ({
      * 授权按清单 slots 白名单逐槽位判定; 同槽位同 id 被其他插件占用时同样拒绝。
      * 释放函数进入插件的 disposer 集合, 停用随引擎清理。
      */
-    registerSlot: (descriptor) => {
+    registerSlot: (slot, descriptor) => {
       ensureGranted('ui:slot')
       takeToken('ui:slot')
-      const check = checkSlotDescriptor(descriptor, isTranslationKey)
+      const check = checkSlotDescriptor({ ...descriptor, slot }, isTranslationKey)
       if (!check.ok) {
         report('pluginSlotRejected', { id: manifest.id, reason: check.problem })
         throw new PluginSlotError(check.problem)
