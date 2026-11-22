@@ -268,14 +268,13 @@ jobs:
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${DIST_HISTORY_TAG_SUFFIX}"
-          # 幂等重建: 本版目录与本地旧 tag 一律先清再建;旧目录暂存一份供「仅签名不同」判定用
+          # 幂等重建: 本版目录先清再建;旧 tag 暂不动,确认有实际变更(commit 产生)后才删旧建新
           prev_dir="${RUNNER_TEMP}/prev-dist-history"
           rm -rf "${prev_dir}"
           if [ -d "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}" ]; then
             cp -a "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}" "${prev_dir}"
           fi
           rm -rf "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
-          git -C "${DIST_HISTORY_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
           mkdir -p "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
           cp -a "${BUILD_DIR}/." "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}/"
           if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ]; then
@@ -304,11 +303,12 @@ jobs:
           git -C "${DIST_HISTORY_WORKTREE}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "${DIST_HISTORY_WORKTREE}" add -A
           if git -C "${DIST_HISTORY_WORKTREE}" diff --cached --quiet; then
-            echo "dist-history 分支内容无变化,跳过 commit"
+            echo "dist-history 分支内容无变化,跳过 commit,归档 tag 保持原样"
           else
             git -C "${DIST_HISTORY_WORKTREE}" commit -m "publish dist-history ${RELEASE_TAG}"
+            git -C "${DIST_HISTORY_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
+            git -C "${DIST_HISTORY_WORKTREE}" tag "${archive_tag}"
           fi
-          git -C "${DIST_HISTORY_WORKTREE}" tag "${archive_tag}"
           # push 统一挪到流程末尾的 Push archive branches 步骤
 
       # certs 分支归档: 清理 -> 重建 version 目录 -> 复制主仓库 certs/ -> 裁剪历史版本 -> commit、打 tag、push
@@ -321,9 +321,8 @@ jobs:
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${CERTS_TAG_SUFFIX}"
-          # 幂等重建: 本版目录与本地旧 tag 一律先清再建
+          # 幂等重建: 本版目录先清再建;旧 tag 暂不动,确认有实际变更后才删旧建新
           rm -rf "${CERTS_WORKTREE}/version/${RELEASE_TAG}"
-          git -C "${CERTS_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
           # 本版目录两条路径都先写好: 预发行只写这一处,正式发行随后复用
           mkdir -p "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs"
           cp -a certs/. "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs/"
@@ -341,11 +340,12 @@ jobs:
           git -C "${CERTS_WORKTREE}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "${CERTS_WORKTREE}" add -A
           if git -C "${CERTS_WORKTREE}" diff --cached --quiet; then
-            echo "certs 分支内容无变化,跳过 commit"
+            echo "certs 分支内容无变化,跳过 commit,归档 tag 保持原样"
           else
             git -C "${CERTS_WORKTREE}" commit -m "publish certs ${RELEASE_TAG}"
+            git -C "${CERTS_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
+            git -C "${CERTS_WORKTREE}" tag "${archive_tag}"
           fi
-          git -C "${CERTS_WORKTREE}" tag "${archive_tag}"
           # push 统一挪到流程末尾的 Push archive branches 步骤
 
       # trusted-manifest 分支归档: 生成 index.json -> 渲染 README -> 分发到根目录与 version 目录
@@ -374,9 +374,8 @@ jobs:
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${TRUSTED_MANIFEST_TAG_SUFFIX}"
-          # 幂等重建: 本版目录与本地旧 tag 一律先清再建
+          # 幂等重建: 本版目录先清再建;旧 tag 暂不动,确认有实际变更后才删旧建新
           rm -rf "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"
-          git -C "${TRUSTED_MANIFEST_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
           mkdir -p "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"
           # 清单先在临时目录生成,预发行不落分支根目录,正式发行随后分发
           tmp_index="${RUNNER_TEMP}/trusted-index.json"
@@ -417,11 +416,12 @@ jobs:
           git -C "${TRUSTED_MANIFEST_WORKTREE}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "${TRUSTED_MANIFEST_WORKTREE}" add -A
           if git -C "${TRUSTED_MANIFEST_WORKTREE}" diff --cached --quiet; then
-            echo "trusted-manifest 分支内容无变化,跳过 commit"
+            echo "trusted-manifest 分支内容无变化,跳过 commit,归档 tag 保持原样"
           else
             git -C "${TRUSTED_MANIFEST_WORKTREE}" commit -m "publish trusted-manifest ${RELEASE_TAG}"
+            git -C "${TRUSTED_MANIFEST_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
+            git -C "${TRUSTED_MANIFEST_WORKTREE}" tag "${archive_tag}"
           fi
-          git -C "${TRUSTED_MANIFEST_WORKTREE}" tag "${archive_tag}"
           # push 统一挪到流程末尾的 Push archive branches 步骤
 
       # 组装 Pages 目录: 三条分支的内容合成一个页面包
@@ -492,7 +492,8 @@ jobs:
 
       # 归档推送: 放在流程最末尾,组装与上传全部成功后才推三条分支与归档 tag,
       # 中途任何一步失败都不会在归档分支留下半套提交或 tag 污染。
-      # 分支推送按快进前进;tag 每次重建,用 --force 覆盖远端旧 tag。
+      # 分支推送按快进前进;tag 仅在产生新提交时重建,推送用 --force 覆盖远端旧 tag,
+      # 无变更时本地与远端 tag 均保持原样,推送结果为 up-to-date。
       - name: Push archive branches
         run: |
           set -euo pipefail

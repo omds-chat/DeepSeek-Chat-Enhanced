@@ -75,7 +75,7 @@ dist-history 分支
 
 | 事项 | 口径 |
 |:---:|:---:|
-| 归档 tag | 每轮先删本地旧 tag 再重建,推送时用 `--force` 覆盖远端旧 tag;重复触发同一 tag 不产生新 tag 名 |
+| 归档 tag | 仅在产生新提交(内容有实际变更)时删本地旧 tag 并重建到新提交上,推送用 `--force` 覆盖远端旧 tag;无变更时不删不建,本地与远端 tag 保持原样,推送结果为 up-to-date |
 | `version/<tag>` | 一律先清后建,重跑不会叠加旧内容(三个 Publish 步同口径) |
 | 仅签名不同 | `dist-history` 在重建前暂存旧目录,重建后按排除 `*.sig` 的全量 diff 比较,内容一致时还原旧目录,不产生噪音 commit(ECDSA 每次签名字节随机,签名字节差不是变更);`certs` 与 `trusted-manifest` 内容确定,无此判定,靠 commit 前的 `git diff --cached --quiet` 跳过空变更 |
 | 分支推送 | 按快进前进,远端与本地分叉时推送失败,不强推覆盖分支历史 |
