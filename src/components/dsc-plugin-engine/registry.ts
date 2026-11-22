@@ -1,5 +1,6 @@
 import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
+import { parseAssetEntry, type PluginAsset } from './assetDownload.js'
 import { detectInstallConflicts } from './installConflicts.js'
 import { RANGE_PATTERN } from './versionRange.js'
 import { SLOT_NAMES, type SlotName } from './pluginSlots.js'
@@ -115,6 +116,37 @@ export const markBuiltinPlugin = (id: string) => {
 /** 是否内置插件 */
 export const isBuiltinPlugin = (id: string): boolean => builtinIds.has(id)
 
+/**
+ * 是否受信来源插件: 来源是内置插件合集或社区插件合集, 且本地来源结论为「已确认」。
+ * 判定只问「这份插件清单是不是随受信合集发布的」: 宿主直接注册、本地安装与自建来源
+ * 的插件一律不在该层级内, 内容与已收录版本相同也不因此获得资格。
+ * 展示侧的「背书」与「可信」两档都属于受信来源, 但都要求来源结论为 confirmed。
+ */
+export const isTrustedSourcePlugin = (record: PluginRecord): boolean =>
+  (record.origin?.sourceType === 'inner' || record.origin?.sourceType === 'awesome') &&
+  record.verdict === 'confirmed'
+
+/**
+ * 安装期的受信能力授予: 清单申请 assets:download 时, 来源必须是受信合集
+ * (inner 或 awesome) 且来源结论为「已确认」, 否则按 unknown-capability 拒绝,
+ * 与能力不存在不可区分。恢复既有记录时用同一份判定。
+ * 判定只问清单是否随受信合集发布: 宿主直接注册与本地安装的插件没有合集签名可验,
+ * 一律不在该层级内。
+ */
+export const checkTrustedCapability = (
+  manifest: PluginManifest,
+  origin: PluginOrigin | null,
+  verdict: SourceVerdict
+): InstallRejection | null => {
+  if (!manifest.capabilities.includes('assets:download')) {
+    return null
+  }
+  const trusted =
+    (origin?.sourceType === 'inner' || origin?.sourceType === 'awesome') &&
+    verdict === 'confirmed'
+  return trusted ? null : 'unknown-capability'
+}
+
 /** 三元版本号 */
 export type Version = readonly [number, number, number]
 
@@ -215,6 +247,22 @@ export const readManifest = (value: unknown): PluginManifest | null => {
   if (slots) {
     manifest.slots = slots as SlotName[]
   }
+  // assets 块逐条严格校验: 任何一条不合格就整份清单不可读, 由 checkInstallable 按
+  // invalid-manifest 拒绝, 不把残缺的资产声明带进安装流程
+  if (raw.assets !== undefined) {
+    if (!Array.isArray(raw.assets)) {
+      return null
+    }
+    const assets: PluginAsset[] = []
+    for (const entry of raw.assets) {
+      const asset = parseAssetEntry(entry)
+      if (asset === null) {
+        return null
+      }
+      assets.push(asset)
+    }
+    manifest.assets = assets
+  }
   return manifest
 }
 
@@ -274,6 +322,27 @@ const validateManifest = (manifest: PluginManifest): InstallRejection | null => 
     if (!SLOT_NAMES.includes(slot)) {
       return 'unknown-slot'
     }
+  }
+  // assets 块与能力 assets:download 绑定: 缺块或块为空按不合格清单拒绝,
+  // 块出现在未申请该能力的清单里同样拒绝 (处置二选一取「拒绝」, 与 slots 白名单缺失同口径)。
+  // 逐条字段在此重校验一遍, 覆盖不经 readManifest 收敛的直接构造路径
+  const wantsDownload = manifest.capabilities.includes('assets:download')
+  const assets = manifest.assets ?? []
+  if (wantsDownload && assets.length === 0) {
+    return 'invalid-manifest'
+  }
+  if (!wantsDownload && assets.length > 0) {
+    return 'invalid-manifest'
+  }
+  const assetIds = new Set<string>()
+  for (const asset of assets) {
+    if (parseAssetEntry(asset) === null) {
+      return 'invalid-manifest'
+    }
+    if (assetIds.has(asset.id)) {
+      return 'invalid-manifest'
+    }
+    assetIds.add(asset.id)
   }
   return null
 }

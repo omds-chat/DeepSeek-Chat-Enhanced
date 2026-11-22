@@ -17,6 +17,8 @@ export type CoreCapabilityId =
   | 'net:fetch'
   // 资产读取对全部插件可见，与 net:fetch 的内置限定相互独立
   | 'assets:read'
+  // 资产下载只对受信来源插件可见；授予与复核都在引擎侧完成，core 不认识来源结论
+  | 'assets:download'
   | 'plugins:storage'
   | 'chat:request'
   // 插件设置表面：激活期登记字段描述，宿主渲染表单；登记与校验都在引擎内完成
@@ -43,6 +45,7 @@ export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
   'settings:locale',
   'net:fetch',
   'assets:read',
+  'assets:download',
   'plugins:storage',
   'chat:request',
   'settings:surface',

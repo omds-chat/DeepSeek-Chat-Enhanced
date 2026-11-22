@@ -19,8 +19,6 @@ import {
   declareSettings,
   forgetSettings,
   pluginSettingOverridesForPlugin,
-  pluginSettingOverridesForPlugin,
-  subscribeSettingsChange,
   pluginSettingValuesForPlugin,
   subscribeSettingsChange,
 } from './pluginSettings.js'
@@ -38,7 +36,13 @@ import {
   type SlotName,
 } from './pluginSlots.js'
 import { runProviderCapability, type ProviderRunDeps } from './providerRun.js'
-import { isBuiltinPlugin, type PluginRecord } from './registry.js'
+import {
+  ASSET_DOWNLOAD_LIMIT,
+  ASSET_DOWNLOAD_TOTAL_BYTES,
+  PluginAssetDownloadError,
+  type PluginAsset,
+} from './assetDownload.js'
+import { isBuiltinPlugin, isTrustedSourcePlugin, type PluginRecord } from './registry.js'
 import { PluginSourceError, selectedSource, type SourceConflict } from './sources.js'
 import type {
   AssetsCapability,
@@ -56,11 +60,10 @@ import type {
 } from './types.js'
 
 /**
- * sessions:rename、notify、plugins:storage，以及只给引擎用的 plugins:data-clear；
+ * 单能力策略：时间窗内的调用上限，以及异步调用的单次超时。
  * 同步成员没有超时（同步调用不适用），这几项不填 timeoutMs：
- * settings:surface 只给它的异步成员 overrides 用超时，登记与读值都是同步成员，不受影响。
- * 登记型成员的限流语义是「登记次数」：每次 events.on、每次 chat.onBeforeRequest、
- * 每次 settings.onChange 各占一个名额，之后的事件回调、请求前调用与设置变更回调由引擎发起，不再占用名额。
+ * sessions:rename、notify、plugins:storage，以及只给引擎用的 plugins:data-clear；
+ * events:session 与 chat:request 是登记型成员，登记本身同步返回，同样不填。
  * settings:surface 只给它的异步成员 overrides 用超时，登记与读值都是同步成员，不受影响。
  * 登记型成员的限流语义是「登记次数」：每次 events.on、每次 chat.onBeforeRequest、
  * 每次 settings.onChange 各占一个名额，之后的事件回调、请求前调用与设置变更回调由引擎发起，不再占用名额。
@@ -84,9 +87,8 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   'assets:read': { limit: 120, windowMs: 10000, timeoutMs: 12000 },
   'plugins:storage': { limit: 100, windowMs: 10000 },
   // 卸载清理由引擎直接调用核心，不经过插件上下文，上限 0 表示插件不可达
-  // 登记与读取共用一个窗口：每次 settings.register 占一个名额，settings.values、
-  // settings.overrides 的读取与 settings.onChange 的登记同样计数；超时只对异步成员 overrides 生效
-  'settings:surface': { limit: 60, windowMs: 10000, timeoutMs: 3000 },
+  'plugins:data-clear': { limit: 0, windowMs: 10000 },
+  // 限制的是登记次数；每次请求前调用处理器由引擎发起，不逐次占用名额
   'chat:request': { limit: 10, windowMs: 10000 },
   // 登记与读取共用一个窗口：每次 settings.register 占一个名额，settings.values、
   // settings.overrides 的读取与 settings.onChange 的登记同样计数；超时只对异步成员 overrides 生效
@@ -102,6 +104,13 @@ const POLICIES: Record<CoreCapabilityId, Policy> = {
   // 执行按调用次数计: 选端点、读凭证与组装请求都在这一次调用内完成。
   // 超时只兜住「建立调用」这一段; text.generate 的回流事件在调用返回后惰性产出, 不占这个时间预算。
   'provider:run': { limit: 10, windowMs: 10000, timeoutMs: 15000 },
+  // assets:download 与 assets:read 分开计数: 大体积传输次数少而流量大,
+  // 传输次数与总流量分别计, 数值集中在 assetDownload.ts 的 ASSET_DOWNLOAD_LIMIT, 可调。
+  // 大体积传输不设单次超时: 进度与取消由悬浮卡片承担, 传输慢不等于失败。
+  'assets:download': {
+    limit: ASSET_DOWNLOAD_LIMIT.transfers,
+    windowMs: ASSET_DOWNLOAD_LIMIT.windowMs,
+  },
   // 按端点执行由引擎发起, 不经过插件上下文, 上限 0 表示插件不可达
   'source:run': { limit: 0, windowMs: 10000 },
 }
@@ -181,6 +190,8 @@ export type ContextDeps = {
   report: (key: TranslationKey, params?: TranslationParams) => void
   /** 首次使用资产来源时的提示出口；由引擎按「插件 + 来源」去重后调用 */
   announceAsset: (pluginId: string, url: string) => void
+  /** 引擎代取下载器; 由引擎创建并持有, 气泡与卡片也在引擎侧, 同一「插件 + 资产 + 哈希」的并发请求合并为一次传输 */
+  download: (pluginId: string, pluginName: string, asset: PluginAsset) => Promise<Uint8Array>
   /** 登记一份端点声明；冲突由引擎记日志后原样返回，供上下文写插件日志 */
   declareSource: (pluginId: string, descriptor: CoreSourceDescriptor) => readonly SourceConflict[]
 }
@@ -192,10 +203,13 @@ export const createPluginContext = ({
   credential,
   report,
   announceAsset,
+  download,
   declareSource,
 }: ContextDeps): PluginContext => {
   const { manifest } = record
   const windows = new Map<CoreCapabilityId, number[]>()
+  /** assets:download 的总流量窗口; 与传输次数同窗, 见 ASSET_DOWNLOAD_LIMIT */
+  let downloadedBytes: { stamps: number[]; bytes: number[] } = { stamps: [], bytes: [] }
 
   /** 插件日志上限；上下文日志与引擎内部记录共用这一份实现 */
   const pushLog = (message: string) => {
@@ -216,6 +230,16 @@ export const createPluginContext = ({
   const ensureBuiltinOnly = (capability: CoreCapabilityId) => {
     if (!isBuiltinPlugin(manifest.id)) {
       report('pluginCapabilityDenied', { id: manifest.id, capability })
+      throw new PluginCapabilityError(capability)
+    }
+  }
+
+  /**
+   * assets:download 额外要求受信来源插件, 与安装期同一口径复核一次。
+   * 不满足时按 unknown-capability 抛出, 与能力不存在不可区分。
+   */
+  const ensureTrustedSource = (capability: CoreCapabilityId) => {
+    if (!isTrustedSourcePlugin(record)) {
       throw new PluginCapabilityError(capability)
     }
   }
@@ -251,6 +275,44 @@ export const createPluginContext = ({
     }
     stamps.push(now)
     windows.set(capability, stamps)
+  }
+
+  /**
+   * assets:download 的总流量窗口: 与传输次数共用 ASSET_DOWNLOAD_LIMIT.windowMs,
+   * 每次按预估字节数累计, 传输结束后按实际收到的字节结算一次。
+   * 预估按清单声明的 bytes 计, 超限立即拒绝, 不为注定超限的传输发起请求。
+   */
+  const takeTraffic = (declaredBytes: number): void => {
+    const now = Date.now()
+    const stamps: number[] = []
+    const bytes: number[] = []
+    for (let index = 0; index < downloadedBytes.stamps.length; index += 1) {
+      if (now - downloadedBytes.stamps[index] < ASSET_DOWNLOAD_LIMIT.windowMs) {
+        stamps.push(downloadedBytes.stamps[index])
+        bytes.push(downloadedBytes.bytes[index])
+      }
+    }
+    if (bytes.reduce((sum, item) => sum + item, declaredBytes) > ASSET_DOWNLOAD_TOTAL_BYTES) {
+      downloadedBytes = { stamps, bytes }
+      report('pluginCallRateLimited', { id: manifest.id, capability: 'assets:download' })
+      throw new PluginRateLimitError('assets:download')
+    }
+    stamps.push(now)
+    bytes.push(declaredBytes)
+    downloadedBytes = { stamps, bytes }
+  }
+
+  /**
+   * 传输结束后按实际字节结算: 把本插件最近一次预留的预估值替换为实际收到的字节,
+   * 取消与失败时按 0 结算, 已完成的传输不重复计流量。
+   */
+  const settleTraffic = (declaredBytes: number, actualBytes: number): void => {
+    for (let index = downloadedBytes.bytes.length - 1; index >= 0; index -= 1) {
+      if (downloadedBytes.bytes[index] === declaredBytes) {
+        downloadedBytes.bytes[index] = actualBytes
+        return
+      }
+    }
   }
 
   const newCall = (capability: CoreCapabilityId): CoreCall => ({
@@ -490,23 +552,6 @@ export const createPluginContext = ({
           forgetSettings(manifest.id)
         }
         record.disposers.add(dispose)
-    /**
-     * 只读自身的覆盖状态; 与 values 共用 settings:surface 的读取窗口。
-     * secret 字段要看「是否已配置」, 要等一次凭证库查询, 因此这个成员是异步的。
-     */
-    overrides: () =>
-      invoke('settings:surface', undefined, () => pluginSettingOverridesForPlugin(manifest.id)),
-    /**
-     * 订阅设置变更。与 register 同法: 登记时占一个限流名额, 之后由引擎在
-     * 每次落盘后回调, 不占名额; 释放函数进入 disposer 集合, 停用随引擎清理。
-     * 回调抛错由引擎捕获并写插件日志, 不影响其他订阅者。
-     */
-    onChange: (handler) =>
-      invokeSync('settings:surface', () => {
-        const dispose = subscribeSettingsChange(manifest.id, handler, pushLog)
-        record.disposers.add(dispose)
-        return dispose
-      }),
         return dispose
       }),
     // 只读自身命名空间: 其他插件的设置值不可见, secret 字段不返回
@@ -582,6 +627,39 @@ export const createPluginContext = ({
       { onTimeout: () => pushLog('assets:read: timed out ' + url) }
     )
 
+  /**
+   * assets:download 的调用入口: 按清单查资产标识, 复核能力与来源后发起一次引擎代取。
+   * 地址不接受调用参数, 只认清单; 标识不在块内按失败抛出, 不发起任何请求。
+   * 失败只写插件日志, 不弹宿主提示; 取消按 aborted 交给调用方, 引擎不重试。
+   */
+  const downloadAsset = async (assetId: string): Promise<Uint8Array> => {
+    const asset = (manifest.assets ?? []).find((item) => item.id === assetId)
+    if (asset === undefined) {
+      const detail = 'asset ' + assetId + ' is not declared in the manifest'
+      pushLog('assets:download: ' + detail)
+      throw new PluginAssetDownloadError('protocol', detail)
+    }
+    const declared = asset.bytes
+    takeTraffic(declared)
+    let received = 0
+    try {
+      const bytes = await download(manifest.id, manifest.name, asset)
+      received = bytes.byteLength
+      pushLog('assets:download: ' + assetId + ' received ' + String(received) + ' bytes')
+      return bytes
+    } catch (error) {
+      pushLog(
+        'assets:download: ' +
+          assetId +
+          ' failed ' +
+          (error instanceof Error ? error.message : String(error))
+      )
+      throw error
+    } finally {
+      settleTraffic(declared, received)
+    }
+  }
+
   const assets: AssetsCapability = {
     readText: (url, options) =>
       readAsset(url, options, (signal) =>
@@ -591,6 +669,12 @@ export const createPluginContext = ({
       readAsset(url, options, (signal) =>
         core.readAssetBytes(newCall('assets:read'), url, signal)
       ),
+    download: (assetId, options) =>
+      invoke('assets:download', options, async () => {
+        // 安装期只对受信来源插件授予, 这里与 net:fetch 同法再复核一次
+        ensureTrustedSource('assets:download')
+        return await downloadAsset(assetId)
+      }),
   }
 
   const storage: StorageCapability = {

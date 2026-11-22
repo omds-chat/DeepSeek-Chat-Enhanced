@@ -1,0 +1,60 @@
+/*
+ * 资产下载悬浮卡片: 右下角, 每个发起下载的插件一张。
+ * 层级与右上角的全局通知栈同级(1700), 两处互不重叠; 不拦截页面滚动, 卡片自身可点。
+ */
+.stack {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 1700;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100vw - 32px));
+}
+
+.card {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background-color: var(--dsw-alias-bg-layer-2);
+  box-shadow:
+    0 0 4px 2px rgba(0, 0, 0, 0.04),
+    0 4px 16px 0 rgba(0, 0, 0, 0.1);
+}
+
+.head {
+  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.row {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.url {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+  word-break: break-all;
+}
+
+.cancel {
+  margin-top: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: none;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}

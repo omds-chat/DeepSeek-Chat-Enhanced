@@ -12,11 +12,6 @@ import type {
   SettingsChangeHandler,
   SettingValue,
 } from './pluginSettings.js'
-  SettingDescriptor,
-  SettingOverride,
-  SettingsChangeHandler,
-  SettingValue,
-} from './pluginSettings.js'
 import type { ProviderRunPayload, ProviderRunResult } from './providerRun.js'
 import type {
   AssetBytesResult,
@@ -28,9 +23,12 @@ import type {
   CoreSourceDescriptor,
   SourceCapabilityId,
 } from '../dsc-core/index.js'
+import type { PluginAsset } from './assetDownload.js'
 
 /** 资产读取结果的两种形态；类型定义在 core，引擎原样转交给插件 */
 export type { AssetBytesResult, AssetTextResult } from '../dsc-core/index.js'
+/** 清单 assets 块的声明形态；校验与取件实现在 assetDownload.ts */
+export type { PluginAsset } from './assetDownload.js'
 
 /**
  * 单个插件的代码上限(字节)。
@@ -134,6 +132,12 @@ export type PluginManifest = {
    * 安装阶段会用产物导出的 manifest 补齐。
    */
   slots?: SlotName[]
+  /**
+   * 声明的可下载资产；只在清单申请能力 assets:download 时允许出现。
+   * 字段形状与逐条校验见 assetDownload.ts；地址与哈希由受信合集签名覆盖，
+   * 引擎只按资产标识取件，不接受调用参数传地址。
+   */
+  assets?: PluginAsset[]
 }
 
 /** 会话能力 */
@@ -165,22 +169,16 @@ export type UiCapability = {
   registerSlot(slot: SlotName, descriptor: SlotDescriptorBody): SlotHandle
   /** 登记槽位动作回调；用户点击该槽位页面上的动作按钮时由引擎同步调用一次 */
   onSlotAction(slot: SlotName, handler: SlotActionHandler): () => void
- * 设置能力；locale 读宿主语言，register/values/overrides/onChange 走设置表面。
+  /** 登记槽位数据处理器；宿主进入页面或动作返回刷新指示时同步索取当前模型 */
   onSlotData(slot: SlotName, handler: SlotDataHandler): () => void
 }
 
- * overrides 只读逐字段的覆盖状态：overridden 与宿主详情页「已修改」徽标同一口径，
- * secret 字段只回答是否已配置（secretConfigured），不返回值。
- * onChange 订阅设置变更，返回释放函数；回调由引擎在落盘后发起，不占插件限流名额，
- * 抛错只写该插件的插件日志，停用之后不再回调。
 /**
  * 设置能力；locale 读宿主语言，register/values/overrides/onChange 走设置表面。
  * register 在激活期登记字段描述，返回释放函数，停用随引擎清理；
  * 描述非法时抛 PluginSettingsError，code 是结构化的问题码。
  * values 只读自身设置值：用户覆盖值优先，否则默认值；secret 字段不返回。
  * overrides 只读逐字段的覆盖状态：overridden 与宿主详情页「已修改」徽标同一口径，
-  overrides(): Promise<Record<string, SettingOverride>>
-  onChange(handler: SettingsChangeHandler): () => void
  * secret 字段只回答是否已配置（secretConfigured），不返回值。
  * onChange 订阅设置变更，返回释放函数；回调由引擎在落盘后发起，不占插件限流名额，
  * 抛错只写该插件的插件日志，停用之后不再回调。
@@ -217,10 +215,13 @@ export type NetCapability = {
  * 资产读取能力；按地址取远端资产包的文本或字节。
  * 结果三态原样交给插件：取到内容、拿到明确 HTTP 状态码、只有网络层失败而无状态码。
  * 引擎不猜测失败原因，也不把状态码当异常抛出。
+ * download 按资产标识发起一次引擎代取, 只认清单 assets 块里声明的标识,
+ * 失败抛 PluginAssetDownloadError, reason 取失败码闭集之一, 取消为 aborted。
  */
 export type AssetsCapability = {
   readText(url: string, options?: CallOptions): Promise<AssetTextResult>
   readBytes(url: string, options?: CallOptions): Promise<AssetBytesResult>
+  download(assetId: string, options?: CallOptions): Promise<Uint8Array>
 }
 
 /** 插件数据能力；值必须可 JSON 序列化 */

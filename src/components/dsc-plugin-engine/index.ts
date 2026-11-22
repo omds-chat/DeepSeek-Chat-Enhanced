@@ -21,6 +21,9 @@ import {
   type CoreSourceDescriptor,
 } from '../dsc-core/index.js'
 import { createAssetAnnouncer } from './assetAccess.js'
+import { createAssetDownloader, type DownloadCardSink } from './assetDownload.js'
+import { createDownloadCardStore, formatAssetBytes } from './downloadCard.js'
+import { checkTrustedCapability } from './registry.js'
 import { clearPluginSecrets } from './credentials.js'
 import { BUILTIN_PLUGIN_IDS, BUILTIN_PLUGINS } from './builtin.js'
 import { createPluginContext, runWithTimeout } from './capabilities.js'
@@ -54,7 +57,6 @@ import {
 import { convergePatch, mergePatch, REQUEST_PATCH_BUDGET_MS } from './requestPatch.js'
 import {
   forgetSettings,
-  forgetSettingsChangeListeners,
   forgetSettingsChangeListeners,
   pluginSettingsFacade,
   settingsDescriptor,
@@ -280,6 +282,32 @@ export const installPluginEngine = (): PluginEngine => {
   setAlertSink((message) => report(message.key, message.params))
   // 资产来源的首次使用提示按「插件 + 来源」去重，去重状态与引擎同寿命
   const announceAsset = createAssetAnnouncer(warn)
+
+  /**
+   * assets:download 的提示出口: 每一次实际发生的传输都发一条气泡,
+   * 不去重、不按来源合并; 卡片按插件复用, 同一插件同一时刻只有一张。
+   * 取消按钮经 downloadCardStore 的回调回到下载执行器, 真正中止底层请求。
+   */
+  const downloadCardStore = createDownloadCardStore((pluginId, assetId) => {
+    downloader.cancel(pluginId, assetId)
+  })
+  const downloadCard: DownloadCardSink = {
+    onStart: (progress) => {
+      downloadCardStore.onStart(progress)
+      warn('pluginAssetDownloadStarted', {
+        id: progress.pluginName,
+        asset: progress.assetId,
+        size: formatAssetBytes(progress.declaredBytes),
+      })
+    },
+    onProgress: (progress) => {
+      downloadCardStore.onProgress(progress)
+    },
+    onSettled: (pluginId) => {
+      downloadCardStore.onSettled(pluginId)
+    },
+  }
+  const downloader = createAssetDownloader(downloadCard)
 
   const engineLogs: string[] = []
   const pushEngineLog = (message: string) => {
@@ -515,6 +543,13 @@ export const installPluginEngine = (): PluginEngine => {
       })
       return check
     }
+    // assets:download 只授予受信来源插件; 不满足时按 unknown-capability 拒绝,
+    // 与能力不存在不可区分, 判定依据与安装记录写入的是同一份来源元数据
+    const trusted = checkTrustedCapability(manifest, options.origin ?? null, options.verdict ?? 'unknown')
+    if (trusted !== null) {
+      report('pluginInstallRejected', { id: manifest.id, reason: pluginReasonText(trusted) })
+      return { ok: false, reason: trusted }
+    }
     store.add(manifest, plugin, source, options)
     // 冲突不再拒绝安装：检出的冲突对随结果带回，处置（警告、停用、待决定记录）由安装入口按启用状态完成
     return check.conflicts ? { ok: true, conflicts: check.conflicts } : { ok: true }
@@ -548,6 +583,14 @@ export const installPluginEngine = (): PluginEngine => {
         reason: pluginReasonText(check.reason, check.detail),
       })
       return check
+    }
+    // 恢复按安装期同一口径复核受信能力: 存储记录的来源结论不再是已确认时,
+    // assets:download 不再可用, 恢复被拒并给出与安装一致的原因
+    const trusted = checkTrustedCapability(manifest, options.origin ?? null, options.verdict ?? 'unknown')
+    if (trusted !== null) {
+      pushEngineLog('restore ' + manifest.id + ' rejected: ' + trusted)
+      report('pluginRestoreFailed', { id: manifest.id, reason: pluginReasonText(trusted) })
+      return { ok: false, reason: trusted }
     }
     store.add(manifest, plugin, source, options)
     return { ok: true }
@@ -754,6 +797,7 @@ export const installPluginEngine = (): PluginEngine => {
         credential,
         report,
         announceAsset,
+        download: downloader.download,
         declareSource: registerSource,
       })
       await runWithTimeout(Promise.resolve(record.plugin.activate(context)), ACTIVATE_TIMEOUT, {
@@ -899,8 +943,8 @@ export const installPluginEngine = (): PluginEngine => {
     // 卸载只移除注册表与持久化记录；插件本地数据保留，交由设置的数据管理清理
     // 未激活过的插件不会走 deactivateNow，这里再撤销一次端点声明
     forgetSources(id)
-    // 设置变更订阅随卸载一并撤销: 停用的 disposer 已撤过一次, 这里兜住未激活的残留
-    forgetSettingsChangeListeners(id)
+    // assets:download 不落盘, 没有持久数据要清; 活跃传输随卸载中止, 卡片随收尾收起
+    downloader.cancelAll(id)
     forgetSettings(id)
     // 设置变更订阅随卸载一并撤销: 停用的 disposer 已撤过一次, 这里兜住未激活的残留
     forgetSettingsChangeListeners(id)
@@ -1654,25 +1698,25 @@ export type {
 export { MOUNT_POINTS } from './types.js'
 /** 供应端点注册表：冲突判定与执行错误；注册表的读写入口经 engine.sourceRegistry() 暴露 */
 export { PluginSourceError } from './sources.js'
+/** 资产下载：失败码闭集与错误类型；清单 assets 块的声明形态实现在 assetDownload.ts */
+export { PluginAssetDownloadError } from './assetDownload.js'
+export type { AssetDownloadReason, PluginAsset } from './assetDownload.js'
+/** 下载卡片状态：宿主订阅渲染右下角悬浮卡片，取消经引擎侧出口回到下载执行器 */
+export type { DownloadCardData } from './downloadCard.js'
 /** 设置表面：描述类型、校验错误与门面；注册与校验实现在 pluginSettings.ts */
 export { PluginSettingsError, SETTING_KEY_PATTERN } from './pluginSettings.js'
 export type { PluginSettingsFacade } from './pluginSettings.js'
 export type {
   SettingDescriptor,
   SettingDescriptorProblem,
-  SettingOverride,
   SettingFieldDescriptor,
   SettingFieldOptions,
   SettingFieldType,
   SettingOverride,
-  SettingsChange,
-  SettingsChangeHandler,
-  SettingsChangeKind,
-  SettingsFieldChange,
   SettingValue,
   SettingValueProblem,
   SettingValueView,
- * 宿主按登记表列出侧边栏导航行、会话视图标签栏与会话右栏的段落和标签页, 登记变化经订阅通知界面。
+  SettingWriteResult,
   SettingsChange,
   SettingsChangeHandler,
   SettingsChangeKind,
@@ -1680,7 +1724,7 @@ export type {
 } from './pluginSettings.js'
 /**
  * 插件 UI 槽位：错误类型、键规则与登记表订阅；登记、校验与槽位授权实现在 pluginSlots.ts。
- * 宿主按登记表列出侧边栏导航行与会话视图标签栏, 登记变化经订阅通知界面。
+ * 宿主按登记表列出侧边栏导航行、会话视图标签栏与会话右栏的段落和标签页, 登记变化经订阅通知界面。
  */
 export {
   PAGE_KEY_PATTERN,
@@ -1689,20 +1733,21 @@ export {
   SLOT_CONVERSATION_TABS,
   SLOT_MENU_ITEM,
   SLOT_MESSAGE_ACTIONS,
-  isPanelEntrySlot,
   SLOT_NAMES,
   SLOT_NAV_PANEL,
+  SLOT_NAV_SIDE,
   SLOT_OVERLAY_NOTICE,
+  SLOT_SESSION_PANEL_SECTION,
   SLOT_SETTINGS_PAGE,
   PluginPageError,
   PluginSlotError,
   isPageDescriptor,
   isPageSlot,
+  isPanelEntrySlot,
   slotRegistryRevision,
   subscribeSlotRegistry,
 } from './pluginSlots.js'
 export type {
-  PanelEntrySlotName,
   ComposerNoticeDescriptor,
   ComposerToolbarDescriptor,
   MenuItemDescriptor,
@@ -1711,6 +1756,7 @@ export type {
   NoticeLevel,
   OverlayNoticeDescriptor,
   PageActionDescriptor,
+  PanelEntrySlotName,
   PageBlock,
   PageBlockType,
   PageDescriptor,
