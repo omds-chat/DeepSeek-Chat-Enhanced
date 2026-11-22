@@ -21,9 +21,9 @@ name: Deploy GitHub Pages
 #   release 事件触发时 tag 的后缀必须与 Release 的预发行标记一致,不匹配即拒绝执行;
 #   四条分支必须两两无公共祖先;并行分支缺失时报错中止,不自动创建
 # - 版本留存: 三条并行分支的 version 目录各自只保留最近 1000 个版本,裁剪在 commit 之前完成
-# - 组装 RUNNER_TEMP/pages: 正式发行时站点根是本轮构建产物,certs/ 与 index.json 同样放在站点根,
-#   预发行时站点根维持最近一次正式发行的产物,不把预发行构建顶上站点根;
-#   index.json 里 certs/... 的相对路径在站点根与各版本目录内都成立;
+# - 组装 RUNNER_TEMP/pages: 站点根只允许发行版内容——正式发行用本轮构建顶上站点根,
+#   预发行绝不进站点根,站点根维持最近一次发行版的内容,从未有发行版时站点根无页面内容(没有兜底);
+#   预发行只能通过版本入口访问;index.json 里 certs/... 的相对路径在站点根与各版本入口内都成立;
 #   三条归档分支的 version 目录内容全部释放到页面包根目录,/<tag>/ 是该版本的完整快照
 #   (构建产物、certs/、index.json),latest/ 指向最近一次正式发行;组装完成后上传并用 actions/deploy-pages 部署
 
@@ -427,27 +427,32 @@ jobs:
           pages="${RUNNER_TEMP}/pages"
           rm -rf "${pages}"
           mkdir -p "${pages}"
-          # 站点根: 正式发行用本轮构建产物;预发行用最近一次正式发行的产物(dist-history 分支根),
-          # 不把预发行构建顶上站点根——预发行对站点根的唯一改动是新增 version/<tag>/。
-          # 尚无任何正式发行时(分支根只有 README),退回本轮构建产物兜底。
-          site_root="${BUILD_DIR}"
-          if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ] && [ -f "${DIST_HISTORY_WORKTREE}/index.html" ]; then
-            site_root="${DIST_HISTORY_WORKTREE}"
-          fi
-          cp -a "${site_root}/." "${pages}/"
-          # 站点根信任材料与站点根同口径: 正式发行用分支根目录(本轮内容),预发行用分支根目录
-          # (最近一次正式发行的材料,分支根未被预发行触碰);分支尚无内容时退回本版快照目录。
-          if [ -d "${CERTS_WORKTREE}/certs" ]; then
+          # 站点根只允许发行版内容: 正式发行用本轮构建顶上站点根;
+          # 预发行绝不进站点根——站点根维持最近一次发行版的内容(dist-history 分支根),
+          # 从未有过发行版时站点根没有页面内容,只有信任材料与版本入口,没有任何兜底。
+          if [ "${{ steps.tagcheck.outputs.prerelease }}" != "true" ]; then
+            # 发行版: 本轮构建进站点根,信任材料用本轮内容(归档分支根目录与本版快照一致)
+            cp -a "${BUILD_DIR}/." "${pages}/"
             cp -a "${CERTS_WORKTREE}/certs" "${pages}/certs"
-          elif [ -d "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" ]; then
-            cp -a "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" "${pages}/certs"
-          fi
-          if [ -f "${TRUSTED_MANIFEST_WORKTREE}/index.json" ]; then
             cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${pages}/index.json"
-          elif [ -f "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" ]; then
-            cp -a "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" "${pages}/index.json"
+          else
+            # 预发行: 站点根维持最近一次发行版的内容;从未有过发行版时不拷贝任何页面内容
+            if [ -f "${DIST_HISTORY_WORKTREE}/index.html" ]; then
+              cp -a "${DIST_HISTORY_WORKTREE}/." "${pages}/"
+            fi
+            # 信任材料是基础设施,始终在站点根提供: 取最近发行版的,从未有发行版时取本版生成的
+            if [ -d "${CERTS_WORKTREE}/certs" ]; then
+              cp -a "${CERTS_WORKTREE}/certs" "${pages}/certs"
+            elif [ -d "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" ]; then
+              cp -a "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" "${pages}/certs"
+            fi
+            if [ -f "${TRUSTED_MANIFEST_WORKTREE}/index.json" ]; then
+              cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${pages}/index.json"
+            elif [ -f "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" ]; then
+              cp -a "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" "${pages}/index.json"
+            fi
           fi
-          # 两者缺一时页面包不完整,直接中止而不是上传半份信任材料
+          # 信任材料缺一时页面包不完整,直接中止
           if [ ! -d "${pages}/certs" ] || [ ! -f "${pages}/index.json" ]; then
             echo "::error::页面包缺少 certs/ 或 index.json,中止"
             exit 1
@@ -460,8 +465,8 @@ jobs:
           tar -C "${DIST_HISTORY_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}" -xf -
           tar -C "${CERTS_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}" -xf -
           tar -C "${TRUSTED_MANIFEST_WORKTREE}/version" --exclude=./.git -cf - . | tar -C "${pages}" -xf -
-          # 排除 .git;末尾的删除是兜底,确保 git 元数据不会进入站点
-          rm -rf "${pages}/certs/.git" "${pages}/version/.git"
+          # 预发行站点根可能来自归档分支根,清掉 .git 元数据,确保 git 元数据不会进入站点
+          rm -rf "${pages}/.git" "${pages}/certs/.git"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
