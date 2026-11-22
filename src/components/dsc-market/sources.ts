@@ -40,8 +40,10 @@ const LEGACY_IDS: Record<string, string> = {
 /**
  * 内置来源。id 与合集目录名一致，便于直接命中 trusted-manifest 信任清单；
  * 列表顺序即来源优先级，dsc-inner-plugin 在前，awesome-dsc-plugin 在后。
- * 单个来源内的 base_url 也按顺序尝试：awesome-dsc-plugin 依次尝试 CDN 分发、raw 兜底与 Pages 兜底，
- * dsc-inner-plugin 只走 Pages。
+ * 单个来源只走 Pages：市场取件表要的全部是 CI 构建产物（索引、三层清单、签名与插件本体），
+ * 这些只存在于 Pages 部署里，合集的 main 分支工作树上一样都没有——
+ * jsDelivr 与 raw 只能镜像 git 内容，指向 @main 是必然 404 的死路径；
+ * jsDelivr 正确的用法是镜像「内容确实在 git 引用里」的场景，如信任材料的 certs/trusted-manifest 并行分支。
  */
 /**
  * 单个来源的 base_url 列表：注入了合法的本地地址时只用本地那一个，不再列线上兜底。
@@ -63,11 +65,7 @@ export const DEFAULT_SOURCES: readonly MarketSource[] = [
     id: 'awesome-dsc-plugin',
     name: 'awesome-dsc-plugin',
     builtin: true,
-    baseUrls: sourceBaseUrls(injectedAwesomePages(), [
-      'https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/',
-      'https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/',
-      'https://omds-chat.github.io/awesome-dsc-plugin/',
-    ]),
+    baseUrls: sourceBaseUrls(injectedAwesomePages(), ['https://omds-chat.github.io/awesome-dsc-plugin/']),
   },
 ]
 

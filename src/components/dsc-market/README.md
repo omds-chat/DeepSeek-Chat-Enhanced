@@ -38,7 +38,9 @@ dsc-market/
 | 来源 | base_url(按优先级) |
 |:---:|:---:|
 | `dsc-inner-plugin` | `https://omds-chat.github.io/dsc-inner-plugin/` |
-| `awesome-dsc-plugin` | `https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/`、`https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/`、`https://omds-chat.github.io/awesome-dsc-plugin/` |
+| `awesome-dsc-plugin` | `https://omds-chat.github.io/awesome-dsc-plugin/` |
+
+市场取件表要的全部是 CI 构建产物(索引、三层清单、签名与插件本体),只存在于 Pages 部署里,合集的 main 分支工作树上一样都没有;jsDelivr 与 raw 只能镜像 git 内容,指向 `@main` 是必然 404 的死路径。jsDelivr 的正确用法是镜像「内容确实在 git 引用里」的场景,如信任材料的 `certs`/`trusted-manifest` 并行分支(`src/services/trust/fetch.ts`)。
 
 本地开发时来源地址可由 .env 覆盖,线上地址不变: 上表的 Pages 地址在 dev 下由 .env 的 `DSC_INNER_PLUGIN_PAGES_LINK`、`AWESOME_DSC_PLUGIN_PAGES_LINK` 注入值替代,注入为空或非法时仍用线上地址,地址判定与信任校验不分开发与线上。
 
