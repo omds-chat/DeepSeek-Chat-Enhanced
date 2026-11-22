@@ -1,102 +1,98 @@
 import { create } from 'zustand'
-import { setPluginPanelTab, type PluginPanelTab } from './pluginPanelState.js'
+import type { SlotName } from '../dsc-plugin-engine/index.js'
 
 /**
- * 会话视图的选中项。
- * 插件页面不是插件面板里的一个标签页, 而是与既有会话视图并列的一种视图:
- * 用户在会话视图列表里选中它, 主区就整块渲染该页面;
- * 插件不登记页面时列表里没有任何入口, 会话视图保持既有行为。
+ * 主区面板的单一命名空间, 与 dsh 的 MainPanelId | null 同构:
+ * null 表示会话(含会话视图标签栏), 'plugins' 是插件管理面板,
+ * 其余是插件槽位页 { slot, pluginId, id }。
+ * 面板选中与会话选中是两套独立状态: 切面板不改会话, 标签切换不丢失会话上下文;
+ * 选中会话一律回到 null, 落点在 services/chat/store.ts 的 selectSession 与 newChat。
  */
-export type PluginView =
-  | { readonly kind: 'chat' }
-  /** 插件面板: 插件管理界面, 与会话视图同样互斥 */
-  | { readonly kind: 'panel' }
-  /** 某个插件的某个页面 */
-  | { readonly kind: 'page'; readonly pluginId: string; readonly pageId: string }
+export type SlotPageRef = {
+  readonly slot: SlotName
+  readonly pluginId: string
+  readonly id: string
+}
 
-/** 页面入口的键; 页面 id 与插件 id 共同定位一个入口 */
-export type PluginPageRef = { readonly pluginId: string; readonly pageId: string }
+export type PanelId = 'plugins' | SlotPageRef
 
 export type PluginViewState = {
-  view: PluginView
-  /**
-   * 进入插件视图前选中的会话; 返回会话视图时用它恢复上下文。
-   * 插件视图不改变会话的选中项, 记下来是为了返回时不丢掉「刚才看的是哪个会话」。
-   */
-  originSessionId: string | null
+  activePanelId: PanelId | null
 }
-
-/** 会话视图的选中项; 常量让「已经在会话视图」时不必产生新的状态对象 */
-const CHAT_VIEW: PluginView = { kind: 'chat' }
 
 export const usePluginView = create<PluginViewState>(() => ({
-  view: CHAT_VIEW,
-  originSessionId: null,
+  activePanelId: null,
 }))
 
+const sameSlotPage = (a: SlotPageRef, b: SlotPageRef): boolean =>
+  a.slot === b.slot && a.pluginId === b.pluginId && a.id === b.id
+
+/** 当前面板是否等于给定面板; 槽位页按三个字段比较, 字符串与 null 直接相等比较 */
+export const isPanelActive = (active: PanelId | null, id: PanelId | null): boolean => {
+  if (active === null || id === null) {
+    return active === id
+  }
+  if (typeof active === 'string' || typeof id === 'string') {
+    return active === id
+  }
+  return sameSlotPage(active, id)
+}
+
+/** 把面板 id 收窄成槽位页; 不在槽位页上(会话或插件面板)时为 null */
+export const asSlotPage = (id: PanelId | null): SlotPageRef | null =>
+  id !== null && typeof id !== 'string' ? id : null
+
 /**
- * 回到会话视图; 来源会话一并清掉, 下次进入时重新记。
- * 已经在会话视图时什么都不做: 选中会话是高频操作, 不必让订阅者重渲染。
+ * 切到某个面板; 已经在该面板上时什么都不做, 免得订阅者空转重渲染。
+ * 未登记的面板由调用方保证(导航行与标签栏都从登记表派生), 这里不再校验。
  */
-export const returnToChat = (): void => {
-  const state = usePluginView.getState()
-  if (state.view === CHAT_VIEW && state.originSessionId === null) {
+export const selectPanel = (id: PanelId | null): void => {
+  if (isPanelActive(usePluginView.getState().activePanelId, id)) {
     return
   }
-  usePluginView.setState({ view: CHAT_VIEW, originSessionId: null })
+  usePluginView.setState({ activePanelId: id })
 }
 
-/** 切到插件面板; tab 为进入时选中的标签页, 来源会话随之记下 */
-export const openPluginPanel = (
-  tab: PluginPanelTab = 'installed',
-  originSessionId: string | null = null
-): void => {
-  setPluginPanelTab(tab)
-  usePluginView.setState({ view: { kind: 'panel' }, originSessionId })
+/** 选中一个槽位页面 */
+export const openSlotPage = (page: SlotPageRef): void => {
+  selectPanel(page)
 }
-
-/** 选中一个插件视图; 记住来源会话, 返回时用它恢复上下文 */
-export const openPluginPage = (
-  pluginId: string,
-  pageId: string,
-  originSessionId: string | null = null
-): void => {
-  usePluginView.setState({ view: { kind: 'page', pluginId, pageId }, originSessionId })
-}
-
-/** 当前视图停留的页面; 不在页面上时为 null */
-export const viewedPage = (view: PluginView): PluginPageRef | null =>
-  view.kind === 'page' ? { pluginId: view.pluginId, pageId: view.pageId } : null
 
 /**
- * 停留的页面是否已不在登记表里。
+ * 回到会话(null); selectPanel(null) 的薄封装, 保留名字减少调用点改动。
+ * 调用点: services/chat/store.ts 的 newChat 与 selectSession, 以及页面返回面包屑。
+ */
+export const returnToChat = (): void => {
+  selectPanel(null)
+}
+
+/**
+ * 停留的槽位页是否已不在登记表里。
  * 插件停用或卸载会撤销登记, 界面据此退回会话视图; 不在此判断插件状态,
  * 只看登记表: 页面还在就还能看, 撤销了就不该再停留。
  */
-export const revokedPage = (
-  view: PluginView,
-  entries: readonly PluginPageRef[]
-): PluginPageRef | null => {
-  const page = viewedPage(view)
+export const revokedSlotPage = (
+  active: PanelId | null,
+  pages: readonly SlotPageRef[]
+): SlotPageRef | null => {
+  const page = asSlotPage(active)
   if (!page) {
     return null
   }
-  const alive = entries.some(
-    (entry) => entry.pluginId === page.pluginId && entry.pageId === page.pageId
-  )
+  const alive = pages.some((item) => sameSlotPage(item, page))
   return alive ? null : page
 }
 
 /**
- * 撤销守卫: 停留的页面被撤销时退回会话视图, 并交给调用方提示一次。
+ * 撤销守卫: 停留的槽位页被撤销时退回会话视图, 并交给调用方提示一次。
  * notify 由宿主注入(界面层发气泡), 本模块不碰界面与通知;
  * 返回被撤销的页面键, 没有发生回退时为 null。
  */
 export const settleRevokedPage = (
-  entries: readonly PluginPageRef[],
-  notify: (page: PluginPageRef) => void
-): PluginPageRef | null => {
-  const revoked = revokedPage(usePluginView.getState().view, entries)
+  pages: readonly SlotPageRef[],
+  notify: (page: SlotPageRef) => void
+): SlotPageRef | null => {
+  const revoked = revokedSlotPage(usePluginView.getState().activePanelId, pages)
   if (!revoked) {
     return null
   }

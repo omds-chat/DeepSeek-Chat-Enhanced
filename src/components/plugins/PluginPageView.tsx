@@ -3,31 +3,30 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import {
   getPluginEngine,
-  pageRegistryRevision,
-  subscribePageRegistry,
+  slotRegistryRevision,
+  subscribeSlotRegistry,
   type PageDescriptor,
   type SettingFieldDescriptor,
   type SettingValue,
 } from '../dsc-plugin-engine/index.js'
-import { selectSession, useChatStore } from '../../services/chat/store.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { Button } from '../base/Button.js'
 import { MobileHeader } from '../session/MobileHeader.js'
 import { SettingsFieldRow, settingFieldLabel } from './settings/fields.js'
 import { SettingsFormModel, type SettingsFormSnapshot } from './settings/useSettingsForm.js'
-import { returnToChat, usePluginView } from './pluginViewState.js'
+import { returnToChat, type SlotPageRef } from './pluginViewState.js'
 import { actionText, badgeText, titledText, type Translate } from './pluginPageText.js'
-import { usePluginPageViews } from './usePluginPageViews.js'
+import { useSlotPanels } from './useSlotPanels.js'
 import detailStyles from './settings/PluginSettings.module.css'
 import styles from './PluginPageView.module.css'
 
 /**
- * 插件会话视图：主区渲染一个已登记的插件页面。
- * 入口在会话视图列表(侧边栏「插件视图」分组), 与既有会话视图并列; 选中即整块替换主区,
- * 页面顶部是返回会话视图的面包屑, 不做路由、不做模态遮罩。
+ * 插件槽位页面：主区渲染一个已登记的插件页面。
+ * 入口是侧边栏导航行(nav.panel)或会话视图标签栏(conversation.tabs); 选中即整块替换主区,
+ * 页面顶部是回到会话的面包屑, 不做路由、不做模态遮罩。
  * 页面内容由宿主按描述渲染: text、list、form 与 actions 四种区块,
  * 表单区块复用设置表面的五种控件与脏值生命周期; 动作按钮经引擎同步回调插件,
- * 返回刷新指示时重新向插件索取页面模型(ui:page-data)。
+ * 返回刷新指示时重新向插件索取页面模型(ui:slot-data)。
  */
 
 /** 页面里全部表单区块的字段；键在登记期已保证页面内唯一 */
@@ -101,51 +100,33 @@ const useFormModelVersion = (model: SettingsFormModel | null): number => {
   return version
 }
 
-/** 返回会话视图: 有来源会话就回到该会话, 会话已删除时只切回视图 */
-const backToChat = (originSessionId: string | null): void => {
-  if (
-    originSessionId !== null &&
-    useChatStore.getState().sessions.some((session) => session.id === originSessionId)
-  ) {
-    selectSession(originSessionId)
-    return
-  }
-  returnToChat()
-}
-
 export const PluginPageView = ({
-  pluginId,
-  pageId,
+  page,
   siderCollapsed,
 }: {
-  pluginId: string
-  pageId: string
+  page: SlotPageRef
   siderCollapsed: boolean
 }) => {
   const t = useTranslate()
   const isMobile = useIsMobile()
-  const originSessionId = usePluginView((state) => state.originSessionId)
-  const views = usePluginPageViews()
+  const panels = useSlotPanels()
   const pluginName =
-    views.find((item) => item.pluginId === pluginId && item.pageId === pageId)?.pluginName ??
-    pluginId
-  const originTitle = useChatStore(
-    (state) => state.sessions.find((session) => session.id === originSessionId)?.title ?? null
-  )
+    panels.find((item) => item.pluginId === page.pluginId && item.id === page.id)?.pluginName ??
+    page.pluginId
   // 页面重新登记时一并重读: 插件可能换了一份描述
-  const revision = useSyncExternalStore(subscribePageRegistry, pageRegistryRevision)
+  const revision = useSyncExternalStore(subscribeSlotRegistry, slotRegistryRevision)
   const [state, setState] = useState<PageLoadState>({ kind: 'loading' })
   const [reload, setReload] = useState(0)
 
   useEffect(() => {
     const engine = getPluginEngine()
-    const result = engine?.readPage(pluginId, pageId)
+    const result = engine?.readSlot(page.pluginId, page.slot, page.id)
     if (!result || !result.ok) {
       setState({ kind: 'missing' })
       return
     }
     setState({ kind: 'ready', model: result.model })
-  }, [pluginId, pageId, reload, revision])
+  }, [page.pluginId, page.slot, page.id, reload, revision])
 
   const model = state.kind === 'ready' ? state.model : null
   // 表单模型随页面模型重建: 刷新指示到达时脏值草稿一并丢弃
@@ -160,12 +141,14 @@ export const PluginPageView = ({
       return
     }
     const payload: {
-      pageId: string
+      slot: typeof page.slot
+      id: string
       actionId: string
       itemKey?: string
       form?: Record<string, SettingValue>
     } = {
-      pageId: model.id,
+      slot: page.slot,
+      id: model.id,
       actionId,
     }
     if (itemKey !== undefined) {
@@ -177,30 +160,25 @@ export const PluginPageView = ({
         payload.form = form
       }
     }
-    const result = engine.dispatchPageAction(pluginId, payload)
+    const result = engine.dispatchSlotAction(page.pluginId, payload)
     if (result.refresh) {
       setReload((value) => value + 1)
     }
   }
-
-  const back = (
-    <button
-      type="button"
-      className={detailStyles.backButton}
-      onClick={() => backToChat(originSessionId)}
-    >
-      {originTitle === null || originTitle === ''
-        ? t('pluginViewBackToChat')
-        : t('pluginViewBackToChatNamed', { title: originTitle })}
-    </button>
-  )
 
   return (
     <div className={detailStyles.page}>
       {isMobile ? <MobileHeader /> : null}
       {/* 侧边栏收起后左上角是悬浮按钮组，面包屑必须让开，否则会压在按钮下面 */}
       <div className={clsx(detailStyles.header, siderCollapsed && styles.headerCollapsed)}>
-        {back}
+        {/* 返回一律回到会话: 纯面板导航, 不恢复进入前的会话, 不触发会话读取 */}
+        <button
+          type="button"
+          className={detailStyles.backButton}
+          onClick={() => returnToChat()}
+        >
+          {t('pluginViewBackToChat')}
+        </button>
       </div>
       {state.kind === 'loading' ? (
         <div className={detailStyles.loading}>{t('pluginPagesLoading')}</div>

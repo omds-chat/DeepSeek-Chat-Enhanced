@@ -145,14 +145,20 @@
   user-select: none;
 }
 
-/* 插件视图条目：条目名与插件名两行，与下方的会话条目同一套圆角、悬停与选中底色 */
-.viewItem {
+/* 导航行区域: 会话分组之上的独立面板导航, 面板行与下方会话条目分区不同形 */
+.panelNav {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  padding: 2px 0 6px;
+  margin-bottom: 4px;
+}
+
+.panelRow {
+  display: flex;
+  align-items: center;
   box-sizing: border-box;
   width: 100%;
-  padding: 6px 10px;
+  padding: 6px 2px 6px 6px;
   border: none;
   border-radius: 12px;
   background: none;
@@ -169,35 +175,44 @@
   &:focus-visible {
     box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill);
   }
+}
 
-  &.viewItemActive {
-    background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
+/* 面板页显示时，导航行保持选中态 */
+.panelRowActive {
+  background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
 
-    .viewTitle,
-    .viewCaption {
-      color: var(--dsw-alias-brand-primary-invert);
-    }
+  .panelRowIcon,
+  .panelRowTitle {
+    color: var(--dsw-alias-brand-primary-invert);
   }
 }
 
-.viewTitle {
+.panelRowIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.panelRowTitle {
   min-width: 0;
+  margin-left: 4px;
   overflow: hidden;
   font-size: 14px;
-  line-height: 18px;
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--dsw-alias-label-primary);
 }
 
-.viewCaption {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 12px;
-  line-height: 16px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--dsw-alias-label-caption);
+/* 收起态: 导航行逐面板一个图标, 纵向排在左上角按钮组旁边 */
+.panelNavCollapsed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 /* 底部两个入口叠放，只靠按钮自身的内边距分隔 */
@@ -230,11 +245,6 @@
   &:focus-visible {
     box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill);
   }
-}
-
-/* 插件页显示时，入口保持选中态 */
-.settingsActive {
-  background-color: var(--dsw-alias-interactive-bg-hover);
 }
 
 .settingsIcon {
@@ -309,20 +319,16 @@
     line-height: 22px;
   }
 
-  /* 触屏上条目抬高，标题与插件名一并放大一档 */
-  .viewItem {
-    padding: 9px 12px;
+  /* 触屏上面板行抬高，标题放大一档 */
+  .panelRow {
+    padding: 9px 10px;
     border-radius: 16px;
   }
 
-  .viewTitle {
+  .panelRowTitle {
+    margin-left: 10px;
     font-size: 16px;
     line-height: 22px;
-  }
-
-  .viewCaption {
-    font-size: 13px;
-    line-height: 18px;
   }
 
   .bottom {

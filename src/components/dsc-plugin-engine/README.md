@@ -16,7 +16,7 @@ dsc-plugin-engine/
 ├── installConflicts.ts # 安装期冲突判定：正反两个方向，与启用期同口径
 ├── sources.ts      # 供应端点注册表：声明合并（能力并集）、定义比对与能力矩阵
 ├── pluginSettings.ts # 插件设置表面：字段描述校验、注册表与值读写门面（secret 走凭证库）
-├── pluginPages.ts   # 插件会话视图：声明式页面描述校验、登记表（含变更订阅）与动作、数据挂载点
+├── pluginSlots.ts   # 插件 UI 槽位：槽位枚举与白名单校验、页面描述校验、登记表（含变更订阅）与动作、数据处理器
 ├── credentials.ts  # 供应端点凭证存取（IndexedDB，键为端点 id + 基址，插件不可见）
 ├── providerRun.ts  # 按端点执行：选端点、读凭证、调 source:run、错误归类
 ├── db.ts           # 安装记录与待决定冲突组的持久化（IndexedDB，不可用时降级为内存）
@@ -45,7 +45,8 @@ dsc-plugin-engine/
 | `dependencies` | 否 | 依赖的插件 id,安装、启用、停用、卸载四处都生效:安装时须已存在,激活时须已激活,停用与卸载时不得有已启用的依赖方 |
 | `conflicts` | 否 | 冲突的插件 id,安装期与启用期都生效,两个方向都算:安装时任一方声明排斥另一方即拒绝(原因按声明方向分三条);启用时只算 `active` 记录,冲突则停用双方并写入待决定记录,由用户选择保留哪一个 |
 | `capabilities` | 是 | 申请的能力,必须在核心能力表内且不得重复 |
-| `mounts` | 否 | 声明的挂载点(`session:changed`、`chat:before-request`、`ui:page-action`、`ui:page-data`),必须在挂载点表内且不得重复 |
+| `mounts` | 否 | 声明的挂载点(`session:changed`、`chat:before-request`),必须在挂载点表内且不得重复 |
+| `slots` | 否 | 申请的 UI 槽位白名单(`nav.panel`、`conversation.tabs`),申请能力 `ui:slot` 后只允许登记这里逐个声明的槽位;槽位名必须在槽位枚举内且不得重复,枚举之外的槽位按 `unknown-slot` 拒绝 |
 
 清单的 `id` 由插件名收敛而来：去掉 `@scope/` 前缀后转小写,非 `[a-z0-9-]` 的字符折叠为连字符,再去掉首尾连字符。收敛结果立即按清单规则 `^[a-z][a-z0-9-]{2,63}$` 校验,字符形态或长度不合规时安装按 `invalid-manifest` 拒绝,原因说明指向插件命名而不是笼统的清单非法。规则只有 `pluginId.ts` 一处实现,离线包、在线安装与插件市场都引用它,同一插件经不同路径得到同一个 id。
 
@@ -158,7 +159,7 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 | `notify` | 10 次 / 10 秒 | 同步调用 | `context.ui.notify` |
 | `settings:locale` | 60 次 / 10 秒 | 3 秒 | `context.settings.locale` |
 | `settings:surface` | 60 次 / 10 秒 | 同步调用 | `context.settings.register`、`context.settings.values` |
-| `ui:page` | 20 次 / 10 秒(仅登记) | 同步调用 | `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` |
+| `ui:slot` | 20 次 / 10 秒(仅登记) | 同步调用 | `context.ui.registerSlot`、`context.ui.onSlotAction`、`context.ui.onSlotData` |
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
 | `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
 | `assets:read` | 120 次 / 10 秒 | 内层 10 秒后中止请求 | `context.assets.readText`、`context.assets.readBytes` |
@@ -169,9 +170,9 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 
 `provider:source` 的上限按「声明次数」计:每次 `context.provider.registerSource` 占一个名额,一个插件可能声明多条端点,因此上限取 50。声明集中在激活阶段,超过上限抛 `PluginRateLimitError`,整次激活失败并按失败路径撤销该插件的全部声明。
 
-表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session`、`chat:request`、`settings:surface` 与 `ui:page` 只登记、不逐次执行耗时操作,同样没有超时。超时只对异步成员生效。
+表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session`、`chat:request`、`settings:surface` 与 `ui:slot` 只登记、不逐次执行耗时操作,同样没有超时。超时只对异步成员生效。
 
-登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest`,以及每次 `context.ui.registerPage`、`context.ui.onPageAction`、`context.ui.onPageData` 各占一个名额,之后的事件回调、请求前调用、页面动作回调与页面数据索取都由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
+登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest`,以及每次 `context.ui.registerSlot`、`context.ui.onSlotAction`、`context.ui.onSlotData` 各占一个名额,之后的事件回调、请求前调用、槽位动作回调与页面数据索取都由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
 
 超限抛 `PluginRateLimitError`,未授予抛 `PluginCapabilityError`,超时抛 `PluginTimeoutError`,取消抛 `PluginAbortError`;限流与超时同时用既有 Toast 提示。
 
@@ -283,18 +284,28 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 
 卸载清理:登记随停用撤销;覆盖值与秘密值由引擎管理,卸载时一并清除,不在遗留数据区出现。
 
-### 插件会话视图（ui:page）
+### 插件 UI 槽位（ui:slot）
 
-第三方插件可以在清单里申请能力 `ui:page`,在激活期用 `context.ui.registerPage(descriptor)` 登记一份声明式页面描述,宿主据此把页面作为一种会话视图与既有会话视图并列渲染。落点是会话视图标签栏:侧边栏的会话视图列表里多出一个「插件视图」分组,用户在那里选中某个页面,主区就整块渲染该页面。这是可选项——插件不登记就没有任何入口,会话视图保持既有行为。与 `settings:surface` 同法,插件只交描述、不交控件:控件形态、样式与 i18n 全部归宿主,这是插件没有 React 能力时的页面形态。消费场景是插件需要一块自己的展示与管理界面(例如资产市场的来源管理与安装入口)。
+第三方插件可以在清单里申请能力 `ui:slot`,用清单的 `slots` 白名单逐个声明要登记的槽位,在激活期用 `context.ui.registerSlot(descriptor)` 登记一份声明式页面描述,宿主按描述的 `slot` 把页面渲染到对应落点。能力只有一个,位置不止一个:槽位名是引擎侧的封闭枚举(`SLOT_NAMES`),新增落点只扩枚举与宿主渲染,不新增能力标识——位置数量与能力数量解耦,对齐 dsh「一个注册 API 覆盖全部位置」的取舍。本版开放两个槽位,语义与落点:
 
-登记与校验实现在 `pluginPages.ts`,与设置表面同法:只登记描述、不执行;描述非法(非法 id、非法标题、空区块、超过 64 个区块、重复区块 id、未知区块类型、非法条目、非法动作、非法说明文字、非法表单字段、跨区块重复字段键、超规模)时整份注册失败,抛 `PluginPageError`,`code` 是结构化的问题码,同时提示 `pluginPageRejected`。登记返回带页面 id 的句柄,释放函数进入插件的 disposer 集合,停用随引擎清理(激活中途失败同样撤销);同一插件重复登记同 id 页面时替换前一份。
+| 槽位 | 落点 | 语义 |
+|:---:|:---:|:---:|
+| `nav.panel` | 侧边栏会话分组之上的导航行区域 + 主区整页 | 登记一项 = 导航行区域里的一行(图标 + 标题),点击即切换到该插件页面;与静态的插件面板行同区排列,是 dsh `sidebar.panellist` + `main` 的描述式对应物 |
+| `conversation.tabs` | 会话视图标签栏 + 主区整页 | 登记一项 = 标签栏里的一个标签,选中后主区整块换成该插件页面;标签切换不改会话上下文,是 dsh `conversation.view` 的描述式对应物 |
+
+这是可选项——插件不登记就没有任何入口,界面保持既有行为:没有 `nav.panel` 登记时导航行区域只有插件面板一行,没有 `conversation.tabs` 登记时标签栏整块不渲染。与 `settings:surface` 同法,插件只交描述、不交控件:控件形态、样式与 i18n 全部归宿主,这是插件没有 React 能力时的页面形态。消费场景是插件需要一块自己的展示与管理界面(例如资产市场的来源管理与安装入口)。
+
+登记与校验实现在 `pluginSlots.ts`,与设置表面同法:只登记描述、不执行;校验即拒绝,槽位不在枚举(`unknown-slot`)、槽位未写入清单 `slots` 白名单(`slot-not-granted`)、同槽位内 id 与其他插件重复(`duplicate-id`)、非法 id、非法标题、非法图标键、非法排序、空区块、超过 64 个区块、重复区块 id、未知区块类型、非法条目、非法动作、非法说明文字、非法表单字段、跨区块重复字段键、超规模都让整份注册失败,抛 `PluginSlotError`,`code` 是结构化的问题码,同时提示 `pluginSlotRejected`(白名单缺失另提示 `pluginSlotNotGranted`)。清单层面的校验在安装期完成:`slots` 里出现枚举之外的槽位名按 `unknown-slot` 拒绝安装。登记返回带槽位名与页面 id 的句柄,释放函数进入插件的 disposer 集合,停用随引擎清理(激活中途失败同样撤销);同一插件重复登记同 id 槽位时替换前一份。
 
 页面描述的形态:
 
 | 字段 | 必填 | 说明 |
 |:---:|:---:|:---:|
-| `id` | 是 | `^[a-z][a-z0-9-]{0,63}$`,同一插件内不得重复,与插件 id 共同构成页面入口的键 |
-| `titleKey` / `title` | 是 | 二选一:`titleKey` 必须是宿主 i18n 字典里的键,`title` 是插件直给的文案(1 到 40 字符);页面入口的名字用它 |
+| `slot` | 是 | 槽位名,必须在 `SLOT_NAMES` 枚举内且已写入清单 `slots` 白名单 |
+| `id` | 是 | `^[a-z][a-z0-9-]{0,63}$`,同一槽位内跨插件唯一(先登记者占位),与插件 id 共同构成页面入口的键 |
+| `titleKey` / `title` | 是 | 二选一:`titleKey` 必须是宿主 i18n 字典里的键,`title` 是插件直给的文案(1 到 40 字符);导航行与标签的名字用它 |
+| `iconKey` | 否 | nav.panel 行的图标键,由宿主图标查表解析(当前登记的键:`browse`、`data`、`globe`、`plugin`、`settings`),未命中时宿主用通用插件图标;校验只看形态(1 到 64 字符),不进 i18n 词表 |
+| `order` | 否 | 同槽位内的排序键:升序,同值按登记顺序,未给按 0 |
 | `blocks` | 是 | 区块数组,1 到 64 个,按声明顺序渲染 |
 
 区块四种:
@@ -308,23 +319,23 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 
 规模上限:最多 64 个区块,描述序列化后不超过 8 KB,超限按 `too-many-blocks` / `descriptor-too-large` 拒绝。
 
-两个挂载点,登记时要求清单同时申请能力 `ui:page` 与对应挂载点,缺任一项抛 `PluginCapabilityError`:
+两个回调处理器,登记时要求清单申请能力 `ui:slot` 且把对应槽位写入 `slots` 白名单(槽位白名单取代旧版按挂载点声明的前置条件,缺任一项抛 `PluginCapabilityError` 或 `PluginSlotError`):
 
-| 挂载点 | 登记 | 回调时机 |
+| 处理器 | 登记 | 回调时机 |
 |:---:|:---:|:---:|
-| `ui:page-action` | `context.ui.onPageAction(handler)` | 用户点击页面上的动作按钮时,引擎同步回调一次,载荷 `{ pageId, actionId, itemKey?, form? }`;`itemKey` 只有逐条动作带,`form` 是宿主收集的页面表单区块当前草稿值,页面没有表单区块时不出现 |
-| `ui:page-data` | `context.ui.onPageData(handler)` | 宿主进入页面或动作返回刷新指示时,引擎同步索取当前模型,传页面 id;处理器同步返回页面描述 |
+| `ui:slot-action` | `context.ui.onSlotAction(slot, handler)` | 用户点击该槽位页面上的动作按钮时,引擎同步回调一次,载荷 `{ slot, id, actionId, itemKey?, form? }`;`itemKey` 只有逐条动作带,`form` 是宿主收集的页面表单区块当前草稿值,页面没有表单区块时不出现 |
+| `ui:slot-data` | `context.ui.onSlotData(slot, handler)` | 宿主进入页面或动作返回刷新指示时,引擎同步索取当前模型,传槽位名与页面 id;处理器同步返回页面描述,返回 null 表示沿用登记时的描述 |
 
 回调的约定:
 
 - 动作处理器同步返回 `{ refresh: true }` 时,宿主重新向插件索取页面模型;返回其他值或什么都不返回时页面保持原样。异步工作(如安装资产)由插件自行发起,完成后用 `context.ui.notify` 提示,页面数据等用户下次进入或下一次刷新指示再更新。
-- 两个挂载点的回调由引擎发起,不占插件的限流名额;`ui:page` 的限流按登记次数计,`registerPage`、`onPageAction`、`onPageData` 每次各占一个名额,20 次 / 10 秒。
-- 数据处理器返回的模型按登记期同一份校验收敛:非法、抛错或页面 id 与所请求页面不一致时回落到登记时的缺省模型,原因写插件日志;未实现 `ui:page-data` 的插件页面静态显示。
+- 两个处理器的回调由引擎发起,不占插件的限流名额;`ui:slot` 的限流按登记次数计,`registerSlot`、`onSlotAction`、`onSlotData` 每次各占一个名额,20 次 / 10 秒。
+- 数据处理器返回的模型按登记期同一份校验收敛:非法、抛错或 slot/id 与所请求页面不一致时回落到登记时的缺省模型,返回 null 表示沿用登记描述,原因写插件日志;未实现 `ui:slot-data` 的插件页面静态显示。
 - 页面表单的值只活在宿主侧的脏值生命周期里(改动即脏、字段级非法给出问题文案、可重置为默认),没有落盘动作;用户点击动作按钮时,宿主把当前草稿值随载荷交给插件。
 
-宿主 UI:页面不再是插件面板里的标签页。侧边栏的会话视图列表在会话分组之上多出一个「插件视图」分组,每个已登记页面一个条目:条目名用页面标题,副标题用插件名;没有插件登记页面时分组整块不出现,会话列表保持原样。选中条目后主区整块渲染该页面,顶部是返回会话视图的面包屑(回到进入前的那个会话);侧边栏收起态不提供插件视图入口,展开后从分组进入。页面主体按区块顺序渲染,表单区块复用设置详情页的控件与样式 token;动作按钮触发引擎回调,返回刷新指示时立即重新索取模型。不做路由、不做模态遮罩,遵守界面交互禁令(只用气泡通知与悬浮卡片)。
+宿主 UI:页面不在插件面板里。主区面板收敛为单一命名空间 `activePanelId: null | 'plugins' | { slot, pluginId, id }`(null 是会话,与 dsh 的 `MainPanelId | null` 同构);选中会话一律回到 null,落点在会话库的 `selectSession` 与 `newChat`。侧边栏在会话分组之上有一条独立的导航行区域:静态的插件面板行在前,其后是全部 `nav.panel` 登记项(图标加标题,按 order 升序、同值按登记顺序);侧边栏底部没有插件开关按钮,面板不是开关语义,点击即切换到该面板,再次点击当前面板行不切回会话。会话视图顶部有标签栏:默认项「对话」在前,其余为 `conversation.tabs` 登记项;选中插件标签时主区整块换成该插件页面,标签切换不改会话上下文,再次点「对话」回到会话。页面顶部是回到会话的面包屑,页面内容区复用设置详情页的控件与样式 token;侧边栏收起态逐面板保留一个图标入口(悬停提示面板标题),与 dsh 收起 rail 的逐面板图标一致。页面主体按区块顺序渲染,表单区块复用设置详情页的控件与样式 token;动作按钮触发引擎回调,返回刷新指示时立即重新索取模型。不做路由、不做模态遮罩,遵守界面交互禁令(只用气泡通知与悬浮卡片)。
 
-清理:停用撤销全部页面登记与两个挂载点处理器;卸载时引擎再兜底清一次,避免未激活过的插件留下残留。登记表的每次变更都经订阅通知宿主界面,宿主据此增删会话视图列表里的条目;正停在被撤销页面上的视图自动退回会话视图,并用一次气泡说明,不留空白主区。
+撤销语义:停用撤销该插件的全部槽位登记与两个处理器;卸载时引擎再兜底清一次,避免未激活过的插件留下残留。登记表的每次变更都经订阅通知宿主界面,宿主据此增删导航行与标签栏的条目;正停在被撤销页面上的视图自动退回会话,并用一次气泡说明,不留空白主区。
 
 ### 供应端点能力与注册表
 
@@ -649,6 +660,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 生命周期 | Cordis fiber 的挂载、激活与 `ctx.effect` 释放 | `registered` / `active` / `inactive` / `failed`,停用时执行 disposers | `index.ts`、`registry.ts` |
 | 服务与依赖注入 | `ctx.<key>` 服务与 `inject` 依赖 | `PluginContext` 能力对象与 `dependencies` 校验（安装、启用、停用、卸载四处） | `capabilities.ts`、`registry.ts`、`dependencies.ts` |
 | 能力/挂载点注册 | `ui-slots` 的 slot 注册、`ctx.effect` 可逆副作用 | `events.on(point, handler)` 注册挂载点并返回释放函数 | `capabilities.ts` |
+| 全局面板与会话内视图 | `sidebar.panellist` + `main` 的成对注册、`conversation.view` 的会话内页签 | 封闭槽位枚举 + 清单 slots 白名单,`context.ui.registerSlot` 登记声明式描述,宿主按槽位渲染导航行、标签栏与主区页面 | `pluginSlots.ts` |
 | 权限与沙箱边界 | profile patch 的沙箱与审批、插件在宿主进程内运行 | 能力白名单、凭证与票据、限流与超时、内置 id 白名单;联网只经 `context.net`(第三方插件不可用)与 `context.assets`(只读远端资产);插件拿不到 `CoreApi` 与 store 句柄 | `../dsc-core/guard.ts`、`capabilities.ts`、`registry.ts` |
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
 | 供应端点注册 | 服务注册与 `ctx.provide`,按提供方合并 | 插件交端点描述,引擎合并成注册表并给出能力矩阵与冲突 | `sources.ts`、`../dsc-core/source-catalog.ts` |
@@ -721,6 +733,39 @@ engine?.install(
   }
 )
 await engine?.activate('demo-settings')
+
+// UI 槽位：申请 ui:slot 并用 slots 白名单声明槽位，激活期登记页面描述
+engine?.install(
+  {
+    id: 'demo-slots',
+    name: 'Demo Slots',
+    version: '1.0.0',
+    engines: '^1.0.0',
+    capabilities: ['ui:slot'],
+    slots: ['nav.panel'],
+  },
+  {
+    activate(context) {
+      const handle = context.ui.registerSlot({
+        slot: 'nav.panel',
+        id: 'catalog',
+        title: '资产目录',
+        iconKey: 'browse',
+        order: 10,
+        blocks: [{ id: 'intro', type: 'text', text: '浏览来源并安装资产。' }],
+      })
+      context.ui.onSlotAction(handle.slot, (payload) => {
+        context.log('action ' + payload.actionId + ' on ' + payload.slot + '/' + payload.id)
+        return { refresh: true }
+      })
+      context.ui.onSlotData(handle.slot, (slot, id) => {
+        // 返回 null 表示沿用登记时的描述
+        return slot === 'nav.panel' && id === 'catalog' ? null : null
+      })
+    },
+  }
+)
+await engine?.activate('demo-slots')
 
 // 请求前补丁：申请 chat:request 并声明挂载点 chat:before-request
 engine?.install(

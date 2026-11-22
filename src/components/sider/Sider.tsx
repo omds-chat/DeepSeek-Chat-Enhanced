@@ -1,12 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
-import {
-  IconPanelLeftOutline16,
-  IconPluginOutline16,
-  IconSettingsOutline16,
-  NewChatIcon,
-} from '../base/icons.js'
+import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
 import { groupSessions } from '../../services/chat/sessionGroups.js'
 import { newChat, removeSession, useChatStore } from '../../services/chat/store.js'
@@ -16,26 +11,20 @@ import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { openSettings } from '../settings/settingsDialogState.js'
-import {
-  openPluginPage,
-  openPluginPanel,
-  returnToChat,
-  usePluginView,
-} from '../plugins/pluginViewState.js'
-import { usePluginPageViews } from '../plugins/usePluginPageViews.js'
+import { SlotPanelList } from './SlotPanelList.js'
 import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
 
 /**
- * 展开的侧边栏：名称与收起按钮、开启新对话、插件视图分组与按时间分组的会话列表、底部设置。
- * 插件视图分组只在有插件登记页面时出现，条目与会话条目同形，选中即由主区渲染该页面；
+ * 展开的侧边栏：名称与收起按钮、开启新对话、导航行区域(插件面板与各 nav.panel 登记项)、
+ * 按时间分组的会话列表与底部设置。
+ * 导航行区域对应 dsh 的 sidebar.panellist: 在会话分组之上独立成区, 面板行点击即切换主区,
+ * 不是开关语义; 没有插件登记 nav.panel 时区域里只有插件面板一行。
  * 移动端放在抽屉里，收起按钮关闭抽屉。
  */
 export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const t = useTranslate()
-  const view = usePluginView((state) => state.view)
-  const pageViews = usePluginPageViews()
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeId)
   const [now, setNow] = useState(Date.now)
@@ -99,34 +88,8 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       </button>
       <div className={styles.listWrap}>
         <div className={styles.list}>
-          {/* 插件视图分组: 没有插件登记页面时整块不出现, 会话列表保持原样 */}
-          {pageViews.length > 0 ? (
-            <div className={styles.section}>
-              <div className={styles.sectionHeader}>{t('pluginViewsGroup')}</div>
-              {pageViews.map((item) => {
-                const selected =
-                  view.kind === 'page' &&
-                  view.pluginId === item.pluginId &&
-                  view.pageId === item.pageId
-                return (
-                  <button
-                    key={item.pluginId + '/' + item.pageId}
-                    type="button"
-                    className={clsx(styles.viewItem, selected && styles.viewItemActive)}
-                    aria-current={selected ? 'page' : undefined}
-                    onClick={() => {
-                      openPluginPage(item.pluginId, item.pageId, activeId)
-                      // 移动端抽屉里选中视图后收起抽屉, 直接看到主区域
-                      closeMobileSider()
-                    }}
-                  >
-                    <span className={styles.viewTitle}>{item.title}</span>
-                    <span className={styles.viewCaption}>{item.pluginName}</span>
-                  </button>
-                )
-              })}
-            </div>
-          ) : null}
+          {/* 导航行区域: 会话分组之上的独立面板导航, 面板行与会话条目分区不同形 */}
+          <SlotPanelList wide />
           {groups.map((group) => (
             <div key={group.key} className={styles.section}>
               <div className={styles.sectionHeader}>{group.label}</div>
@@ -143,25 +106,6 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         </div>
       </div>
       <div className={styles.bottom}>
-        <button
-          type="button"
-          className={clsx(styles.settings, view.kind === 'panel' && styles.settingsActive)}
-          aria-pressed={view.kind === 'panel'}
-          onClick={() => {
-            if (view.kind === 'panel') {
-              returnToChat()
-            } else {
-              openPluginPanel('installed', activeId)
-            }
-            // 移动端抽屉里点入口后收起抽屉，直接看到主区域
-            closeMobileSider()
-          }}
-        >
-          <span className={styles.settingsIcon}>
-            <IconPluginOutline16 />
-          </span>
-          <span className={styles.settingsLabel}>{t('pluginPanelTitle')}</span>
-        </button>
         <button type="button" className={styles.settings} onClick={() => openSettings('general')}>
           <span className={styles.settingsIcon}>
             <IconSettingsOutline16 />

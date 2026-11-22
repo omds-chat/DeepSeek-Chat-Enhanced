@@ -2,6 +2,7 @@ import type { ManifestRevisions } from '../../services/integrity/manifest.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/index.js'
 import { detectInstallConflicts, installConflictVerdict } from './installConflicts.js'
 import { RANGE_PATTERN } from './versionRange.js'
+import { SLOT_NAMES, type SlotName } from './pluginSlots.js'
 import {
   MOUNT_POINTS,
   type ActivateResult,
@@ -210,22 +211,32 @@ export const readManifest = (value: unknown): PluginManifest | null => {
   if (mounts) {
     manifest.mounts = mounts as MountPoint[]
   }
+  const slots = readStringArray(raw.slots)
+  if (slots) {
+    manifest.slots = slots as SlotName[]
+  }
   return manifest
 }
 
 /**
- * 用产物导出的清单补齐安装清单缺少的挂载点。
- * 市场与离线包由 meta.json 推导的清单可能没有 mounts 字段，安装阶段能拿到产物的 manifest 时用它补齐；
- * 清单已声明该字段（含空数组）时以清单为准，产物多出来的挂载点不会越过清单的声明。
+ * 用产物导出的清单补齐安装清单缺少的挂载点与 UI 槽位白名单。
+ * 市场与离线包由 meta.json 推导的清单可能没有 mounts 与 slots 字段，安装阶段能拿到产物的 manifest 时用它补齐；
+ * 清单已声明该字段（含空数组）时以清单为准，产物多出来的声明不会越过清单。
  */
-export const withArtifactMounts = (
+export const withArtifactDeclarations = (
   manifest: PluginManifest,
   artifact: PluginManifest | undefined
 ): PluginManifest => {
-  if (manifest.mounts !== undefined || artifact?.mounts === undefined) {
+  const mounts = manifest.mounts === undefined ? artifact?.mounts : undefined
+  const slots = manifest.slots === undefined ? artifact?.slots : undefined
+  if (mounts === undefined && slots === undefined) {
     return manifest
   }
-  return { ...manifest, mounts: [...artifact.mounts] }
+  return {
+    ...manifest,
+    ...(mounts !== undefined ? { mounts: [...mounts] } : {}),
+    ...(slots !== undefined ? { slots: [...slots] } : {}),
+  }
 }
 
 const validateManifest = (manifest: PluginManifest): InstallRejection | null => {
@@ -252,6 +263,16 @@ const validateManifest = (manifest: PluginManifest): InstallRejection | null => 
   for (const point of mounts) {
     if (!MOUNT_POINTS.includes(point)) {
       return 'unknown-mount'
+    }
+  }
+  // 槽位白名单同样只认封闭枚举: 槽位名在枚举之外按未知槽位拒绝
+  const slots = manifest.slots ?? []
+  if (new Set(slots).size !== slots.length) {
+    return 'invalid-manifest'
+  }
+  for (const slot of slots) {
+    if (!SLOT_NAMES.includes(slot)) {
+      return 'unknown-slot'
     }
   }
   return null

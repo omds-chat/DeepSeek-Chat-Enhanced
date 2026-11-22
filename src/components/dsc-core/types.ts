@@ -21,8 +21,8 @@ export type CoreCapabilityId =
   | 'chat:request'
   // 插件设置表面：激活期登记字段描述，宿主渲染表单；登记与校验都在引擎内完成
   | 'settings:surface'
-  // 插件页面：激活期登记声明式页面描述，宿主渲染；登记、校验与挂载点都在引擎内完成
-  | 'ui:page'
+  // 插件 UI 槽位：激活期登记声明式页面描述，宿主按槽位渲染；登记、校验与槽位授权都在引擎内完成
+  | 'ui:slot'
   // 只声明供应端点，core 侧没有实现；登记与合并都在引擎内完成
   | 'provider:source'
   // 按选中的供应端点执行，core 侧没有独立方法；引擎组好描述与凭证后走 source:run
@@ -46,7 +46,7 @@ export const CORE_CAPABILITIES: readonly CoreCapabilityId[] = [
   'plugins:storage',
   'chat:request',
   'settings:surface',
-  'ui:page',
+  'ui:slot',
   'provider:source',
   'provider:run',
 ]

@@ -60,15 +60,16 @@ import {
 } from './pluginSettings.js'
 import { toPluginId } from './pluginId.js'
 import {
-  dispatchPageAction,
-  forgetPages,
-  pageEntries,
-  readPageModel,
-  type PageActionPayload,
-  type PluginPageActionResult,
-  type PluginPageEntry,
-  type PluginPageModelResult,
-} from './pluginPages.js'
+  dispatchSlotAction,
+  forgetSlots,
+  slotEntries,
+  readSlotModel,
+  type SlotActionPayload,
+  type SlotActionResult,
+  type SlotEntry,
+  type SlotModelResult,
+  type SlotName,
+} from './pluginSlots.js'
 import * as store from './registry.js'
 import { declareSource, forgetSources, sourceView, type SourceRegistryView } from './sources.js'
 import {
@@ -241,15 +242,17 @@ export type PluginEngine = {
   sourceRegistry(): SourceRegistryView
   /** 插件设置表面：读描述、逐字段读值、写覆盖值与重置；供宿主设置页使用 */
   pluginSettings(pluginId: string): PluginSettingsFacade
-  /** 已登记的全部插件页面；宿主据此给每个页面一个入口 */
-  pluginPages(): PluginPageEntry[]
+  /** 已登记的全部 UI 槽位；宿主据此给每个登记项一个入口 */
+  slots(): SlotEntry[]
   /**
-   * 读一个页面的当前模型：插件实现 ui:page-data 时向插件索取，
+   * 读一个槽位页面的当前模型：插件实现 ui:slot-data 时向插件索取，
    * 否则用登记时的描述静态显示；页面不存在（未登记或插件已停用）时拒绝。
    */
-  readPage(pluginId: string, pageId: string): PluginPageModelResult
-  /** 分发一次页面动作；refresh 为 true 时宿主随后调 readPage 重新索取模型 */
-  dispatchPageAction(pluginId: string, payload: PageActionPayload): PluginPageActionResult
+  readSlot(pluginId: string, slot: SlotName, id: string): SlotModelResult
+  /** 分发一次槽位动作；refresh 为 true 时宿主随后调 readSlot 重新索取模型 */
+  dispatchSlotAction(pluginId: string, payload: SlotActionPayload): SlotActionResult
+  /** 撤销单个插件的全部槽位登记；卸载清理在引擎的 disposer 之外兜底一次 */
+  unregisterSlotPlugin(pluginId: string): void
 }
 
 const describeError = (error: unknown): string =>
@@ -851,8 +854,8 @@ export const installPluginEngine = (): PluginEngine => {
     // 未激活过的插件不会走 deactivateNow，这里再撤销一次端点声明
     forgetSources(id)
     forgetSettings(id)
-    // 页面登记与动作、数据挂载点随卸载一并清理: 停用的 disposers 已撤过一次, 这里兜住未激活的残留
-    forgetPages(id)
+    // 槽位登记与动作、数据挂载点随卸载一并清理: 停用的 disposers 已撤过一次, 这里兜住未激活的残留
+    forgetSlots(id)
     clearPluginSettings(id)
     void clearPluginSecrets(id, settingFieldKeys)
     patchNotices.delete(id + ':timeout')
@@ -1055,9 +1058,11 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id: target, reason: pluginReasonText('invalid-plugin') })
       return { ok: false, reason: 'invalid-plugin', detail }
     }
-    // 清单以调用方传入的为准；meta.json 推导的清单可能没有 mounts，用产物导出的清单补齐
+    // 清单以调用方传入的为准；meta.json 推导的清单可能没有 mounts 与 slots，用产物导出的清单补齐
     const resolved =
-      manifest === undefined ? loaded.manifest : store.withArtifactMounts(manifest, loaded.manifest)
+      manifest === undefined
+        ? loaded.manifest
+        : store.withArtifactDeclarations(manifest, loaded.manifest)
     if (!resolved) {
       report('pluginManifestMissing', { id: url })
       return { ok: false, reason: 'invalid-manifest' }
@@ -1121,11 +1126,11 @@ export const installPluginEngine = (): PluginEngine => {
       report('pluginInstallRejected', { id: fallbackId, reason: pluginReasonText('load-failed') })
       return { ok: false, reason: 'load-failed', detail }
     }
-    // 离线包由 meta.json 推导的清单同样可能缺 mounts，按同一口径用产物导出的清单补齐
+    // 离线包由 meta.json 推导的清单同样可能缺 mounts 与 slots，按同一口径用产物导出的清单补齐
     const resolved =
       inspection.manifest === null
         ? loaded.manifest
-        : store.withArtifactMounts(inspection.manifest, loaded.manifest)
+        : store.withArtifactDeclarations(inspection.manifest, loaded.manifest)
     if (!resolved) {
       // 插件名收敛不出合规 id 时，把原因指向命名而不是笼统的清单非法
       if (inspection.manifestProblem) {
@@ -1494,6 +1499,7 @@ export const installPluginEngine = (): PluginEngine => {
       dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],
       mounts: [...record.mounts.keys()],
+      slots: [...(record.manifest.slots ?? [])],
       error: record.error,
     }))
 
@@ -1526,17 +1532,18 @@ export const installPluginEngine = (): PluginEngine => {
     bypassEvents: readBypassEvents,
     sourceRegistry: sourceView,
     pluginSettings: pluginSettingsFacade,
-    pluginPages: () => pageEntries(),
-    readPage: (pluginId, pageId) => {
+    slots: () => slotEntries(),
+    readSlot: (pluginId, slot, id) => {
       const record = store.get(pluginId)
       const log = record ? (message: string) => store.pushLog(record, message) : undefined
-      return readPageModel(pluginId, pageId, log)
+      return readSlotModel(pluginId, slot, id, log)
     },
-    dispatchPageAction: (pluginId, payload) => {
+    dispatchSlotAction: (pluginId, payload) => {
       const record = store.get(pluginId)
       const log = record ? (message: string) => store.pushLog(record, message) : undefined
-      return dispatchPageAction(pluginId, payload, log)
+      return dispatchSlotAction(pluginId, payload, log)
     },
+    unregisterSlotPlugin: forgetSlots,
   }
 
   // 恢复在内部异步进行，installPluginEngine 保持同步返回，不阻塞首屏渲染
@@ -1617,23 +1624,23 @@ export type {
   SettingWriteResult,
 } from './pluginSettings.js'
 /**
- * 插件页面：错误类型、键规则与登记表订阅；登记、校验与挂载点实现在 pluginPages.ts。
- * 页面是会话视图的一种: 宿主按登记表列出入口, 登记变化经订阅通知界面。
+ * 插件 UI 槽位：错误类型、键规则与登记表订阅；登记、校验与槽位授权实现在 pluginSlots.ts。
+ * 宿主按登记表列出侧边栏导航行与会话视图标签栏, 登记变化经订阅通知界面。
  */
 export {
-  PluginPageError,
   PAGE_KEY_PATTERN,
-  pageRegistryRevision,
-  subscribePageRegistry,
-} from './pluginPages.js'
+  SLOT_CONVERSATION_TABS,
+  SLOT_NAMES,
+  SLOT_NAV_PANEL,
+  PluginPageError,
+  PluginSlotError,
+  slotRegistryRevision,
+  subscribeSlotRegistry,
+} from './pluginSlots.js'
 export type {
   PageActionDescriptor,
-  PageActionHandler,
-  PageActionPayload,
-  PageActionResponse,
   PageBlock,
   PageBlockType,
-  PageDataHandler,
   PageDescriptor,
   PageDescriptorProblem,
   PageFormBlock,
@@ -1641,11 +1648,18 @@ export type {
   PageListBlock,
   PageTextBlock,
   PageActionsBlock,
-  PluginPageActionResult,
-  PluginPageEntry,
-  PluginPageHandle,
-  PluginPageModelResult,
-} from './pluginPages.js'
+  SlotActionHandler,
+  SlotActionPayload,
+  SlotActionResponse,
+  SlotActionResult,
+  SlotDataHandler,
+  SlotDescriptor,
+  SlotDescriptorProblem,
+  SlotEntry,
+  SlotHandle,
+  SlotModelResult,
+  SlotName,
+} from './pluginSlots.js'
 /** 按端点执行：错误码、错误类型与结果形态 */
 export { PluginProviderRunError, PROVIDER_RUN_ERROR_CODES } from './providerRun.js'
 export type {

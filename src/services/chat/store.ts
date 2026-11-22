@@ -435,7 +435,7 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
 export const newChat = () => {
   if (!get().importingHistory) {
     set({ activeId: null })
-    // 会话视图与插件视图在主区的同一块位置上互斥: 开新对话即回到会话视图
+    // 会话与插件面板在主区的同一块位置上互斥: 开新对话即把主区面板收敛回会话(activePanelId = null)
     returnToChat()
     trimSessionCache()
   }
@@ -445,7 +445,7 @@ export const selectSession = (id: string) => {
   if (!get().importingHistory && get().sessions.some((session) => session.id === id)) {
     touchSession(id)
     set({ activeId: id })
-    // 选中会话即回到会话视图, 不必等界面自己收拾当前停在的插件视图
+    // 选中会话一律回到会话(activePanelId = null), 不必等界面自己收拾当前停在的插件页面
     returnToChat()
     void ensureSessionLoaded(id)
     trimSessionCache()

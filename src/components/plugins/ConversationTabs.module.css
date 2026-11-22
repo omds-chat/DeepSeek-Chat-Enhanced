@@ -1,0 +1,36 @@
+/* 会话视图标签栏: 默认项与插件标签同形, 无插件登记时整块不渲染 */
+.bar {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  gap: 2px;
+  padding: 0 18px 8px;
+}
+
+.tab {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 10px;
+  background-color: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  &:hover {
+    color: var(--dsw-alias-label-primary);
+  }
+
+  &:focus-visible {
+    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+}
+
+.tabActive {
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}

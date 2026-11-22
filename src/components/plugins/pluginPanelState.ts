@@ -2,8 +2,8 @@ import { create } from 'zustand'
 
 /**
  * 插件面板的标签页: 已安装 / 插件市场。
- * 插件页面曾经是这里的第三个标签页, 现在改为会话视图的一种, 入口在会话视图列表,
- * 主区视图的选中项由 pluginViewState 维护, 本模块只管面板自身的分页与详情。
+ * 插件槽位页面不是这里的标签页: 主区面板的选中项由 pluginViewState 的 activePanelId 维护,
+ * 本模块只管插件面板自身的分页与详情。
  */
 export type PluginPanelTab = 'installed' | 'market'
 

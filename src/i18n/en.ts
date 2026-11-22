@@ -295,6 +295,8 @@ export const en = {
   pluginReasonUnknownCapability: 'The plugin requested a capability the engine does not support',
   pluginReasonUnknownMount:
     'The plugin requested a mount point the engine does not support',
+  pluginReasonUnknownSlot:
+    'The manifest declares a slot outside the host slot enumeration',
   pluginReasonIncompatibleVersion: 'The plugin is not compatible with this dsc version',
   pluginReasonDuplicate: 'A plugin with the same id is already installed',
   pluginReasonConflict: 'The plugin conflicts with an installed plugin',
@@ -466,13 +468,17 @@ export const en = {
   pluginSettingsLoadFailed: 'Failed to load settings, please retry',
   pluginSettingsLoading: 'Loading settings',
   pluginSettingsSaveHint: 'Changes take effect after saving',
-  pluginPageRejected: 'Page descriptor of plugin {id} was rejected: {reason}',
-  pluginViewsGroup: 'Plugin views',
+  pluginSlotRejected: 'Slot descriptor of plugin {id} was rejected: {reason}',
+  pluginSlotNotGranted:
+    'Plugin {id} did not declare slot {slot} in its manifest; registration was rejected',
   pluginViewBackToChat: 'Back to the conversation',
-  pluginViewBackToChatNamed: 'Back to the conversation "{title}"',
-  pluginViewRevoked: 'The page of plugin {plugin} is gone (stopped or uninstalled); back to the conversation',
+  pluginViewRevoked:
+    'The page of plugin {plugin} is gone (stopped or uninstalled); back to the conversation',
   pluginPagesLoading: 'Loading the page',
   pluginPagesLoadFailed: 'The page is gone or the plugin is inactive',
+  panelNavLabel: 'Panels',
+  conversationTabChat: 'Chat',
+  conversationTabsLabel: 'Conversation views',
   trustListRootMismatch:
     'The trust data of plugin sources does not match this build, so source trust checks were skipped; decide for yourself whether to continue',
   trustListCollectionsUntrusted:

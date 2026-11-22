@@ -1,10 +1,11 @@
 import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import type {
-  PageActionHandler,
-  PageDataHandler,
-  PageDescriptor,
-  PluginPageHandle,
-} from './pluginPages.js'
+  SlotActionHandler,
+  SlotDataHandler,
+  SlotDescriptor,
+  SlotHandle,
+  SlotName,
+} from './pluginSlots.js'
 import type { SettingDescriptor, SettingValue } from './pluginSettings.js'
 import type { ProviderRunPayload, ProviderRunResult } from './providerRun.js'
 import type {
@@ -33,21 +34,21 @@ export const MAX_PLUGIN_CODE_MB = MAX_PLUGIN_CODE_BYTES / (1024 * 1024)
 /**
  * 挂载点；插件声明要挂到宿主哪个回调位置。
  * session:changed 是核心事件，chat:before-request 不是事件，它在每次发请求前同步调用一次。
- * ui:page-action 与 ui:page-data 服务插件页面：前者在用户点击页面动作按钮时回调，
+ * ui:slot-action 与 ui:slot-data 服务插件 UI 槽位：前者在用户点击槽位页面动作按钮时回调，
  * 后者在宿主进入页面或收到刷新指示时索取页面模型，两者都是同步调用。
  */
 export type MountPoint =
   | 'session:changed'
   | 'chat:before-request'
-  | 'ui:page-action'
-  | 'ui:page-data'
+  | 'ui:slot-action'
+  | 'ui:slot-data'
 
 /** 全部挂载点 */
 export const MOUNT_POINTS: readonly MountPoint[] = [
   'session:changed',
   'chat:before-request',
-  'ui:page-action',
-  'ui:page-data',
+  'ui:slot-action',
+  'ui:slot-data',
 ]
 
 /** 事件处理器 */
@@ -117,6 +118,12 @@ export type PluginManifest = {
    * 由 meta.json 推导的安装清单可以缺该字段，安装阶段会用产物导出的 manifest 补齐。
    */
   mounts?: MountPoint[]
+  /**
+   * 申请的 UI 槽位；申请能力 ui:slot 后，只允许登记这里逐个声明的槽位，
+   * 未声明的槽位登记时按未授权拒绝。由 meta.json 推导的安装清单可以缺该字段，
+   * 安装阶段会用产物导出的 manifest 补齐。
+   */
+  slots?: SlotName[]
 }
 
 /** 会话能力 */
@@ -132,23 +139,24 @@ export type EventsCapability = {
 }
 
 /**
- * 提示与页面能力。
- * notify 复用宿主文案键提示用户；registerPage 登记一份声明式页面描述，宿主据此渲染页面；
- * onPageAction 与 onPageData 分别登记页面动作回调与页面数据索取处理器，
- * 都要求清单声明对应挂载点，登记返回释放函数，停用随引擎清理。
+ * 提示与 UI 槽位能力。
+ * notify 复用宿主文案键提示用户；registerSlot 登记一份声明式槽位描述，宿主据此渲染；
+ * onSlotAction 与 onSlotData 分别登记槽位动作回调与槽位数据索取处理器，
+ * 都要求清单声明对应槽位，登记返回释放函数，停用随引擎清理。
  */
 export type UiCapability = {
   notify(key: TranslationKey, params?: TranslationParams): void
   /**
-   * 登记一份插件页面描述；与 settings.register 同法：只登记描述、不交控件，
-   * 描述非法时抛 PluginPageError，code 是结构化的问题码。
-   * 返回带页面 id 的句柄，释放函数进入插件的 disposer 集合，停用随引擎清理。
+   * 登记一份插件 UI 槽位描述；与 settings.register 同法：只登记描述、不交控件，
+   * 槽位不在枚举或未写入清单 slots 白名单、描述非法时抛 PluginSlotError，
+   * code 是结构化的问题码。返回带槽位名与页面 id 的句柄，
+   * 释放函数进入插件的 disposer 集合，停用随引擎清理。
    */
-  registerPage(descriptor: PageDescriptor): PluginPageHandle
-  /** 登记页面动作回调；用户点击页面上的动作按钮时由引擎同步调用一次 */
-  onPageAction(handler: PageActionHandler): () => void
-  /** 登记页面数据处理器；宿主进入页面或动作返回刷新指示时同步索取页面模型 */
-  onPageData(handler: PageDataHandler): () => void
+  registerSlot(descriptor: SlotDescriptor): SlotHandle
+  /** 登记槽位动作回调；用户点击该槽位页面上的动作按钮时由引擎同步调用一次 */
+  onSlotAction(slot: SlotName, handler: SlotActionHandler): () => void
+  /** 登记槽位数据处理器；宿主进入页面或动作返回刷新指示时同步索取当前模型 */
+  onSlotData(slot: SlotName, handler: SlotDataHandler): () => void
 }
 
 /**
@@ -295,6 +303,8 @@ export type InstallRejection =
   | 'invalid-manifest'
   | 'unknown-capability'
   | 'unknown-mount'
+  /** 清单 slots 白名单里出现了槽位枚举之外的槽位名 */
+  | 'unknown-slot'
   | 'incompatible-version'
   | 'duplicate'
   | 'missing-dependency'
@@ -457,6 +467,8 @@ export type PluginStateView = {
   capabilities: CoreCapabilityId[]
   /** 清单声明的挂载点 */
   mounts: MountPoint[]
+  /** 清单声明的 UI 槽位白名单 */
+  slots: SlotName[]
   error?: string
 }
 

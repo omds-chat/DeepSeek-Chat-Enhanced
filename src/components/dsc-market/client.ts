@@ -22,6 +22,7 @@ import { collectionCertPaths, normalizeCollectionId } from '../../services/trust
 import { isHttpsOrLocalUrl } from '../../utils/url.js'
 import { CORE_CAPABILITIES, type CoreCapabilityId } from '../dsc-core/types.js'
 import { toPluginId } from '../dsc-plugin-engine/pluginId.js'
+import { SLOT_NAMES, type SlotName } from '../dsc-plugin-engine/pluginSlots.js'
 import {
   MOUNT_POINTS,
   type MountPoint,
@@ -321,6 +322,28 @@ const readMounts = (value: unknown): MountPoint[] | null => {
   return mounts
 }
 
+/**
+ * 读清单里的 UI 槽位白名单；缺字段或含槽位枚举之外的槽位名时返回 null。
+ * 返回 null 时清单不带 slots 字段，由引擎在安装阶段用产物导出的 manifest 补齐，
+ * 与挂载点的回落口径一致。
+ */
+const readSlots = (value: unknown): SlotName[] | null => {
+  if (!Array.isArray(value)) {
+    return null
+  }
+  const slots: SlotName[] = []
+  for (const item of value) {
+    if (typeof item !== 'string' || !SLOT_NAMES.includes(item as SlotName)) {
+      return null
+    }
+    const slot = item as SlotName
+    if (!slots.includes(slot)) {
+      slots.push(slot)
+    }
+  }
+  return slots
+}
+
 /** 解析运行时 meta.json；name 与 version 必填 */
 export const parseRuntimeMeta = (
   text: string
@@ -348,6 +371,7 @@ export const parseRuntimeMeta = (
   let manifest: PluginManifest | null = null
   const capabilities = readCapabilities(parsed.capabilities)
   const mounts = readMounts(parsed.mounts)
+  const slots = readSlots(parsed.slots)
   const id = toPluginId(meta.name)
   if (capabilities && id) {
     manifest = { id, name: meta.name, version: meta.version, capabilities }
@@ -355,6 +379,10 @@ export const parseRuntimeMeta = (
     // meta.json 没声明时留空，由引擎在安装阶段用产物导出的 manifest 补齐
     if (mounts !== null) {
       manifest.mounts = mounts
+    }
+    // 槽位白名单是 ui:slot 能力的逐位置授权，回落口径与挂载点一致
+    if (slots !== null) {
+      manifest.slots = slots
     }
     const dependencies = parsed.dependencies
     if (isRecord(dependencies) && typeof dependencies.dsc === 'string' && dependencies.dsc !== '') {
