@@ -6,7 +6,12 @@ import type {
   SlotHandle,
   SlotName,
 } from './pluginSlots.js'
-import type { SettingDescriptor, SettingValue } from './pluginSettings.js'
+import type {
+  SettingDescriptor,
+  SettingOverride,
+  SettingsChangeHandler,
+  SettingValue,
+} from './pluginSettings.js'
 import type { ProviderRunPayload, ProviderRunResult } from './providerRun.js'
 import type {
   AssetBytesResult,
@@ -160,16 +165,22 @@ export type UiCapability = {
 }
 
 /**
- * 设置能力；locale 读宿主语言，register/values 走设置表面。
+ * 设置能力；locale 读宿主语言，register/values/overrides/onChange 走设置表面。
  * register 在激活期登记字段描述，返回释放函数，停用随引擎清理；
  * 描述非法时抛 PluginSettingsError，code 是结构化的问题码。
  * values 只读自身设置值：用户覆盖值优先，否则默认值；secret 字段不返回。
+ * overrides 只读逐字段的覆盖状态：overridden 与宿主详情页「已修改」徽标同一口径，
+ * secret 字段只回答是否已配置（secretConfigured），不返回值。
+ * onChange 订阅设置变更，返回释放函数；回调由引擎在落盘后发起，不占插件限流名额，
+ * 抛错只写该插件的插件日志，停用之后不再回调。
  * 写侧不在插件上下文，改动只由用户在宿主设置页保存。
  */
 export type SettingsCapability = {
   locale(options?: CallOptions): Promise<'zh-CN' | 'en-US'>
   register(descriptor: SettingDescriptor): () => void
   values(): Record<string, SettingValue>
+  overrides(): Promise<Record<string, SettingOverride>>
+  onChange(handler: SettingsChangeHandler): () => void
 }
 
 /** 外源请求结果；只有文本与最终地址 */

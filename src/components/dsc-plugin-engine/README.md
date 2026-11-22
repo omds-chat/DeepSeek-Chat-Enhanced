@@ -158,7 +158,7 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 | `events:session` | 5 次 / 10 秒(仅登记) | 同步调用 | `context.events.on` |
 | `notify` | 10 次 / 10 秒 | 同步调用 | `context.ui.notify` |
 | `settings:locale` | 60 次 / 10 秒 | 3 秒 | `context.settings.locale` |
-| `settings:surface` | 60 次 / 10 秒 | 同步调用 | `context.settings.register`、`context.settings.values` |
+| `settings:surface` | 60 次 / 10 秒 | 3 秒(仅 `overrides`) | `context.settings.register`、`context.settings.values`、`context.settings.overrides`、`context.settings.onChange` |
 | `ui:slot` | 20 次 / 10 秒(仅登记) | 同步调用 | `context.ui.registerSlot`、`context.ui.onSlotAction`、`context.ui.onSlotData` |
 | `net:fetch` | 10 次 / 10 秒 | 内层 10 秒后中止请求 | `context.net.getText` |
 | `net:fetch-post` | 10 次 / 10 秒 | 内层 5 秒后中止请求 | `context.net.postJson` |
@@ -170,9 +170,9 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 
 `provider:source` 的上限按「声明次数」计:每次 `context.provider.registerSource` 占一个名额,一个插件可能声明多条端点,因此上限取 50。声明集中在激活阶段,超过上限抛 `PluginRateLimitError`,整次激活失败并按失败路径撤销该插件的全部声明。
 
-表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session`、`chat:request`、`settings:surface` 与 `ui:slot` 只登记、不逐次执行耗时操作,同样没有超时。超时只对异步成员生效。
+表里的「同步调用」表示该成员同步返回,没有超时(同步调用不适用超时),策略表因此不给它填超时数值;`events:session`、`chat:request` 与 `ui:slot` 只登记、不逐次执行耗时操作,同样没有超时。超时只对异步成员生效:`settings:surface` 的 3 秒只落在异步成员 `overrides` 上,登记、读值与订阅登记都是同步成员,不受影响。
 
-登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest`,以及每次 `context.ui.registerSlot`、`context.ui.onSlotAction`、`context.ui.onSlotData` 各占一个名额,之后的事件回调、请求前调用、槽位动作回调与页面数据索取都由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
+登记型成员的限流按「登记次数」计:每次 `context.events.on`、每次 `context.chat.onBeforeRequest`、每次 `context.settings.onChange`,以及每次 `context.ui.registerSlot`、`context.ui.onSlotAction`、`context.ui.onSlotData` 各占一个名额,之后的事件回调、请求前调用、设置变更回调、槽位动作回调与页面数据索取都由引擎发起,不再占用名额。因此 `events:session` 的 5 次 / 10 秒约束的是注册次数——同一插件在一次激活内最多登记 5 个事件处理器,第 6 次登记在 10 秒窗口内抛 `PluginRateLimitError`,并提示 `pluginCallRateLimited`;窗口滚过之后可以继续登记。`chat:request` 的 10 次 / 10 秒同理。
 
 超限抛 `PluginRateLimitError`,未授予抛 `PluginCapabilityError`,超时抛 `PluginTimeoutError`,取消抛 `PluginAbortError`;限流与超时同时用既有 Toast 提示。
 
@@ -272,17 +272,38 @@ unload       → 移除记录   （存在已启用的依赖方时拒绝）
 
 规模上限:最多 32 个字段,描述序列化后不超过 8 KB,超限按 `too-many-fields` / `descriptor-too-large` 拒绝。
 
-值的语义分两层:默认层来自描述的 `default`,用户覆盖层落在 dsc-core 的设置命名空间(`<APP_NAME>:plugin-settings:<pluginId>`,概念上是 `settings/<pluginId>/<fieldKey>`),与 `plugins:storage` 的插件数据(`<APP_NAME>:plugin-data:<id>`)完全分开——插件用 `storage.set` 写不到这张表,写侧只有引擎的门面,写入前按描述校验,无法绕过。覆盖值不落盘默认值:单插件覆盖层上限 16 KB。
+值的语义分两层:默认层来自描述的 `default`,用户覆盖层落在 dsc-core 的设置命名空间(`<APP_NAME>:plugin-settings:<pluginId>`,概念上是 `settings/<pluginId>/<fieldKey>`),与 `plugins:storage` 的插件数据(`<APP_NAME>:plugin-data:<id>`)完全分开——插件用 `storage.set` 写不到这张表,写侧只有引擎的门面,写入前按描述校验,无法绕过。覆盖值不落盘默认值:单插件覆盖层上限 16 KB。覆盖的判定是「覆盖层里有没有这个键」,与生效值是否等于登记默认值无关:用户把字段改成与默认值完全相同的值同样算覆盖,详情页的「已修改」徽标与插件侧的覆盖状态都按这个口径。
 
 | 通道 | 位置 | 说明 |
 |:---:|:---:|:---:|
 | 插件读自身值 | `context.settings.values()` | 只读自身命名空间:覆盖值优先,否则默认值;其他插件的设置不可见,secret 字段不返回任何值 |
-| 宿主读写 | `engine.pluginSettings(pluginId)` | 门面:`descriptor()`、`values()`(逐字段的生效值与覆盖状态)、`set(key, value)`、`reset(key)`、`resetAll()`;写前校验,失败返回结构化问题码 |
+| 插件读覆盖状态 | `context.settings.overrides()` | 只读自身命名空间,逐字段回答用户是否覆盖(`overridden`),口径与详情页的「已修改」徽标一致;secret 字段没有默认值,`overridden` 恒为 `false`,只回答是否已配置(`secretConfigured`),不返回值。读凭证库要等一次异步查询,因此这个成员是异步的 |
+| 插件订阅变更 | `context.settings.onChange(handler)` | 返回释放函数,进入插件的 disposer 集合;回调由引擎在落盘后发起,不占插件的限流名额;停用之后不再回调 |
+| 宿主读写 | `engine.pluginSettings(pluginId)` | 门面:`descriptor()`、`values()`(逐字段的生效值与覆盖状态)、`set(key, value)`、`reset(key)`、`resetAll()`;写前校验,失败返回结构化问题码;三个写入口各自成功落盘后发一条变更通知 |
 | 秘密值 | `credentials.ts` | `secret` 字段复用供应端点凭证库:同一张表、同一套内存镜像与降级口径,键的 source_id 带 `plugin-secret:` 前缀(含冒号,与端点 id 词表不相交);只写不读,读侧只回答「是否已配置」 |
+
+变更通知的载荷:
+
+| 字段 | 说明 |
+|:---:|:---:|
+| `pluginId` | 本次变更所属的插件 |
+| `keys` | 本次变化的字段键,与 `changes` 同序 |
+| `changes` | 逐字段的 `{ key, kind, overridden, secretConfigured? }`,顺序是字段在描述里的顺序 |
+
+`kind` 三值区分变化种类:`added` 是该字段第一次有覆盖值(此前一直取默认值),`changed` 是已有覆盖值被改写,`reset` 是覆盖被撤销、回到默认值。secret 字段按同一套三值表达「从没配置到已配置」「重新填写」「清除」,载荷里只有状态、没有值。`overridden` 与 `secretConfigured` 是变化之后的状态,插件据此直接重估,不必再拉一次 `overrides()` 或 `values()`。
+
+| 约束 | 规定 |
+|:---:|:---:|
+| 时机 | `set`、`reset` 各自成功落盘后立刻发一条,回调在这次调用返回之前同步跑完;`resetAll` 只发一条,载荷含全部降回默认值的字段 |
+| 无净变化不通知 | 写入与当前覆盖值相同的值、重置本来没有覆盖值的字段、清除未配置的秘密值,落盘动作成功但状态没变,不发事件 |
+| 合并不跨调用 | 一次门面调用就是一轮:同一字段在一次调用里最多出现一次(`resetAll` 逐字段各一次),字段级合并没有发生场景;跨调用攒批不做,因为门面看不到宿主的保存循环,只能按微任务或定时器猜边界,而那段延迟里插件读到的状态可能已经比事件新,逐次通知让事件顺序与落盘顺序一致。宿主保存多字段表单时逐字段调用门面,插件因此收到多条事件,每条各自带键与新状态 |
+| 限流 | `onChange` 的登记按 `settings:surface` 计一次名额,之后的回调由引擎发起、不占名额;`overrides()` 与 `values()` 共用同一个读取窗口 |
+| 撤销 | 释放函数进入插件的 disposer 集合,停用随引擎清理,撤销之后不再回调;同一轮的其余订阅者不受影响 |
+| 抛错 | 单个订阅者抛错只写该插件的插件日志(`settings change handler failed: ...`),其余订阅者照常收到事件;已经落盘的值不会因此回滚 |
 
 宿主 UI:已安装列表点插件名进详情页(不做路由,返回即回列表),详情页由宿主按描述渲染表单。脏值生命周期照抄 dsh:改动即脏、保存才落盘、字段级非法阻塞保存、保存失败保留草稿、离开页面丢弃草稿;每个字段带覆盖徽标(已修改)与「重置为默认」按钮。没有登记描述的插件(未激活、或没有可配置项)显示「本插件没有可配置项」。
 
-卸载清理:登记随停用撤销;覆盖值与秘密值由引擎管理,卸载时一并清除,不在遗留数据区出现。
+卸载清理:登记随停用撤销;覆盖值、秘密值与变更订阅由引擎管理,卸载时一并清除,不在遗留数据区出现。
 
 ### 插件 UI 槽位（ui:slot）
 
@@ -683,7 +704,7 @@ zip 用 `fflate` 的 `unzipSync` 解压;tgz 用 `gunzipSync` 解压后交给最�
 | 错误隔离与降级 | 单条目失败只影响自身,其余插件照常运行 | 生命周期超时与 try/catch、事件逐个隔离、恢复失败标记、失败标记与 Toast | `index.ts` |
 | 供应端点注册 | 服务注册与 `ctx.provide`,按提供方合并 | 插件交端点描述,引擎合并成注册表并给出能力矩阵与冲突 | `sources.ts`、`../dsc-core/source-catalog.ts` |
 | 配置持久化 | `cordis.yml` 与配置目录 | 安装记录写 IndexedDB `<APP_NAME>-plugins` 的 `plugins` 仓库,插件配置走 `plugins:storage` 写 `<APP_NAME>:plugin-data:<id>`,供应端点凭证另存 `<APP_NAME>-plugin-sources`(键为端点 id + 基址) | `db.ts`、`credentials.ts`、`../dsc-core/plugin-data.ts` |
-| 插件设置面 | Plugins 页 + `settings.section`,页面骨架由宿主画 | 激活期登记字段描述,宿主渲染表单;值分默认层与覆盖层,secret 走凭证库 | `pluginSettings.ts`、`../dsc-core/plugin-settings.ts` |
+| 插件设置面 | Plugins 页 + `settings.section`,页面骨架由宿主画 | 激活期登记字段描述,宿主渲染表单;值分默认层与覆盖层,secret 走凭证库;覆盖状态与变更订阅对插件只读开放 | `pluginSettings.ts`、`../dsc-core/plugin-settings.ts` |
 | 内置插件 | dsh 自带插件包与内置 bundle | `builtin.ts` 清单,启动时先于外部插件装载 | `builtin.ts` |
 | 热重载 | `dsh-hmr` | 未实现,刷新页面重新加载 | 无 |
 

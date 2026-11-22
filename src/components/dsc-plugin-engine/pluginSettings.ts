@@ -106,11 +106,48 @@ export type SettingValueView = {
   readonly type: SettingFieldType
   /** 生效值: 用户覆盖值优先, 否则默认值; secret 字段无值 */
   readonly value?: SettingValue
-  /** 用户是否覆盖; secret 字段按配置与否回答 */
+  /** 用户是否覆盖; secret 字段恒为 false, 是否已配置看 secretConfigured */
   readonly overridden: boolean
   /** secret 字段是否已配置; 非 secret 字段不出现 */
   readonly secretConfigured?: boolean
 }
+
+/**
+ * 单字段的覆盖状态; 插件侧入口 overrides() 逐字段给出。
+ * overridden 与宿主设置详情页的「已修改」徽标同一口径: 设置表里有该键即算覆盖,
+ * 与「生效值是否等于默认值」无关; secret 字段没有默认值, overridden 恒为 false,
+ * 用户填过没有看 secretConfigured。
+ */
+export type SettingOverride = {
+  readonly overridden: boolean
+  /** secret 字段是否已配置; 非 secret 字段不出现 */
+  readonly secretConfigured?: boolean
+}
+
+/** 一次设置变更里单个字段的变化种类; added 首次覆盖, changed 覆盖值改动, reset 覆盖被撤销 */
+export type SettingsChangeKind = 'added' | 'changed' | 'reset'
+
+/** 一次设置变更里单个字段的说明; overridden 与 secretConfigured 是变化之后的状态 */
+export type SettingsFieldChange = {
+  readonly key: string
+  readonly kind: SettingsChangeKind
+  readonly overridden: boolean
+  /** secret 字段变化之后是否已配置; 非 secret 字段不出现 */
+  readonly secretConfigured?: boolean
+}
+
+/** 一次设置变更; 每次 set/reset/resetAll 成功落盘后发一条 */
+export type SettingsChange = {
+  /** 本次变更所属的插件 */
+  readonly pluginId: string
+  /** 本次变化的字段键, 与 changes 同序 */
+  readonly keys: readonly string[]
+  /** 逐字段的变化种类与新覆盖状态, 顺序是字段在描述里的顺序 */
+  readonly changes: readonly SettingsFieldChange[]
+}
+
+/** 设置变更处理器; 由引擎在落盘后同步调用, 抛错只写该插件的插件日志 */
+export type SettingsChangeHandler = (change: SettingsChange) => void
 
 /** 描述的规模上限 */
 const MAX_FIELDS = 32
@@ -361,6 +398,102 @@ export const settingsDescriptor = (pluginId: string): SettingDescriptor | null =
   declared.get(pluginId) ?? null
 
 /**
+ * 设置变更的订阅者; 每个插件一组, 按登记顺序同步回调。
+ * 登记与撤销都由上下文成员负责, 释放函数进入插件的 disposer 集合, 停用随引擎清理:
+ * 撤销在派发之前完成时, 该订阅者收不到这一条; 撤销发生在派发过程中时只影响后续事件。
+ */
+type ChangeListener = {
+  readonly handler: SettingsChangeHandler
+  /** 回调抛错的出口; 引擎把原因写进该插件的插件日志 */
+  readonly log: (message: string) => void
+}
+
+const changeListeners = new Map<string, Set<ChangeListener>>()
+
+/** 订阅一个插件的设置变更; 返回释放函数, 重复释放无副作用 */
+export const subscribeSettingsChange = (
+  pluginId: string,
+  handler: SettingsChangeHandler,
+  log: (message: string) => void
+): (() => void) => {
+  const listener: ChangeListener = { handler, log }
+  const listeners = changeListeners.get(pluginId) ?? new Set<ChangeListener>()
+  listeners.add(listener)
+  changeListeners.set(pluginId, listeners)
+  return () => {
+    const current = changeListeners.get(pluginId)
+    if (!current) {
+      return
+    }
+    current.delete(listener)
+    if (current.size === 0) {
+      changeListeners.delete(pluginId)
+    }
+  }
+}
+
+/** 卸载时的兜底: 撤销一个插件的全部变更订阅; 已停用的插件本来就没有订阅 */
+export const forgetSettingsChangeListeners = (pluginId: string): void => {
+  changeListeners.delete(pluginId)
+}
+
+/** 错误描述; 与引擎其他日志同一形态 */
+const describeError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error)
+
+/**
+ * 派发一次变更。单个订阅者抛错不影响其他订阅者, 原因写该插件的插件日志;
+ * 派发不占插件的限流名额——回调由引擎发起, 不是插件发起的成员调用。
+ */
+const announceSettingsChange = (
+  pluginId: string,
+  changes: readonly SettingsFieldChange[]
+): void => {
+  if (changes.length === 0) {
+    return
+  }
+  const listeners = changeListeners.get(pluginId)
+  if (!listeners) {
+    return
+  }
+  const change: SettingsChange = { pluginId, keys: changes.map((item) => item.key), changes }
+  for (const listener of [...listeners]) {
+    try {
+      listener.handler(change)
+    } catch (error) {
+      listener.log('settings change handler failed: ' + describeError(error))
+    }
+  }
+}
+
+/** 非 secret 字段的覆盖状态快照; 写前取一次, 用来判定净变化并给出变化种类 */
+type FieldSnapshot = {
+  readonly overridden: boolean
+  readonly value?: SettingValue
+}
+
+/** 读覆盖表; 存储不可用时按空表处理, 与两个读值入口同一口径 */
+const readOverrides = (pluginId: string): Record<string, unknown> => {
+  try {
+    return readPluginSettingsOverrides(pluginId)
+  } catch {
+    return {}
+  }
+}
+
+/** 非 secret 字段的覆盖状态快照; overrides 是本次操作之前的覆盖表 */
+const snapshotOf = (
+  field: SettingFieldDescriptor,
+  overrides: Record<string, unknown>
+): FieldSnapshot => {
+  const overridden = Object.hasOwn(overrides, field.key)
+  return {
+    overridden,
+    value: overridden ? (overrides[field.key] as SettingValue) : (field.default as SettingValue),
+  }
+}
+
+/**
  * 引擎门面的设置读写入口: engine.pluginSettings(pluginId) 返回这一份。
  * 读侧回答每个字段的生效值与覆盖状态; 写侧先按描述校验再落盘, secret 走凭证库。
  */
@@ -377,7 +510,10 @@ export type PluginSettingsFacade = {
   resetAll(): Promise<void>
 }
 
-/** 引擎门面的设置读写入口; 插件侧拿不到这份门面, 只有 context.settings.values() 的只读面 */
+/**
+ * 引擎门面的设置读写入口; 插件侧拿不到这份门面, 只有 context.settings 的三个只读成员
+ * (values 读生效值、overrides 读覆盖状态、onChange 订阅变更)与 register。
+ */
 export const pluginSettingsFacade = (pluginId: string): PluginSettingsFacade => ({
   descriptor: () => settingsDescriptor(pluginId),
   values: async () => {
@@ -385,12 +521,7 @@ export const pluginSettingsFacade = (pluginId: string): PluginSettingsFacade => 
     if (!descriptor) {
       return []
     }
-    let overrides: Record<string, unknown> = {}
-    try {
-      overrides = readPluginSettingsOverrides(pluginId)
-    } catch {
-      overrides = {}
-    }
+    const overrides = readOverrides(pluginId)
     const views: SettingValueView[] = []
     for (const field of descriptor.fields) {
       if (field.type === 'secret') {
@@ -414,19 +545,34 @@ export const pluginSettingsFacade = (pluginId: string): PluginSettingsFacade => 
       if (typeof value !== 'string' || value.trim() === '') {
         return { ok: false, code: 'invalid-input' }
       }
+      const before = await readPluginSecretConfigured(pluginId, key)
       const result = await writePluginSecret(pluginId, key, value)
-      return result.ok ? { ok: true } : { ok: false, code: 'invalid-input' }
+      if (!result.ok) {
+        return { ok: false, code: 'invalid-input' }
+      }
+      // 秘密值只写不读: 事件只说明「是否已配置」的变化, 值本身不进载荷
+      announceSettingsChange(pluginId, [
+        { key, kind: before ? 'changed' : 'added', overridden: false, secretConfigured: true },
+      ])
+      return { ok: true }
     }
     const check = checkSettingValueForField(field, value)
     if (!check.ok) {
       return check
     }
+    const before = snapshotOf(field, readOverrides(pluginId))
     try {
       writePluginSettingEntry(pluginId, key, value)
-      return { ok: true }
     } catch {
       return { ok: false, code: 'invalid-input' }
     }
+    // 覆盖的判定是「设置表里有没有这个键」: 写入与默认值相同的值同样是新增覆盖, 但重复写同一个值不算变化
+    if (!(before.overridden && Object.is(before.value, value))) {
+      announceSettingsChange(pluginId, [
+        { key, kind: before.overridden ? 'changed' : 'added', overridden: true },
+      ])
+    }
+    return { ok: true }
   },
   reset: async (key) => {
     const descriptor = settingsDescriptor(pluginId)
@@ -435,32 +581,63 @@ export const pluginSettingsFacade = (pluginId: string): PluginSettingsFacade => 
       return { ok: false, code: 'unknown-field' }
     }
     if (field.type === 'secret') {
+      const before = await readPluginSecretConfigured(pluginId, key)
       await clearPluginSecret(pluginId, key)
+      if (before) {
+        announceSettingsChange(pluginId, [
+          { key, kind: 'reset', overridden: false, secretConfigured: false },
+        ])
+      }
       return { ok: true }
     }
+    const before = snapshotOf(field, readOverrides(pluginId))
     try {
       removePluginSettingEntry(pluginId, key)
-      return { ok: true }
     } catch {
       return { ok: false, code: 'invalid-input' }
     }
+    if (before.overridden) {
+      announceSettingsChange(pluginId, [{ key, kind: 'reset', overridden: false }])
+    }
+    return { ok: true }
   },
+  /**
+   * 重置全部字段: 一次调用只发一条变更, 载荷里带上全部降回默认值的字段。
+   * 中途失败时把已经降回默认值的字段照常通知, 其余字段保持原状。
+   */
   resetAll: async () => {
     const descriptor = settingsDescriptor(pluginId)
     if (!descriptor) {
       return
     }
+    const overrides = readOverrides(pluginId)
+    const changes: SettingsFieldChange[] = []
     for (const field of descriptor.fields) {
       if (field.type === 'secret') {
+        const before = await readPluginSecretConfigured(pluginId, field.key)
         await clearPluginSecret(pluginId, field.key)
+        if (before) {
+          changes.push({
+            key: field.key,
+            kind: 'reset',
+            overridden: false,
+            secretConfigured: false,
+          })
+        }
         continue
       }
+      const before = snapshotOf(field, overrides)
       try {
         removePluginSettingEntry(pluginId, field.key)
       } catch {
+        announceSettingsChange(pluginId, changes)
         return
       }
+      if (before.overridden) {
+        changes.push({ key: field.key, kind: 'reset', overridden: false })
+      }
     }
+    announceSettingsChange(pluginId, changes)
   },
 })
 
@@ -470,12 +647,7 @@ export const pluginSettingValuesForPlugin = (pluginId: string): Record<string, S
   if (!descriptor) {
     return {}
   }
-  let overrides: Record<string, unknown> = {}
-  try {
-    overrides = readPluginSettingsOverrides(pluginId)
-  } catch {
-    overrides = {}
-  }
+  const overrides = readOverrides(pluginId)
   const values: Record<string, SettingValue> = {}
   for (const field of descriptor.fields) {
     // secret 字段对插件完全不可见: 不给值, 也不给配置与否
@@ -488,4 +660,32 @@ export const pluginSettingValuesForPlugin = (pluginId: string): Record<string, S
       : (field.default as SettingValue)
   }
   return values
+}
+
+/**
+ * 供插件只读自身的覆盖状态; overridden 与宿主详情页「已修改」徽标同一口径。
+ * secret 字段没有默认值可比, overridden 恒为 false, 只回答是否已配置(secretConfigured),
+ * 任何入口都不向插件返回值本身。
+ * 读凭证库要等一次异步查询, 因此与 values() 不同, 这个入口是异步的。
+ */
+export const pluginSettingOverridesForPlugin = async (
+  pluginId: string
+): Promise<Record<string, SettingOverride>> => {
+  const descriptor = settingsDescriptor(pluginId)
+  if (!descriptor) {
+    return {}
+  }
+  const overrides = readOverrides(pluginId)
+  const states: Record<string, SettingOverride> = {}
+  for (const field of descriptor.fields) {
+    if (field.type === 'secret') {
+      states[field.key] = {
+        overridden: false,
+        secretConfigured: await readPluginSecretConfigured(pluginId, field.key),
+      }
+      continue
+    }
+    states[field.key] = { overridden: Object.hasOwn(overrides, field.key) }
+  }
+  return states
 }

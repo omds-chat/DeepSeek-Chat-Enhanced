@@ -54,6 +54,7 @@ import {
 import { convergePatch, mergePatch, REQUEST_PATCH_BUDGET_MS } from './requestPatch.js'
 import {
   forgetSettings,
+  forgetSettingsChangeListeners,
   pluginSettingsFacade,
   settingsDescriptor,
   type PluginSettingsFacade,
@@ -898,6 +899,8 @@ export const installPluginEngine = (): PluginEngine => {
     // 未激活过的插件不会走 deactivateNow，这里再撤销一次端点声明
     forgetSources(id)
     forgetSettings(id)
+    // 设置变更订阅随卸载一并撤销: 停用的 disposer 已撤过一次, 这里兜住未激活的残留
+    forgetSettingsChangeListeners(id)
     // 槽位登记与动作、数据挂载点随卸载一并清理: 停用的 disposers 已撤过一次, 这里兜住未激活的残留
     forgetSlots(id)
     clearPluginSettings(id)
@@ -1657,10 +1660,15 @@ export type {
   SettingFieldDescriptor,
   SettingFieldOptions,
   SettingFieldType,
+  SettingOverride,
   SettingValue,
   SettingValueProblem,
   SettingValueView,
   SettingWriteResult,
+  SettingsChange,
+  SettingsChangeHandler,
+  SettingsChangeKind,
+  SettingsFieldChange,
 } from './pluginSettings.js'
 /**
  * 插件 UI 槽位：错误类型、键规则与登记表订阅；登记、校验与槽位授权实现在 pluginSlots.ts。
