@@ -16,11 +16,17 @@ export const isTranslationKey = (key: unknown): key is TranslationKey =>
 
 const createTranslate =
   (messages: Record<TranslationKey, string>) =>
-  (key: TranslationKey, params?: TranslationParams): string =>
-    messages[key].replace(/\{(\w+)\}/g, (placeholder, name: string) => {
+  (key: TranslationKey, params?: TranslationParams): string => {
+    // 插件可以用宿主字典之外的键发提示：缺键时回落为键名本身，避免整块界面在渲染时抛错
+    const template = messages[key]
+    if (typeof template !== 'string') {
+      return String(key)
+    }
+    return template.replace(/\{(\w+)\}/g, (placeholder, name: string) => {
       const value = params?.[name]
       return typeof value === 'string' || typeof value === 'number' ? String(value) : placeholder
     })
+  }
 
 const translators = {
   'zh-CN': createTranslate(zh),
