@@ -22,12 +22,58 @@ import { isTranslationKey } from '../../i18n/index.js'
 export const SLOT_NAV_PANEL = 'nav.panel'
 /** 槽位枚举: conversation.tabs 是会话视图标签栏里的一个标签 + 主区整页 */
 export const SLOT_CONVERSATION_TABS = 'conversation.tabs'
+/** 槽位枚举: settings.page 是系统设置里插件自有的一个设置页 */
+export const SLOT_SETTINGS_PAGE = 'settings.page'
+/** 槽位枚举: composer.toolbar 是输入框下方工具条里的一个按钮 */
+export const SLOT_COMPOSER_TOOLBAR = 'composer.toolbar'
+/** 槽位枚举: composer.notice 是输入框上方的一条通知 */
+export const SLOT_COMPOSER_NOTICE = 'composer.notice'
+/** 槽位枚举: overlay.notice 是全局面板通知栈里的一条通知 */
+export const SLOT_OVERLAY_NOTICE = 'overlay.notice'
+/** 槽位枚举: message.actions 是消息底部操作行里的一组按钮 */
+export const SLOT_MESSAGE_ACTIONS = 'message.actions'
+/** 槽位枚举: menu.item 是右键菜单里的一项 */
+export const SLOT_MENU_ITEM = 'menu.item'
+
+/** 页面型槽位: 描述复用区块模型, 宿主渲染整页或页内区块 */
+export type PageSlotName =
+  | typeof SLOT_NAV_PANEL
+  | typeof SLOT_CONVERSATION_TABS
+  | typeof SLOT_SETTINGS_PAGE
 
 /** 槽位名; 封闭词表, 未知名在登记期按 unknown-slot 拒绝 */
-export type SlotName = typeof SLOT_NAV_PANEL | typeof SLOT_CONVERSATION_TABS
+export type SlotName =
+  | PageSlotName
+  | typeof SLOT_COMPOSER_TOOLBAR
+  | typeof SLOT_COMPOSER_NOTICE
+  | typeof SLOT_OVERLAY_NOTICE
+  | typeof SLOT_MESSAGE_ACTIONS
+  | typeof SLOT_MENU_ITEM
 
 /** 全部槽位; 宿主渲染与清单校验共用同一份枚举 */
-export const SLOT_NAMES: readonly SlotName[] = [SLOT_NAV_PANEL, SLOT_CONVERSATION_TABS]
+export const SLOT_NAMES: readonly SlotName[] = [
+  SLOT_NAV_PANEL,
+  SLOT_CONVERSATION_TABS,
+  SLOT_SETTINGS_PAGE,
+  SLOT_COMPOSER_TOOLBAR,
+  SLOT_COMPOSER_NOTICE,
+  SLOT_OVERLAY_NOTICE,
+  SLOT_MESSAGE_ACTIONS,
+  SLOT_MENU_ITEM,
+]
+
+/** 槽位名是否是页面型(区块模型); 投影与校验按此分流 */
+export const isPageSlot = (slot: SlotName): slot is PageSlotName =>
+  slot === SLOT_NAV_PANEL || slot === SLOT_CONVERSATION_TABS || slot === SLOT_SETTINGS_PAGE
+
+/** 描述是否是页面型; 宿主按此收窄, 只有页面型描述带区块 */
+export const isPageDescriptor = (descriptor: SlotDescriptor): descriptor is PageSlotDescriptor =>
+  isPageSlot(descriptor.slot)
+
+/** 通知的强度; composer.notice 叫 tone, overlay.notice 叫 level, 取值同一套 */
+export type NoticeLevel = 'info' | 'warning' | 'error'
+
+const NOTICE_LEVELS: readonly NoticeLevel[] = ['info', 'warning', 'error']
 
 /** 页面区块的四种类型; 控件形态由宿主按类型渲染, 插件不交控件 */
 export type PageBlockType = 'list' | 'form' | 'text' | 'actions'
@@ -90,9 +136,9 @@ export type SlotHandle = {
 }
 
 /** 一份槽位描述; slot 决定落点, id 在同一槽位内跨插件唯一 */
-export type SlotDescriptor = {
+export type PageSlotDescriptor = {
   /** 槽位名; 必须在枚举内且已写入清单 slots 白名单 */
-  readonly slot: SlotName
+  readonly slot: PageSlotName
   /** 页面 id; 同一槽位内不得与其他插件重复, 与插件 id 共同构成入口的键 */
   readonly id: string
   readonly titleKey?: string
@@ -103,6 +149,78 @@ export type SlotDescriptor = {
   readonly order?: number
   readonly blocks: readonly PageBlock[]
 }
+
+/** composer.toolbar 描述; 输入框下方工具条的一个按钮, 点击经 ui:slot-action 回调插件 */
+export type ComposerToolbarDescriptor = {
+  readonly slot: typeof SLOT_COMPOSER_TOOLBAR
+  readonly id: string
+  readonly labelKey?: string
+  readonly label?: string
+  readonly order?: number
+  /** 动作键; 回调时作为 actionId 交给插件 */
+  readonly actionKey: string
+}
+
+/** composer.notice 描述; 输入框上方的一条通知, 宿主按 tone 着色 */
+export type ComposerNoticeDescriptor = {
+  readonly slot: typeof SLOT_COMPOSER_NOTICE
+  readonly id: string
+  readonly tone: NoticeLevel
+  readonly textKey?: string
+  readonly text?: string
+  readonly order?: number
+}
+
+/** overlay.notice 描述; 全局面板通知栈的一条通知, 宿主按 level 着色并按插件分组 */
+export type OverlayNoticeDescriptor = {
+  readonly slot: typeof SLOT_OVERLAY_NOTICE
+  readonly id: string
+  readonly level: NoticeLevel
+  readonly textKey?: string
+  readonly text?: string
+  readonly order?: number
+}
+
+/** message.actions 描述; 消息底部操作行的一组按钮, 回调时条目键是消息 id */
+export type MessageActionsDescriptor = {
+  readonly slot: typeof SLOT_MESSAGE_ACTIONS
+  readonly id: string
+  readonly order?: number
+  readonly items: readonly PageActionDescriptor[]
+}
+
+/** menu.item 的目标面: 消息右键与会话右键各一组 */
+export type MenuTarget = 'message' | 'session'
+
+/** menu.item 描述; 右键菜单的一项, 点击经 ui:slot-action 回调插件 */
+export type MenuItemDescriptor = {
+  readonly slot: typeof SLOT_MENU_ITEM
+  readonly id: string
+  readonly target: MenuTarget
+  readonly labelKey?: string
+  readonly label?: string
+  readonly order?: number
+  /** 动作键; 回调时作为 actionId 交给插件 */
+  readonly actionKey: string
+}
+
+export type SlotDescriptor =
+  | PageSlotDescriptor
+  | ComposerToolbarDescriptor
+  | ComposerNoticeDescriptor
+  | OverlayNoticeDescriptor
+  | MessageActionsDescriptor
+  | MenuItemDescriptor
+
+/**
+ * 登记时交给 context.ui.registerSlot 的描述体: 不带 slot 字段。
+ * 必须按成员分配后再去掉 slot, 否则联合被折叠成公共字段(只剩 id 与 order), 各槽位专属字段全部丢失。
+ */
+export type SlotDescriptorBody = SlotDescriptor extends infer T
+  ? T extends SlotDescriptor
+    ? Omit<T, 'slot'>
+    : never
+  : never
 
 /** 区块层面的公共问题码; 页面模型与槽位描述共用同一套区块校验 */
 type BlockProblem =
@@ -144,6 +262,10 @@ export type SlotDescriptorProblem =
   | 'invalid-icon-key'
   | 'invalid-order'
   | 'duplicate-id'
+  | 'invalid-tone'
+  | 'invalid-level'
+  | 'invalid-target'
+  | 'invalid-action-key'
   | BlockProblem
   | 'descriptor-too-large'
 
@@ -235,6 +357,28 @@ const checkPageListItem = (
     }
   }
   return { ok: true, item }
+}
+
+/**
+ * 通知正文的校验: textKey 与 text 二选一, 键必须是宿主字典里的键,
+ * 直给文案不为空且不超过页面说明文字的上限; 合法返回收敛后的字段。
+ */
+const checkNoticeText = (
+  raw: Record<string, unknown>,
+  hasTranslationKey: (key: string) => boolean
+): { ok: true; text: { textKey?: string; text?: string } } | { ok: false } => {
+  if (typeof raw.textKey === 'string') {
+    return hasTranslationKey(raw.textKey)
+      ? { ok: true, text: { textKey: raw.textKey } }
+      : { ok: false }
+  }
+  if (typeof raw.text === 'string') {
+    const text = raw.text.trim()
+    return text !== '' && text.length <= MAX_PAGE_TEXT_LENGTH
+      ? { ok: true, text: { text } }
+      : { ok: false }
+  }
+  return { ok: false }
 }
 
 /**
@@ -400,7 +544,8 @@ export const checkPageDescriptor = (
 
 /**
  * 校验一份槽位描述; 合法返回收敛后的描述, 非法返回问题码。
- * 校验即拒绝: 槽位不在枚举、非法 id、非法标题、非法图标键、非法排序与非法区块都让整份注册失败。
+ * 校验即拒绝: 槽位不在枚举、非法 id、非法文案、非法排序都让整份注册失败;
+ * 页面型槽位再查图标键与区块, 其余槽位各查自己的专属字段。
  */
 export const checkSlotDescriptor = (
   descriptor: unknown,
@@ -409,27 +554,14 @@ export const checkSlotDescriptor = (
   if (!isRecord(descriptor)) {
     return { ok: false, problem: 'not-object' }
   }
-  const slot = descriptor.slot
-  if (typeof slot !== 'string' || !SLOT_NAMES.includes(slot as SlotName)) {
+  const rawSlot = descriptor.slot
+  if (typeof rawSlot !== 'string' || !SLOT_NAMES.includes(rawSlot as SlotName)) {
     return { ok: false, problem: 'unknown-slot' }
   }
+  const slot = rawSlot as SlotName
   const id = descriptor.id
   if (typeof id !== 'string' || !PAGE_KEY_PATTERN.test(id)) {
     return { ok: false, problem: 'invalid-id' }
-  }
-  if (!checkLabel(descriptor, hasTranslationKey, 'title')) {
-    return { ok: false, problem: 'invalid-label' }
-  }
-  let iconKey: string | undefined
-  if (descriptor.iconKey !== undefined) {
-    if (typeof descriptor.iconKey !== 'string') {
-      return { ok: false, problem: 'invalid-icon-key' }
-    }
-    const key = descriptor.iconKey.trim()
-    if (key === '' || key.length > MAX_ICON_KEY_LENGTH) {
-      return { ok: false, problem: 'invalid-icon-key' }
-    }
-    iconKey = key
   }
   let order: number | undefined
   if (descriptor.order !== undefined) {
@@ -438,30 +570,150 @@ export const checkSlotDescriptor = (
     }
     order = descriptor.order
   }
-  const blocks = checkPageBlocks(descriptor.blocks, hasTranslationKey)
-  if (!blocks.ok) {
-    return { ok: false, problem: blocks.problem }
+  const withOrder = order === undefined ? {} : { order }
+
+  // 页面型槽位: 标题、图标键与区块, 与旧行为一致
+  if (isPageSlot(slot)) {
+    if (!checkLabel(descriptor, hasTranslationKey, 'title')) {
+      return { ok: false, problem: 'invalid-label' }
+    }
+    let iconKey: string | undefined
+    if (descriptor.iconKey !== undefined) {
+      if (typeof descriptor.iconKey !== 'string') {
+        return { ok: false, problem: 'invalid-icon-key' }
+      }
+      const key = descriptor.iconKey.trim()
+      if (key === '' || key.length > MAX_ICON_KEY_LENGTH) {
+        return { ok: false, problem: 'invalid-icon-key' }
+      }
+      iconKey = key
+    }
+    const blocks = checkPageBlocks(descriptor.blocks, hasTranslationKey)
+    if (!blocks.ok) {
+      return { ok: false, problem: blocks.problem }
+    }
+    const base: {
+      slot: PageSlotName
+      id: string
+      iconKey?: string
+      order?: number
+    } = {
+      slot,
+      id,
+      ...(iconKey !== undefined ? { iconKey } : {}),
+      ...withOrder,
+    }
+    const settled: SlotDescriptor =
+      typeof descriptor.titleKey === 'string'
+        ? { ...base, titleKey: descriptor.titleKey, blocks: blocks.blocks }
+        : { ...base, title: (descriptor.title as string).trim(), blocks: blocks.blocks }
+    const bytes = serializedBytes(settled)
+    if (bytes === null || bytes > MAX_PAGE_DESCRIPTOR_BYTES) {
+      return { ok: false, problem: bytes === null ? 'not-object' : 'descriptor-too-large' }
+    }
+    return { ok: true, descriptor: settled }
   }
-  const base: {
-    slot: SlotName
-    id: string
-    iconKey?: string
-    order?: number
-  } = {
-    slot: slot as SlotName,
-    id,
-    ...(iconKey !== undefined ? { iconKey } : {}),
-    ...(order !== undefined ? { order } : {}),
+
+  // 动作键的校验: composer.toolbar 与 menu.item 各带一个, 回调时作为 actionId
+  const checkActionKey = (): string | null => {
+    const key = descriptor.actionKey
+    return typeof key === 'string' && PAGE_KEY_PATTERN.test(key) ? key : null
   }
-  const settled: SlotDescriptor =
-    typeof descriptor.titleKey === 'string'
-      ? { ...base, titleKey: descriptor.titleKey, blocks: blocks.blocks }
-      : { ...base, title: (descriptor.title as string).trim(), blocks: blocks.blocks }
-  const bytes = serializedBytes(settled)
-  if (bytes === null || bytes > MAX_PAGE_DESCRIPTOR_BYTES) {
-    return { ok: false, problem: bytes === null ? 'not-object' : 'descriptor-too-large' }
+
+  if (slot === SLOT_COMPOSER_TOOLBAR) {
+    if (!checkLabel(descriptor, hasTranslationKey, 'label')) {
+      return { ok: false, problem: 'invalid-label' }
+    }
+    const actionKey = checkActionKey()
+    if (actionKey === null) {
+      return { ok: false, problem: 'invalid-action-key' }
+    }
+    const settled: SlotDescriptor =
+      typeof descriptor.labelKey === 'string'
+        ? { slot, id, labelKey: descriptor.labelKey, actionKey, ...withOrder }
+        : { slot, id, label: (descriptor.label as string).trim(), actionKey, ...withOrder }
+    const bytes = serializedBytes(settled)
+    if (bytes === null || bytes > MAX_PAGE_DESCRIPTOR_BYTES) {
+      return { ok: false, problem: bytes === null ? 'not-object' : 'descriptor-too-large' }
+    }
+    return { ok: true, descriptor: settled }
   }
-  return { ok: true, descriptor: settled }
+
+  // 通知类槽位: 强度取封闭词表, 正文与文案键二选一
+  if (slot === SLOT_COMPOSER_NOTICE || slot === SLOT_OVERLAY_NOTICE) {
+    const strength = slot === SLOT_COMPOSER_NOTICE ? descriptor.tone : descriptor.level
+    if (
+      typeof strength !== 'string' ||
+      !NOTICE_LEVELS.includes(strength as NoticeLevel)
+    ) {
+      return { ok: false, problem: slot === SLOT_COMPOSER_NOTICE ? 'invalid-tone' : 'invalid-level' }
+    }
+    const text = checkNoticeText(descriptor, hasTranslationKey)
+    if (!text.ok) {
+      return { ok: false, problem: 'invalid-text' }
+    }
+    const strengthField = slot === SLOT_COMPOSER_NOTICE ? { tone: strength } : { level: strength }
+    const settled: SlotDescriptor = {
+      slot,
+      id,
+      ...strengthField,
+      ...text.text,
+      ...withOrder,
+    } as SlotDescriptor
+    const bytes = serializedBytes(settled)
+    if (bytes === null || bytes > MAX_PAGE_DESCRIPTOR_BYTES) {
+      return { ok: false, problem: bytes === null ? 'not-object' : 'descriptor-too-large' }
+    }
+    return { ok: true, descriptor: settled }
+  }
+
+  if (slot === SLOT_MESSAGE_ACTIONS) {
+    const rawItems = descriptor.items
+    if (!Array.isArray(rawItems) || rawItems.length === 0 || rawItems.length > MAX_PAGE_ACTIONS) {
+      return { ok: false, problem: 'invalid-action' }
+    }
+    const items: PageActionDescriptor[] = []
+    const keys = new Set<string>()
+    for (const raw of rawItems) {
+      const check = checkPageAction(raw, hasTranslationKey)
+      if (!check.ok) {
+        return { ok: false, problem: 'invalid-action' }
+      }
+      if (keys.has(check.action.key)) {
+        return { ok: false, problem: 'invalid-action' }
+      }
+      keys.add(check.action.key)
+      items.push(check.action)
+    }
+    const settled: SlotDescriptor = { slot, id, items, ...withOrder }
+    const bytes = serializedBytes(settled)
+    if (bytes === null || bytes > MAX_PAGE_DESCRIPTOR_BYTES) {
+      return { ok: false, problem: bytes === null ? 'not-object' : 'descriptor-too-large' }
+    }
+    return { ok: true, descriptor: settled }
+  }
+
+  // menu.item: 目标面、文案与动作键
+  const target = descriptor.target
+  if (target !== 'message' && target !== 'session') {
+    return { ok: false, problem: 'invalid-target' }
+  }
+  if (!checkLabel(descriptor, hasTranslationKey, 'label')) {
+    return { ok: false, problem: 'invalid-label' }
+  }
+  const menuActionKey = checkActionKey()
+  if (menuActionKey === null) {
+    return { ok: false, problem: 'invalid-action-key' }
+  }
+  const settledMenu: SlotDescriptor =
+    typeof descriptor.labelKey === 'string'
+      ? { slot, id, target, labelKey: descriptor.labelKey, actionKey: menuActionKey, ...withOrder }
+      : { slot, id, target, label: (descriptor.label as string).trim(), actionKey: menuActionKey, ...withOrder }
+  const bytesMenu = serializedBytes(settledMenu)
+  if (bytesMenu === null || bytesMenu > MAX_PAGE_DESCRIPTOR_BYTES) {
+    return { ok: false, problem: bytesMenu === null ? 'not-object' : 'descriptor-too-large' }
+  }
+  return { ok: true, descriptor: settledMenu }
 }
 
 /**
@@ -544,6 +796,8 @@ export type SlotEntry = {
   readonly titleKey?: string
   readonly title?: string
   readonly iconKey?: string
+  /** 收敛后的完整描述; 非页面型槽位(工具条、通知、消息动作、菜单项)的字段只从这里读 */
+  readonly descriptor: SlotDescriptor
 }
 
 export const slotEntries = (): SlotEntry[] => {
@@ -563,12 +817,18 @@ export const slotEntries = (): SlotEntry[] => {
     }
     rows.sort((a, b) => a.order - b.order || a.seq - b.seq)
     for (const row of rows) {
-      const icon = row.d.iconKey === undefined ? {} : { iconKey: row.d.iconKey }
-      entries.push(
-        typeof row.d.titleKey === 'string'
-          ? { pluginId: row.pluginId, slot, id: row.id, titleKey: row.d.titleKey, ...icon }
-          : { pluginId: row.pluginId, slot, id: row.id, title: row.d.title, ...icon }
-      )
+      const head = { pluginId: row.pluginId, slot, id: row.id, descriptor: row.d }
+      const d = row.d
+      if (isPageDescriptor(d)) {
+        const icon = d.iconKey === undefined ? {} : { iconKey: d.iconKey }
+        entries.push(
+          typeof d.titleKey === 'string'
+            ? { ...head, titleKey: d.titleKey, ...icon }
+            : { ...head, title: d.title, ...icon }
+        )
+        continue
+      }
+      entries.push(head)
     }
   }
   return entries

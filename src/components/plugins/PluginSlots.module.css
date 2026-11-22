@@ -1,0 +1,211 @@
+/* 插件槽位的宿主渲染: 输入区工具栏、输入区通知条、全局通知栈、消息操作行 */
+
+/* 输入框上方的通知条 */
+.noticeStack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 12px 0;
+}
+
+.notice {
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-left-width: 3px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-alias-bg-layer-2);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.info {
+  border-left-color: var(--dsw-alias-brand-primary);
+}
+
+.warning {
+  border-left-color: var(--dsw-static-amber-500);
+}
+
+.error {
+  border-left-color: var(--dsw-alias-state-error-primary);
+}
+
+/* 输入框下方工具条里的插件按钮; 与宿主的开关同一行高与圆角 */
+.toolbarGroup {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 50%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbarButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  padding: 4px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  background-color: transparent;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.toolbarLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 全局面板通知栈: 右上角悬浮卡片, 按插件分组, 不拦截页面点击 */
+.overlayStack {
+  position: fixed;
+  top: calc(72px + env(safe-area-inset-top));
+  right: 16px;
+  z-index: 1800;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(320px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.overlayCard {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background-color: var(--dsw-alias-bg-layer-2);
+  box-shadow:
+    0 0 4px 2px rgba(0, 0, 0, 0.04),
+    0 4px 16px 0 rgba(0, 0, 0, 0.1);
+  pointer-events: auto;
+}
+
+.overlayGroupHead {
+  margin-bottom: 4px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.overlayRow {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.overlayDot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background-color: var(--dsw-alias-brand-primary);
+}
+
+.overlayDotWarning {
+  background-color: var(--dsw-static-amber-500);
+}
+
+.overlayDotError {
+  background-color: var(--dsw-alias-state-error-primary);
+}
+
+/* 消息底部的插件操作行 */
+.messageActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.messageActionButton {
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 24px;
+  color: var(--dsw-alias-label-secondary);
+  background-color: transparent;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--dsw-alias-label-primary);
+    background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+/* 系统设置里的「插件」分组: 登记项列表与单页详情 */
+.settingsPageList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settingsPageRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  text-align: left;
+  background-color: transparent;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.settingsPageTitle {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.settingsPagePlugin {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.settingsPageHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.settingsPageHeadTitle {
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.settingsPageEmpty {
+  padding: 12px 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}

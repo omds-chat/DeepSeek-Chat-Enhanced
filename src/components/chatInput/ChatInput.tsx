@@ -28,6 +28,7 @@ import { DragMask, useFileDrop } from './DragMask.js'
 import { showToast } from '../base/toastState.js'
 import { ACCEPT, useUploads } from '../../services/attachments.js'
 import { DraftAttachments } from './DraftAttachments.js'
+import { ComposerNotices, ComposerToolbar } from '../plugins/SlotSurfaces.js'
 import { useVoiceInput } from './useVoiceInput.js'
 import { VoiceButton } from './VoiceButton.js'
 import { Spectrum } from './Spectrum.js'
@@ -161,6 +162,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
         }
       }}
     >
+      {/* 插件在输入框上方登记的通知条; 没有登记时整块不渲染 */}
+      <ComposerNotices />
       <DraftAttachments items={attachments} onRetry={retryFile} onRemove={removeFile} />
       <div className={styles.textareaWrapper}>
         <textarea
@@ -227,6 +230,8 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             </button>
           </Tooltip>
         </div>
+        {/* 插件在工具条里登记的按钮; 与宿主的开关同一行, 点击经 ui:slot-action 回调 */}
+        <ComposerToolbar />
         <div className={styles.right}>
           <VoiceButton
             status={voice.status}

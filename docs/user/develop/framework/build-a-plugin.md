@@ -365,7 +365,22 @@ export const activate = (context) => {
 
 ### 注册插件 UI 槽位
 
-插件可以给宿主贡献一块自己的页面(例如资产市场的来源管理、目录浏览与安装入口):清单申请能力 `ui:slot`,并用 `slots` 白名单逐个声明要登记的槽位,激活期用 `context.ui.registerSlot(descriptor)` 登记一份声明式页面描述。描述里的 `slot` 决定落点,本版开放两个槽位:`nav.panel`(侧边栏会话分组之上的导航行区域里的一行,配合主区整页)与 `conversation.tabs`(会话视图标签栏里的一个标签,配合主区整页);选中后主区整块渲染该页面,页面顶部是回到会话的面包屑。这是可选项:不登记就没有任何入口,插件不碰 `ui:slot` 时界面与现在没有区别。与设置表面同法,插件只交描述、不交控件,不写任何界面代码。
+插件可以给宿主贡献一块自己的界面:清单申请能力 `ui:slot`,并用 `slots` 白名单逐个声明要登记的槽位,激活期用 `context.ui.registerSlot(descriptor)` 登记一份声明式描述。描述里的 `slot` 决定落点。本版开放八个槽位,按描述形态分两类:页面型(带区块模型,宿主渲染整页或设置里的一页)与位置型(不带区块,宿主渲染成工具条按钮、通知条、消息操作行或菜单项)。这是可选项:不登记就没有任何入口,插件不碰 `ui:slot` 时界面与现在没有区别。与设置表面同法,插件只交描述、不交控件,不写任何界面代码。
+
+可用槽位:
+
+| 槽位 | 类型 | 宿主落点 | 描述字段 |
+|:---:|:---:|:---:|:---:|
+| `nav.panel` | 页面型 | 侧边栏会话分组之上的导航行 + 主区整页 | `id`、`titleKey` 或 `title`、`iconKey`?、`order`?、`blocks` |
+| `conversation.tabs` | 页面型 | 会话视图标签栏里的一个标签 + 主区整页 | 同上 |
+| `settings.page` | 页面型 | 系统设置的「插件」分组里的一页 | 同上 |
+| `composer.toolbar` | 位置型 | 输入框下方工具条里的一个按钮 | `id`、`labelKey` 或 `label`、`actionKey`、`order`? |
+| `composer.notice` | 位置型 | 输入框上方的一条通知条 | `id`、`tone`(`info`/`warning`/`error`)、`textKey` 或 `text`、`order`? |
+| `overlay.notice` | 位置型 | 右上角的全局面板通知栈(按插件分组) | `id`、`level`(取值同上)、`textKey` 或 `text`、`order`? |
+| `message.actions` | 位置型 | 助手消息底部的操作行 | `id`、`items`(1 到 8 个 `{ key, labelKey 或 label }`)、`order`? |
+| `menu.item` | 位置型 | 会话行与消息的右键菜单 | `id`、`target`(`message`/`session`)、`labelKey` 或 `label`、`actionKey`、`order`? |
+
+页面型槽位选中后主区整块渲染该页面(设置里的插件页渲染在设置分组内),页面顶部是回到会话的面包屑;位置型槽位没有整页,只渲染一个按钮、一条通知或一项菜单,点击经 `ui:slot-action` 回调插件。
 
 ```ts
 export const manifest = {
@@ -374,7 +389,7 @@ export const manifest = {
   version: '1.0.0',
   engines: '^1.0.0',
   capabilities: ['ui:slot', 'plugins:storage'],
-  slots: ['nav.panel', 'conversation.tabs'],
+  slots: ['nav.panel', 'conversation.tabs', 'settings.page', 'composer.toolbar'],
 }
 
 export const activate = (context) => {
@@ -413,19 +428,38 @@ export const activate = (context) => {
     }
     return { ...page, blocks: [/* 按当前数据重新组织 */] }
   })
+
+  // 位置型槽位:输入框下方工具条里的一个按钮,点击走同一份回调(actionId 是 actionKey)
+  context.ui.registerSlot({
+    slot: 'composer.toolbar',
+    id: 'quick-insert',
+    label: '快速插入',
+    actionKey: 'quick-insert',
+    order: 1,
+  })
+
+  // 位置型槽位:输入框上方的一条通知条,颜色随 tone
+  context.ui.registerSlot({
+    slot: 'composer.notice',
+    id: 'slow-network',
+    tone: 'warning',
+    text: '网络较慢,发送前请确认附件已上传完成',
+  })
 }
 ```
 
-槽位描述的规则:
+页面型槽位(`nav.panel`、`conversation.tabs`、`settings.page`)的描述规则:
 
 | 字段 | 必填 | 说明 |
 |:---:|:---:|:---:|
 | `slot` | 是 | 槽位名,必须在宿主槽位枚举内且已写入清单 `slots` 白名单 |
 | `id` | 是 | `^[a-z][a-z0-9-]{0,63}$`,同一槽位内跨插件唯一(先登记者占位),与插件 id 共同构成页面入口的键 |
-| `titleKey` / `title` | 是 | 二选一:`titleKey` 用宿主 i18n 字典里的键,`title` 直接给文案(1 到 40 字符);导航行与标签的名字用它 |
-| `iconKey` | 否 | nav.panel 行的图标键,由宿主图标查表解析,未命中时用通用插件图标 |
+| `titleKey` / `title` | 是 | 二选一:`titleKey` 用宿主 i18n 字典里的键,`title` 直接给文案(1 到 40 字符);导航行、标签与设置入口的名字用它 |
+| `iconKey` | 否 | 图标键,由宿主图标查表解析,未命中时用通用插件图标 |
 | `order` | 否 | 同槽位内的排序键,升序,同值按登记顺序,未给按 0 |
 | `blocks` | 是 | 1 到 64 个区块,按声明顺序渲染 |
+
+位置型槽位的描述字段见上文「可用槽位」表:共同字段是 `id` 与可选的 `order`,`labelKey` / `textKey` 与 `label` / `text` 各自二选一(文本上限 2000 字符),`actionKey` 与 `id` 共用键词表;`composer.notice` 用 `tone`、`overlay.notice` 用 `level`,取值都是 `info`/`warning`/`error`;`menu.item` 的 `target` 取 `message` 或 `session`;它们都不带 `blocks`。
 
 区块四种:
 
@@ -436,15 +470,16 @@ export const activate = (context) => {
 | `form` | `{ fields }` | 复用设置表面的五种字段描述与控件,字段键在同一页面内不得重复 |
 | `actions` | `{ items }` | 按钮组(至多 8 个),每项 `{ key, labelKey 或 label }`,键不得重复 |
 
-校验即拒绝:槽位不在枚举、槽位未写入清单白名单、同槽位内 id 与其他插件重复、非法 id、非法标题、非法图标键、非法排序、空区块、重复区块 id、未知区块类型、非法条目、非法动作、非法说明文字、非法表单字段、跨区块重复字段键或超规模都让整份注册失败,抛 `PluginSlotError`,`code` 是结构化的问题码,并提示 `pluginSlotRejected`(白名单缺失另提示 `pluginSlotNotGranted`);描述序列化后不超过 8 KB。登记返回带槽位名与页面 id 的句柄,释放函数停用随引擎清理;同一插件重复登记同 id 槽位时替换前一份。
+校验即拒绝:槽位不在枚举、槽位未写入清单白名单、同槽位内 id 与其他插件重复、非法 id、非法文案、非法图标键、非法排序、非法动作键、非法 `tone`/`level`、非法 `target`、空区块、重复区块 id、未知区块类型、非法条目、非法动作、非法说明文字、非法表单字段、跨区块重复字段键或超规模都让整份注册失败,抛 `PluginSlotError`,`code` 是结构化的问题码,并提示 `pluginSlotRejected`(白名单缺失另提示 `pluginSlotNotGranted`);描述序列化后不超过 8 KB。登记返回带槽位名与页面 id 的句柄,释放函数停用随引擎清理;同一插件重复登记同 id 槽位时替换前一份。
 
 动作与数据的约定:
 
-- 用户点击动作按钮时,引擎同步调用 `onSlotAction(slot, handler)` 登记的处理器一次,载荷 `{ slot, id, actionId, itemKey?, form? }`:`itemKey` 只有逐条动作带,`form` 是页面表单区块的当前草稿值,页面没有表单区块时不出现。
-- 处理器同步返回 `{ refresh: true }` 表示页面数据已变化,宿主随即调 `onSlotData(slot, handler)` 登记的处理器索取新模型;返回其他值或什么都不返回时页面保持原样。异步工作由插件自行发起,完成后用 `context.ui.notify` 提示。
+- 用户点击动作按钮、工具条按钮或菜单项时,引擎同步调用 `onSlotAction(slot, handler)` 登记的处理器一次,载荷 `{ slot, id, actionId, itemKey?, form? }`:`slot` 一定出现(同一份回调可服务本插件登记的多个槽位),`itemKey` 在 list 逐条动作、消息操作行(消息 id)与菜单项(会话 id 或消息 id)上出现,`form` 是页面表单区块的当前草稿值,页面没有表单区块时不出现。
+- 处理器同步返回 `{ refresh: true }` 表示页面数据已变化,宿主随即调 `onSlotData(slot, handler)` 登记的处理器索取新模型;返回其他值或什么都不返回时页面保持原样。异步工作由插件自行发起,完成后用 `context.ui.notify` 提示。位置型槽位没有页面模型,返回刷新指示不会触发额外索取。
 - 未实现 `ui:slot-data` 时宿主用登记时的描述静态显示;实现了的话,宿主在进入页面与收到刷新指示时索取当前模型,返回的模型按登记期同一份校验,非法、抛错或 slot/id 与所请求页面不一致时回落到缺省模型,返回 null 表示沿用登记描述。
 - 页面表单的值只活在宿主侧:改动即脏、字段级非法给出问题文案、可重置为默认,没有落盘动作;用户点击动作按钮时随载荷交给插件。
 - 两个挂载点(`ui:slot-action`、`ui:slot-data`)的回调由引擎发起,不占限流名额;`ui:slot` 的限流按登记次数计。
+- 位置型槽位没有数据回流:登记即显示,撤销即消失。需要按状态变化的功能请改登记内容并重新 `registerSlot`(同一插件同 id 会替换前一份),或用 `context.ui.notify` 发一条气泡提示。
 
 ## 本地加载验证
 
@@ -562,7 +597,7 @@ npm 包的要点:
 | 抛 `PluginAbortError` | 传入的 `signal` 已取消 | 检查取消逻辑 |
 | 抛 `PluginDataError` | 数据超过 64KB,或值无法 JSON 序列化 | 精简数据;移除函数、`undefined` 与循环引用 |
 | 抛 `PluginSettingsError` | 设置描述非法(重复 key、未知类型、非法 default、非法 labelKey、超规模) | 按 `code` 修正描述后重新激活 |
-| 抛 `PluginSlotError` | 槽位描述非法(槽位不在枚举、未写入清单白名单、同槽位内 id 跨插件重复、非法 id、非法标题、非法图标键、非法排序、空区块、重复区块 id、未知区块类型、非法条目、非法动作、非法表单字段、超规模) | 按 `code` 修正描述或补齐清单 `slots` 后重新激活 |
+| 抛 `PluginSlotError` | 槽位描述非法(槽位不在枚举、未写入清单白名单、同槽位内 id 跨插件重复、非法 id、非法文案、非法图标键、非法排序、非法动作键、非法 `tone`/`level`、非法 `target`、空区块、重复区块 id、未知区块类型、非法条目、非法动作、非法表单字段、超规模) | 按 `code` 修正描述或补齐清单 `slots` 后重新激活 |
 | 请求参数没有变化 | 处理器超过 10 毫秒预算,或抛错;越界值被裁剪 | 查看引擎日志里的 `chat:before-request` 记录,把耗时压到 10 毫秒内并检查抛错 |
 | 系统提示词被整体替换 | 同时返回了 `systemPromptReplace` | 只想补充说明时改用 `systemPromptAppend` |
 | 停用被拒绝 | 有已启用的插件依赖它 | 先停用依赖方再停用;「被依赖阻塞」徽标标出这种插件,强行停用标志同样按拒绝处理 |

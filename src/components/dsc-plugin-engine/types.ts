@@ -2,7 +2,7 @@ import type { TranslationKey, TranslationParams } from '../../i18n/index.js'
 import type {
   SlotActionHandler,
   SlotDataHandler,
-  SlotDescriptor,
+  SlotDescriptorBody,
   SlotHandle,
   SlotName,
 } from './pluginSlots.js'
@@ -152,7 +152,7 @@ export type UiCapability = {
    * code 是结构化的问题码。返回带槽位名与页面 id 的句柄，
    * 释放函数进入插件的 disposer 集合，停用随引擎清理。
    */
-  registerSlot(slot: SlotName, descriptor: Omit<SlotDescriptor, 'slot'>): SlotHandle
+  registerSlot(slot: SlotName, descriptor: SlotDescriptorBody): SlotHandle
   /** 登记槽位动作回调；用户点击该槽位页面上的动作按钮时由引擎同步调用一次 */
   onSlotAction(slot: SlotName, handler: SlotActionHandler): () => void
   /** 登记槽位数据处理器；宿主进入页面或动作返回刷新指示时同步索取当前模型 */

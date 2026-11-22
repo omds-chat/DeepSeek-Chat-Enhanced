@@ -6,6 +6,8 @@ import { renameSession, selectSession } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
+import { ContextMenu, useContextMenu } from '../base/ContextMenu.js'
+import { usePluginMenuItems } from '../plugins/pluginContextMenu.js'
 import { closeMobileSider } from './mobileSiderState.js'
 import styles from './SessionItem.module.css'
 
@@ -21,6 +23,9 @@ export const SessionItem = memo(function SessionItem({
   const t = useTranslate()
   const [editing, setEditing] = useState(false)
   const displayTitle = session.title || t('untitledChat')
+  // 右键菜单: 宿主项(重命名、删除)之后追加插件经 menu.item 登记的自定义项
+  const contextMenu = useContextMenu()
+  const pluginItems = usePluginMenuItems('session', session.id)
 
   if (editing) {
     const finish = (title: string) => {
@@ -50,6 +55,7 @@ export const SessionItem = memo(function SessionItem({
   return (
     <div
       className={clsx(styles.item, active && styles.active)}
+      onContextMenu={contextMenu.open}
       onClick={() => {
         // 选中会话即回到会话视图: selectSession 内部一并切回(见 services/chat/store.ts)
         selectSession(session.id)
@@ -80,6 +86,28 @@ export const SessionItem = memo(function SessionItem({
           )}
         </Menu>
       </div>
+      {contextMenu.point ? (
+        <ContextMenu
+          point={contextMenu.point}
+          items={[
+            {
+              key: 'rename',
+              label: t('sessionItemMenuRenameOption'),
+              icon: <IconEditOutline16 />,
+              onSelect: () => setEditing(true),
+            },
+            {
+              key: 'delete',
+              label: t('delete'),
+              icon: <IconTrashOutline16 />,
+              danger: true,
+              onSelect: onDelete,
+            },
+            ...pluginItems,
+          ]}
+          onClose={contextMenu.close}
+        />
+      ) : null}
     </div>
   )
 })

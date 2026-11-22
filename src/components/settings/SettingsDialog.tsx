@@ -6,6 +6,7 @@ import {
   IconDownloadOutline16,
   IconFollowsystemOutline16,
   IconLightOutline16,
+  IconPluginOutline16,
   IconSettingsOutline16,
   IconUploadOutline14,
 } from '../base/icons.js'
@@ -42,6 +43,9 @@ import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
 import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
+import { SettingsPluginPages } from '../plugins/SettingsPluginPages.js'
+import { settingsPages } from '../plugins/slotProjection.js'
+import { useSlotRegistry } from '../plugins/useSlotRegistry.js'
 import styles from './Settings.module.css'
 
 /**
@@ -53,7 +57,7 @@ export const SettingsDialog = () => {
   return open ? <SettingsContent /> : null
 }
 
-const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode }[] = [
+const baseSections: { value: SettingsSection; label: TranslationKey; icon: ReactNode }[] = [
   {
     value: 'general',
     label: 'settingDialogAsideGeneralOptionLabel',
@@ -61,6 +65,13 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
   },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
 ]
+
+/** 「插件」分组: 只在有 settings.page 登记项时出现, 空分组不占导航 */
+const PLUGIN_SECTION: { value: SettingsSection; label: TranslationKey; icon: ReactNode } = {
+  value: 'plugins',
+  label: 'settingDialogAsidePluginsOptionLabel',
+  icon: <IconPluginOutline16 />,
+}
 
 const SettingsContent = () => {
   const t = useTranslate()
@@ -73,6 +84,16 @@ const SettingsContent = () => {
   const historyDelete = useHistoryDelete()
   const replacingHistory = useChatStore((state) => state.importingHistory)
   const historyBusy = historyImport.busy || historyDelete.busy || replacingHistory
+  // 插件分组的出现与否跟着登记表走: 插件激活时登记、停用或卸载时撤销
+  const { entries, plugins } = useSlotRegistry()
+  const pluginSectionVisible = settingsPages(entries, plugins, t).length > 0
+  const sections = pluginSectionVisible ? [...baseSections, PLUGIN_SECTION] : baseSections
+  // 插件在设置页停留期间被停用或卸载时, 分组整块消失, 选中态回落到通用设置
+  useEffect(() => {
+    if (section === 'plugins' && !pluginSectionVisible) {
+      setSection('general')
+    }
+  }, [section, pluginSectionVisible])
   return (
     <>
       <Modal
@@ -110,6 +131,8 @@ const SettingsContent = () => {
               <LocationSetting />
               <SourceLanHttpSetting />
             </>
+          ) : section === 'plugins' ? (
+            <SettingsPluginPages />
           ) : (
             <>
               <ApiKeyField editor={apiKeyEditor} />

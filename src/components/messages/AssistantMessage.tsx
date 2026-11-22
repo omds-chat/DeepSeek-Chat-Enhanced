@@ -6,6 +6,8 @@ import { describeReply } from '../../services/chat/describe.js'
 import { canContinueReply } from '../../services/chat/reply.js'
 import { continueReply, regenerateReply } from '../../services/chat/store.js'
 import { stopReadAloud } from '../../services/speech/readAloud.js'
+import { copyText as copyToClipboard } from '../../utils/clipboard.js'
+import { showToast } from '../base/toastState.js'
 import type { AssistantMessage as AssistantMessageType } from '../../services/chat/types.js'
 import { openSettings } from '../settings/settingsDialogState.js'
 import { IconButton } from '../base/IconButton.js'
@@ -22,6 +24,11 @@ import {
   type MessageVersions,
   type SelectMessageVersion,
 } from './BranchSwitcher.js'
+import { ContextMenu, useContextMenu } from '../base/ContextMenu.js'
+import { usePluginMenuItems } from '../plugins/pluginContextMenu.js'
+import { MessageActionRowButtons } from '../plugins/SlotSurfaces.js'
+import { useSlotRegistry } from '../plugins/useSlotRegistry.js'
+import { messageActionRows } from '../plugins/slotProjection.js'
 import styles from './AssistantMessage.module.css'
 
 const TOP_UP_URL = 'https://platform.deepseek.com/top_up'
@@ -56,8 +63,13 @@ export const AssistantMessage = memo(function AssistantMessage({
   const copyText = responseText || notice?.text
   const waiting = streaming && view.steps.length === 0 && !view.answer && !message.thinking
   const summaryEntry = `${message.id}-summary`
+  // 插件登记的消息操作行按钮与右键菜单项; 载荷的 itemKey 带消息 id
+  const { entries } = useSlotRegistry()
+  const pluginActionRows = messageActionRows(entries, t)
+  const pluginMenuItems = usePluginMenuItems('message', message.id)
+  const contextMenu = useContextMenu()
   return (
-    <div className={styles.message}>
+    <div className={styles.message} onContextMenu={contextMenu.open}>
       {refused ? null : (
         <ReplyArea
           message={message}
@@ -156,6 +168,9 @@ export const AssistantMessage = memo(function AssistantMessage({
                 regenerateReply(sessionId, message.id)
               }}
             />
+            {pluginActionRows.length > 0 ? (
+              <MessageActionRowButtons messageId={message.id} rows={pluginActionRows} />
+            ) : null}
           </div>
           {isLast && canContinueReply(message) ? (
             <Button
@@ -173,6 +188,43 @@ export const AssistantMessage = memo(function AssistantMessage({
           ) : null}
         </div>
       )}
+      {contextMenu.point ? (
+        <ContextMenu
+          point={contextMenu.point}
+          items={[
+            ...(copyText
+              ? [
+                  {
+                    key: 'copy',
+                    label: t('copy'),
+                    onSelect: () => {
+                      void copyToClipboard(copyText).then((ok) => {
+                        if (!ok) {
+                          showToast({ key: 'copyFailed' })
+                        }
+                      })
+                    },
+                  },
+                ]
+              : []),
+            ...(streaming || busy || refused
+              ? []
+              : [
+                  {
+                    key: 'regenerate',
+                    label: t('regenerate'),
+                    icon: <IconRefreshOutline16 />,
+                    onSelect: () => {
+                      stopReadAloud()
+                      regenerateReply(sessionId, message.id)
+                    },
+                  },
+                ]),
+            ...pluginMenuItems,
+          ]}
+          onClose={contextMenu.close}
+        />
+      ) : null}
     </div>
   )
 })

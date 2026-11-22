@@ -22,6 +22,7 @@ import { PluginPageView } from '../components/plugins/PluginPageView.js'
 import { bindPluginViewLifecycle } from '../components/plugins/pluginViewLifecycle.js'
 import { usePluginView } from '../components/plugins/pluginViewState.js'
 import { Toast } from '../components/base/Toast.js'
+import { PluginNoticeStack } from '../components/plugins/SlotSurfaces.js'
 import { VersionNotice } from '../components/base/VersionNotice.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
@@ -154,6 +155,8 @@ export const App = () => {
       <SettingsDialog />
       <VersionNotice />
       <Toast />
+      {/* 插件经 overlay.notice 登记的全局面板通知; 按插件分组合并成悬浮卡片 */}
+      <PluginNoticeStack />
     </>
   )
 }
