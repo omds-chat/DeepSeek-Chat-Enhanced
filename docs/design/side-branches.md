@@ -9,7 +9,7 @@
 | 事项 | 口径 |
 |:---:|:---:|
 | `dist-history`(预发行) | 预发行的产物只落在 `version/<tag>/` 一个目录里,不替换分支根目录,不替换 `version/latest/` |
-| 归档(预发行) | 预发行 tag 只在 `dist-history` 的 `version/` 下新增一个版本目录并随页面包发布;不清理 `dist-history` 工作树、不动其根目录与 `version/latest/`,也不写 `certs` 与 `trusted-manifest` 两条分支 |
+| 归档(预发行) | 预发行 tag 在三条分支的口径对齐:各自只在 `version/` 下新增 `version/<tag>/` 一个目录(`dist-history` 存产物、`certs` 存证书副本、`trusted-manifest` 存清单),不清理工作树、不动任何分支的根目录与 `version/latest/`,页面包照常合并发布 |
 
 ## 旧名与新名的对应关系
 

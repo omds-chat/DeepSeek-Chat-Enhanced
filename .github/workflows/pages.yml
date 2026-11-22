@@ -14,8 +14,8 @@ name: Deploy GitHub Pages
 #   保证分支根目录、version/latest、version/<tag> 三份一致且各自可自校验
 # - 预发行(tag 形如 dsc-主版本.次版本.修订版本-XXX.序号,XXX 为小写字母串,序号为十进制数)
 #   是正式版之外的发布形态,XXX 不限定具体词表是为了保留扩展性(alpha、beta、rc 等):
-#   归档口径收敛为只在 dist-history 的 version/ 下新增 version/<tag>/ 一个目录存放本版产物,
-#   不替换 dist-history 分支根目录内容,不替换 version/latest,也不改动 certs 与 trusted-manifest 两条分支;
+#   三条分支口径对齐,都只做旧版留存——各自只在 version/ 下新增 version/<tag>/ 一个目录存放本版内容
+#   (dist-history 存构建产物,certs 存证书副本,trusted-manifest 存清单),不替换任何分支的根目录与 version/latest;
 #   version/<tag>/ 目录随页面包照常发布
 # - 预检查: 发布 tag 必须形如 dsc-主版本.次版本.修订版本(正式发行)或 dsc-主版本.次版本.修订版本-XXX.序号(预发行);
 #   release 事件触发时 tag 的后缀必须与 Release 的预发行标记一致,不匹配即拒绝执行;
@@ -285,7 +285,7 @@ jobs:
             --root-ca certs/ds-chat/ds-chat-root-ca.crt
 
       # dist-history 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> 裁剪历史版本 -> commit、打 tag、push
-      # 正式版: 分支根目录、version/latest、version/<tag> 三份内容完全一致。
+      # 正式发行: 分支根目录、version/latest、version/<tag> 三份内容完全一致。
       # 预发行: 不清理、不动根目录与 version/latest,只在 version/<tag>/ 新增一个目录存放本版产物。
       - name: Publish dist-history branch
         if: steps.archive.outputs.skip_dist_history == 'false'
@@ -323,7 +323,8 @@ jobs:
           git -C "${DIST_HISTORY_WORKTREE}" push origin "refs/tags/${archive_tag}"
 
       # certs 分支归档: 清理 -> 重建 version 目录 -> 复制主仓库 certs/ -> 裁剪历史版本 -> commit、打 tag、push
-      # 预发行整步跳过(预发行不动本分支)。
+      # 正式发行: 根目录 certs/、version/latest、version/<tag> 三份内容完全一致。
+      # 预发行: 不清理、不动根目录与 version/latest,只在 version/<tag>/certs 新增一个目录存放本版证书副本。
       # 内容来源只有主仓库 certs/ 目录,整体原样复制并保留 certs/ 这一层前缀:
       # trusted-manifest 分支的 index.json 用 certs/... 相对路径登记证书,两条分支与合并后的页面包里路径因此一致。
       # 本步骤不生成、不签发、不替换任何证书,只做复制。
@@ -332,17 +333,18 @@ jobs:
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${CERTS_TAG_SUFFIX}"
-          node .github/scripts/clean-worktree.mjs --dir "${CERTS_WORKTREE}"
-          rm -rf "${CERTS_WORKTREE}/version/latest"
-          mkdir -p "${CERTS_WORKTREE}/version/latest" "${CERTS_WORKTREE}/version/${RELEASE_TAG}"
-          # 证书目录整体复制,保持 certs/... 结构与主仓库一致
-          mkdir -p "${CERTS_WORKTREE}/certs"
-          cp -a certs/. "${CERTS_WORKTREE}/certs/"
-          # 根目录内容复制到 version/latest 与 version/<tag>
-          for target in "${CERTS_WORKTREE}/version/latest" "${CERTS_WORKTREE}/version/${RELEASE_TAG}"; do
-            mkdir -p "${target}/certs"
-            cp -a "${CERTS_WORKTREE}/certs/." "${target}/certs/"
-          done
+          # 本版目录两条路径都先写好: 预发行只写这一处,正式发行随后复用
+          mkdir -p "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs"
+          cp -a certs/. "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs/"
+          if [ "${{ steps.tagcheck.outputs.prerelease }}" != "true" ]; then
+            node .github/scripts/clean-worktree.mjs --dir "${CERTS_WORKTREE}"
+            rm -rf "${CERTS_WORKTREE}/version/latest"
+            mkdir -p "${CERTS_WORKTREE}/version/latest/certs" "${CERTS_WORKTREE}/certs"
+            cp -a certs/. "${CERTS_WORKTREE}/certs/"
+            cp -a "${CERTS_WORKTREE}/certs/." "${CERTS_WORKTREE}/version/latest/certs/"
+          else
+            echo "预发行归档: 只新增 version/${RELEASE_TAG}/certs,certs 分支根目录与 version/latest 保持原样"
+          fi
           node .github/scripts/prune-versions.mjs --dir "${CERTS_WORKTREE}/version"
           git -C "${CERTS_WORKTREE}" config user.name "github-actions[bot]"
           git -C "${CERTS_WORKTREE}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -356,10 +358,11 @@ jobs:
           git -C "${CERTS_WORKTREE}" push origin HEAD:certs
           git -C "${CERTS_WORKTREE}" push origin "refs/tags/${archive_tag}"
 
-      # trusted-manifest 分支归档: 清理 -> 生成 index.json -> 渲染 README -> 重建 version 目录
-      # 预发行整步跳过(预发行不动本分支)。
+      # trusted-manifest 分支归档: 生成 index.json -> 渲染 README -> 分发到根目录与 version 目录
+      # 正式发行: 清理工作树,根目录 index.json/README.md、version/latest、version/<tag> 三份内容完全一致。
+      # 预发行: 不清理、不动根目录与 version/latest,只在 version/<tag>/ 新增本版清单与说明。
       # -> 裁剪历史版本 -> commit、打 tag、push
-      # 内容来源: build-trust-index.mjs 依据主仓库 certs/manifest.json 生成的 index.json(落点为本分支根目录);
+      # 内容来源: build-trust-index.mjs 依据主仓库 certs/manifest.json 生成 index.json(先落到临时目录,再按发行类型分发);
       # 证书本体不在本分支,由 certs 分支分发,因此 index.json 里登记的是 certs/... 相对路径而不是证书字节。
       #
       # index.json 的结构(字段固定):
@@ -382,31 +385,40 @@ jobs:
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${TRUSTED_MANIFEST_TAG_SUFFIX}"
-          node .github/scripts/clean-worktree.mjs --dir "${TRUSTED_MANIFEST_WORKTREE}"
-          rm -rf "${TRUSTED_MANIFEST_WORKTREE}/version/latest"
-          mkdir -p "${TRUSTED_MANIFEST_WORKTREE}/version/latest" "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"
-          # 依据 certs/manifest.json 生成信任清单,落到本分支根目录
+          mkdir -p "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"
+          # 清单先在临时目录生成,预发行不落分支根目录,正式发行随后分发
+          tmp_index="${RUNNER_TEMP}/trusted-index.json"
+          tmp_readme="${RUNNER_TEMP}/trusted-readme.md"
           node .github/scripts/build-trust-index.mjs \
             --manifest certs/manifest.json \
             --certs-root certs \
-            --out "${TRUSTED_MANIFEST_WORKTREE}/index.json"
+            --out "${tmp_index}"
           # 已归档版本列表,供 README 列出
           versions="$(ls -1 "${TRUSTED_MANIFEST_WORKTREE}/version" | grep -vx latest | sort -V | tail -n 20 | paste -sd, -)"
           readme_args=(
             --template .github/scripts/trusted-manifest-README.md
-            --index "${TRUSTED_MANIFEST_WORKTREE}/index.json"
-            --out "${TRUSTED_MANIFEST_WORKTREE}/README.md"
+            --index "${tmp_index}"
+            --out "${tmp_readme}"
             --tag "${RELEASE_TAG}"
           )
           if [ -n "${versions}" ]; then
             readme_args+=(--versions "${versions}")
           fi
           node .github/scripts/render-trusted-manifest-readme.mjs "${readme_args[@]}"
-          # 根目录内容复制到 version/latest 与 version/<tag>
-          for target in "${TRUSTED_MANIFEST_WORKTREE}/version/latest" "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"; do
-            cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${target}/index.json"
-            cp -a "${TRUSTED_MANIFEST_WORKTREE}/README.md" "${target}/README.md"
-          done
+          # 本版目录两条路径都先写好
+          cp -a "${tmp_index}" "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json"
+          cp -a "${tmp_readme}" "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/README.md"
+          if [ "${{ steps.tagcheck.outputs.prerelease }}" != "true" ]; then
+            node .github/scripts/clean-worktree.mjs --dir "${TRUSTED_MANIFEST_WORKTREE}"
+            rm -rf "${TRUSTED_MANIFEST_WORKTREE}/version/latest"
+            mkdir -p "${TRUSTED_MANIFEST_WORKTREE}/version/latest"
+            cp -a "${tmp_index}" "${TRUSTED_MANIFEST_WORKTREE}/index.json"
+            cp -a "${tmp_readme}" "${TRUSTED_MANIFEST_WORKTREE}/README.md"
+            cp -a "${tmp_index}" "${TRUSTED_MANIFEST_WORKTREE}/version/latest/index.json"
+            cp -a "${tmp_readme}" "${TRUSTED_MANIFEST_WORKTREE}/version/latest/README.md"
+          else
+            echo "预发行归档: 只新增 version/${RELEASE_TAG},trusted-manifest 分支根目录与 version/latest 保持原样"
+          fi
           # 版本留存: 规则与另外两条分支一致,裁剪在 commit 之前完成
           node .github/scripts/prune-versions.mjs --dir "${TRUSTED_MANIFEST_WORKTREE}/version"
           git -C "${TRUSTED_MANIFEST_WORKTREE}" config user.name "github-actions[bot]"
