@@ -145,6 +145,61 @@
   user-select: none;
 }
 
+/* 插件视图条目：条目名与插件名两行，与下方的会话条目同一套圆角、悬停与选中底色 */
+.viewItem {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 12px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+
+  &:hover {
+    background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  }
+
+  &:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  }
+
+  &.viewItemActive {
+    background-color: var(--dsw-specific-sidebar-nav-item-active-accent);
+
+    .viewTitle,
+    .viewCaption {
+      color: var(--dsw-alias-brand-primary-invert);
+    }
+  }
+}
+
+.viewTitle {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-primary);
+}
+
+.viewCaption {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-caption);
+}
+
 /* 底部两个入口叠放，只靠按钮自身的内边距分隔 */
 .bottom {
   display: flex;
@@ -252,6 +307,22 @@
     padding: 4px 10px 3px;
     font-size: 14px;
     line-height: 22px;
+  }
+
+  /* 触屏上条目抬高，标题与插件名一并放大一档 */
+  .viewItem {
+    padding: 9px 12px;
+    border-radius: 16px;
+  }
+
+  .viewTitle {
+    font-size: 16px;
+    line-height: 22px;
+  }
+
+  .viewCaption {
+    font-size: 13px;
+    line-height: 18px;
   }
 
   .bottom {

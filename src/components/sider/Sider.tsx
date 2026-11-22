@@ -16,15 +16,26 @@ import { IconButton } from '../base/IconButton.js'
 import { Modal } from '../base/Modal.js'
 import { showToast } from '../base/toastState.js'
 import { openSettings } from '../settings/settingsDialogState.js'
-import { openPluginPanel, showChat, usePluginPanel } from '../plugins/pluginPanelState.js'
+import {
+  openPluginPage,
+  openPluginPanel,
+  returnToChat,
+  usePluginView,
+} from '../plugins/pluginViewState.js'
+import { usePluginPageViews } from '../plugins/usePluginPageViews.js'
 import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
 
-/** 展开的侧边栏：名称与收起按钮、开启新对话、按时间分组的会话列表、底部设置；移动端放在抽屉里，收起按钮关闭抽屉 */
+/**
+ * 展开的侧边栏：名称与收起按钮、开启新对话、插件视图分组与按时间分组的会话列表、底部设置。
+ * 插件视图分组只在有插件登记页面时出现，条目与会话条目同形，选中即由主区渲染该页面；
+ * 移动端放在抽屉里，收起按钮关闭抽屉。
+ */
 export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const t = useTranslate()
-  const pluginView = usePluginPanel((state) => state.view)
+  const view = usePluginView((state) => state.view)
+  const pageViews = usePluginPageViews()
   const sessions = useChatStore((state) => state.sessions)
   const activeId = useChatStore((state) => state.activeId)
   const [now, setNow] = useState(Date.now)
@@ -76,8 +87,8 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
         type="button"
         className={styles.newChat}
         onClick={() => {
+          // 新对话本身就会回到会话视图(见 services/chat/store.ts 的 newChat)
           newChat()
-          showChat()
           closeMobileSider()
         }}
       >
@@ -88,6 +99,34 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       </button>
       <div className={styles.listWrap}>
         <div className={styles.list}>
+          {/* 插件视图分组: 没有插件登记页面时整块不出现, 会话列表保持原样 */}
+          {pageViews.length > 0 ? (
+            <div className={styles.section}>
+              <div className={styles.sectionHeader}>{t('pluginViewsGroup')}</div>
+              {pageViews.map((item) => {
+                const selected =
+                  view.kind === 'page' &&
+                  view.pluginId === item.pluginId &&
+                  view.pageId === item.pageId
+                return (
+                  <button
+                    key={item.pluginId + '/' + item.pageId}
+                    type="button"
+                    className={clsx(styles.viewItem, selected && styles.viewItemActive)}
+                    aria-current={selected ? 'page' : undefined}
+                    onClick={() => {
+                      openPluginPage(item.pluginId, item.pageId, activeId)
+                      // 移动端抽屉里选中视图后收起抽屉, 直接看到主区域
+                      closeMobileSider()
+                    }}
+                  >
+                    <span className={styles.viewTitle}>{item.title}</span>
+                    <span className={styles.viewCaption}>{item.pluginName}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : null}
           {groups.map((group) => (
             <div key={group.key} className={styles.section}>
               <div className={styles.sectionHeader}>{group.label}</div>
@@ -106,13 +145,13 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
       <div className={styles.bottom}>
         <button
           type="button"
-          className={clsx(styles.settings, pluginView === 'plugins' && styles.settingsActive)}
-          aria-pressed={pluginView === 'plugins'}
+          className={clsx(styles.settings, view.kind === 'panel' && styles.settingsActive)}
+          aria-pressed={view.kind === 'panel'}
           onClick={() => {
-            if (pluginView === 'plugins') {
-              showChat()
+            if (view.kind === 'panel') {
+              returnToChat()
             } else {
-              openPluginPanel()
+              openPluginPanel('installed', activeId)
             }
             // 移动端抽屉里点入口后收起抽屉，直接看到主区域
             closeMobileSider()

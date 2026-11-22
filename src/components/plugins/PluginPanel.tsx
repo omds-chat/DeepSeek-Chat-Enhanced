@@ -12,7 +12,6 @@ import { IconButton } from '../base/IconButton.js'
 import { IconRefreshOutline16 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
 import { InstalledPlugins } from './InstalledPlugins.js'
-import { PluginPages } from './PluginPages.js'
 import { PluginSettingsDetail } from './PluginSettingsDetail.js'
 import { judgeInstallFailure } from './installFailure.js'
 import { LocalInstall } from './LocalInstall.js'
@@ -21,6 +20,7 @@ import { PendingConflicts } from './PendingConflicts.js'
 import { MobileHeader } from '../session/MobileHeader.js'
 import {
   closePluginDetail,
+  setPluginPanelTab,
   usePluginPanel,
   type PluginPanelTab,
 } from './pluginPanelState.js'
@@ -30,12 +30,12 @@ import styles from './PluginPanel.module.css'
 const tabs: { value: PluginPanelTab; label: TranslationKey }[] = [
   { value: 'installed', label: 'pluginTabInstalled' },
   { value: 'market', label: 'pluginTabMarket' },
-  { value: 'pages', label: 'pluginTabPages' },
 ]
 
 /**
- * 插件页：占据主区域，与对话界面互斥。
+ * 插件面板：管理插件，占据主区域，与会话视图互斥。
  * 顶部是标题与刷新，下面分段标签页，主体滚动，安装栏固定在底部。
+ * 插件页面不在这里: 它是会话视图的一种, 入口在会话视图列表(见 pluginViewState)。
  */
 export const PluginPanel = () => {
   const t = useTranslate()
@@ -65,7 +65,7 @@ export const PluginPanel = () => {
       return
     }
     event.preventDefault()
-    usePluginPanel.setState({ tab: tabs[next].value })
+    setPluginPanelTab(tabs[next].value)
     tabRefs.current[next]?.focus()
   }
 
@@ -114,7 +114,7 @@ export const PluginPanel = () => {
               aria-controls={panelId}
               tabIndex={tab === item.value ? 0 : -1}
               className={clsx(styles.tab, tab === item.value && styles.tabActive)}
-              onClick={() => usePluginPanel.setState({ tab: item.value })}
+              onClick={() => setPluginPanelTab(item.value)}
             >
               {t(item.label)}
             </button>
@@ -127,10 +127,8 @@ export const PluginPanel = () => {
             <PendingConflicts plugins={plugins} refresh={refresh} />
             <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
           </div>
-        ) : tab === 'market' ? (
-          <MarketPlugins installedIds={installedIds} onInstalled={refresh} />
         ) : (
-          <PluginPages plugins={plugins} />
+          <MarketPlugins installedIds={installedIds} onInstalled={refresh} />
         )}
       </div>
       {tab === 'installed' ? <InstallFromUrl onInstalled={refresh} /> : null}

@@ -1616,8 +1616,16 @@ export type {
   SettingValueView,
   SettingWriteResult,
 } from './pluginSettings.js'
-/** 插件页面：错误类型与键规则；登记、校验与挂载点实现在 pluginPages.ts */
-export { PluginPageError, PAGE_KEY_PATTERN } from './pluginPages.js'
+/**
+ * 插件页面：错误类型、键规则与登记表订阅；登记、校验与挂载点实现在 pluginPages.ts。
+ * 页面是会话视图的一种: 宿主按登记表列出入口, 登记变化经订阅通知界面。
+ */
+export {
+  PluginPageError,
+  PAGE_KEY_PATTERN,
+  pageRegistryRevision,
+  subscribePageRegistry,
+} from './pluginPages.js'
 export type {
   PageActionDescriptor,
   PageActionHandler,

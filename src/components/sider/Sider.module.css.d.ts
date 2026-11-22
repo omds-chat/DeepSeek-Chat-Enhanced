@@ -11,6 +11,10 @@ declare const styles: {
   readonly "list": string;
   readonly "section": string;
   readonly "sectionHeader": string;
+  readonly "viewItem": string;
+  readonly "viewItemActive": string;
+  readonly "viewTitle": string;
+  readonly "viewCaption": string;
   readonly "bottom": string;
   readonly "settings": string;
   readonly "settingsActive": string;

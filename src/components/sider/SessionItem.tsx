@@ -6,7 +6,6 @@ import { renameSession, selectSession } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
-import { showChat } from '../plugins/pluginPanelState.js'
 import { closeMobileSider } from './mobileSiderState.js'
 import styles from './SessionItem.module.css'
 
@@ -52,8 +51,8 @@ export const SessionItem = memo(function SessionItem({
     <div
       className={clsx(styles.item, active && styles.active)}
       onClick={() => {
+        // 选中会话即回到会话视图: selectSession 内部一并切回(见 services/chat/store.ts)
         selectSession(session.id)
-        showChat()
         closeMobileSider()
       }}
     >

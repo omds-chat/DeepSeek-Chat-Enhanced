@@ -330,6 +330,37 @@ export const checkPageDescriptor = (
  */
 const declared = new Map<string, Map<string, PageDescriptor>>()
 
+/**
+ * 登记表的变更版本与订阅者。
+ * 会话视图标签栏与主区都按登记表渲染: 插件激活时登记页面、停用或卸载时撤销,
+ * 界面据此重渲染, 并且停在已撤销页面上的视图据此退回会话视图。
+ */
+let pageRevision = 0
+const pageListeners = new Set<() => void>()
+
+/** 登记表当前版本; 供 useSyncExternalStore 作快照 */
+export const pageRegistryRevision = (): number => pageRevision
+
+/** 订阅登记表变更; 返回退订函数 */
+export const subscribePageRegistry = (listener: () => void): (() => void) => {
+  pageListeners.add(listener)
+  return () => {
+    pageListeners.delete(listener)
+  }
+}
+
+/** 一处登记实际发生变化后递增版本并通知订阅者; 无变化时不通知, 免得界面空转 */
+const announcePageChange = (): void => {
+  pageRevision += 1
+  for (const listener of [...pageListeners]) {
+    try {
+      listener()
+    } catch {
+      // 订阅者自身出错不阻断其他订阅者, 也不回滚已经生效的登记
+    }
+  }
+}
+
 /** 登记一份页面描述; 同插件同 id 再次登记时替换前一份 */
 export const declarePage = (pluginId: string, descriptor: PageDescriptor): void => {
   let pages = declared.get(pluginId)
@@ -338,25 +369,29 @@ export const declarePage = (pluginId: string, descriptor: PageDescriptor): void 
     declared.set(pluginId, pages)
   }
   pages.set(descriptor.id, descriptor)
+  announcePageChange()
 }
 
 /** 撤销单个页面 */
 export const forgetPage = (pluginId: string, pageId: string): void => {
   const pages = declared.get(pluginId)
-  if (!pages) {
+  if (!pages || !pages.delete(pageId)) {
     return
   }
-  pages.delete(pageId)
   if (pages.size === 0) {
     declared.delete(pluginId)
   }
+  announcePageChange()
 }
 
 /** 撤销单个插件的全部页面登记, 并一并清掉动作与数据挂载点; 与卸载清理同法 */
 export const forgetPages = (pluginId: string): void => {
-  declared.delete(pluginId)
+  const hadPages = declared.delete(pluginId)
   pageActionHandlers.delete(pluginId)
   pageDataHandlers.delete(pluginId)
+  if (hadPages) {
+    announcePageChange()
+  }
 }
 
 /** 全部已登记页面; 宿主据此给每个页面一个入口 */

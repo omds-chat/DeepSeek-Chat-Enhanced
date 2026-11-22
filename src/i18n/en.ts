@@ -467,9 +467,10 @@ export const en = {
   pluginSettingsLoading: 'Loading settings',
   pluginSettingsSaveHint: 'Changes take effect after saving',
   pluginPageRejected: 'Page descriptor of plugin {id} was rejected: {reason}',
-  pluginTabPages: 'Plugin pages',
-  pluginPagesBack: 'Back to page list',
-  pluginPagesEmpty: 'No plugin has registered a page',
+  pluginViewsGroup: 'Plugin views',
+  pluginViewBackToChat: 'Back to the conversation',
+  pluginViewBackToChatNamed: 'Back to the conversation "{title}"',
+  pluginViewRevoked: 'The page of plugin {plugin} is gone (stopped or uninstalled); back to the conversation',
   pluginPagesLoading: 'Loading the page',
   pluginPagesLoadFailed: 'The page is gone or the plugin is inactive',
   trustListRootMismatch:

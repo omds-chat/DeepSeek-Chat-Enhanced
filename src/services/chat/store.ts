@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { patchRequestForSend } from '../../components/dsc-core/request-patch.js'
+import { returnToChat } from '../../components/plugins/pluginViewState.js'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import { serverTools } from '../api/tools.js'
@@ -434,6 +435,8 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
 export const newChat = () => {
   if (!get().importingHistory) {
     set({ activeId: null })
+    // 会话视图与插件视图在主区的同一块位置上互斥: 开新对话即回到会话视图
+    returnToChat()
     trimSessionCache()
   }
 }
@@ -442,6 +445,8 @@ export const selectSession = (id: string) => {
   if (!get().importingHistory && get().sessions.some((session) => session.id === id)) {
     touchSession(id)
     set({ activeId: id })
+    // 选中会话即回到会话视图, 不必等界面自己收拾当前停在的插件视图
+    returnToChat()
     void ensureSessionLoaded(id)
     trimSessionCache()
   }

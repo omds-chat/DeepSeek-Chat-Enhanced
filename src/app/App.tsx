@@ -17,7 +17,9 @@ import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { PluginPanel } from '../components/plugins/PluginPanel.js'
-import { usePluginPanel } from '../components/plugins/pluginPanelState.js'
+import { PluginPageView } from '../components/plugins/PluginPageView.js'
+import { bindPluginViewLifecycle } from '../components/plugins/pluginViewLifecycle.js'
+import { usePluginView } from '../components/plugins/pluginViewState.js'
 import { Toast } from '../components/base/Toast.js'
 import { VersionNotice } from '../components/base/VersionNotice.js'
 import { showToast } from '../components/base/toastState.js'
@@ -52,8 +54,8 @@ export const App = () => {
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
   )
   const activeId = useChatStore((state) => state.activeId)
-  // 主区域在对话与插件页之间切换
-  const pluginView = usePluginPanel((state) => state.view)
+  // 会话视图的选中项: 既有会话、插件面板与插件页面各是一种, 主区同一时刻只渲染其中一种
+  const view = usePluginView((state) => state.view)
 
   usePreventPageScroll(isMobile)
 
@@ -64,6 +66,8 @@ export const App = () => {
   // 文件数、存储空间达到上限时，附件上只显示「上传失败」，原因用 toast 说明
   useEffect(() => onUploadNotice(showToast), [])
   useEffect(bindChatPersistence, [])
+  // 停在的插件页面随停用或卸载撤销时退回会话视图, 用气泡说明一次
+  useEffect(bindPluginViewLifecycle, [])
 
   // 搜索结果面板只属于当前会话
   useEffect(closeSearchPanel, [activeId])
@@ -98,8 +102,14 @@ export const App = () => {
           ) : null}
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
-            {pluginView === 'plugins' ? (
+            {view.kind === 'panel' ? (
               <PluginPanel />
+            ) : view.kind === 'page' ? (
+              <PluginPageView
+                pluginId={view.pluginId}
+                pageId={view.pageId}
+                siderCollapsed={siderCollapsed}
+              />
             ) : !ready || (activeId !== null && !session) ? (
               <div className={styles.loadingView}>
                 {isMobile ? <MobileHeader /> : null}

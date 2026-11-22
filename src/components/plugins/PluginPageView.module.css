@@ -1,44 +1,8 @@
-/* 插件页面: 复用设置表面的样式 token, 只补页面区块自身的少量布局 */
+/* 插件会话视图: 复用设置表面的样式 token, 只补页面区块自身的少量布局 */
 
-.entryList {
-  display: flex;
-  flex-direction: column;
-}
-
-.entry {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 0;
-}
-
-.entry + .entry {
-  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
-}
-
-.entryHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.entryTitle {
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--dsw-alias-label-primary);
-}
-
-.entryCaption {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-caption);
-}
-
-.pageTitle {
-  padding: 4px 0 8px;
-  font-size: 16px;
-  line-height: 24px;
-  color: var(--dsw-alias-label-primary);
+/* 侧边栏收起时让开左上角的悬浮按钮组; 取值与会话页标题的同一处让位一致 */
+.headerCollapsed {
+  margin-left: 113px;
 }
 
 .text {
