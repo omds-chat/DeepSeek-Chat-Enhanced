@@ -2,9 +2,10 @@
 /**
  * 裁剪分支工作树的 version 目录,只保留最近的 MAX_VERSIONS 个历史版本。
  *
- * 排序口径: 版本目录名按 dsc-主版本.次版本.修订版本 解析成三段数值后比较,
+ * 排序口径: 版本目录名按 dsc-主版本.次版本.修订版本(-alpha.序号) 解析成数值后比较,
  * 按数值排序,避免 10.0.0 排在 9.0.0 之前这样的字符串序错误;
- * 三段数值都相同时再比较目录名,保证同一份目录树的排序结果稳定可复现。
+ * 三段数值都相同时,正式版排在测试版之前,测试版之间按序号降序;
+ * 仍相同时再比较目录名,保证同一份目录树的排序结果稳定可复现。
  *
  * 保留 latest 目录(当前版本入口)与数值最大的 MAX_VERSIONS 个版本目录,其余版本目录删除。
  * 不符合命名规范的条目一律跳过并给出警告,既不参与排序也不删除。
@@ -22,8 +23,12 @@ export const MAX_VERSIONS = 1000
 /** latest 目录指向当前版本,不属于历史版本,始终保留 */
 export const LATEST_ENTRY = 'latest'
 
-/** 版本目录命名: dsc-主版本.次版本.修订版本,三段均为十进制数 */
-export const VERSION_PATTERN = /^dsc-([0-9]+)\.([0-9]+)\.([0-9]+)$/
+/**
+ * 版本目录命名: dsc-主版本.次版本.修订版本,三段均为十进制数。
+ * 测试版追加 -alpha.序号(序号为十进制数),是正式版之外的发布形态,
+ * 在 version/ 下以 version/<tag>/ 独立成目录,同样参与留存裁剪。
+ */
+export const VERSION_PATTERN = /^dsc-([0-9]+)\.([0-9]+)\.([0-9]+)(-alpha\.([0-9]+))?$/
 
 const USAGE = [
   '用法: node .github/scripts/prune-versions.mjs --dir <version 目录>',
@@ -41,7 +46,8 @@ const warn = (message) => {
 }
 
 /**
- * 解析版本目录名,返回三段数值。
+ * 解析版本目录名,返回三段数值与测试版序号。
+ * 测试版 pre 序号取 alpha 后的序号值;正式版 pre 为 null。
  * 不符合命名规范时返回 null,由调用方按条目跳过处理。
  */
 export const parseVersionEntry = (name) => {
@@ -52,18 +58,31 @@ export const parseVersionEntry = (name) => {
   return {
     name,
     parts: [Number(matched[1]), Number(matched[2]), Number(matched[3])],
+    pre: matched[4] === undefined ? null : Number(matched[5]),
   }
 }
 
 /**
  * 按三段数值降序比较,数值最大的排在前面。
- * 三段数值相同时按目录名降序,保证排序结果稳定。
+ * 三段数值相同时,正式版排在测试版之前(同基础版本的正式发布晚于其测试版);
+ * 两个测试版之间按序号降序。
+ * 全部相同时按目录名降序,保证排序结果稳定。
  */
 export const compareVersionsDesc = (left, right) => {
   for (let index = 0; index < 3; index += 1) {
     if (left.parts[index] !== right.parts[index]) {
       return right.parts[index] - left.parts[index]
     }
+  }
+  if (left.pre !== right.pre) {
+    // 正式版(pre 为 null)视为更大,排在前面
+    if (left.pre === null) {
+      return -1
+    }
+    if (right.pre === null) {
+      return 1
+    }
+    return right.pre - left.pre
   }
   if (left.name === right.name) {
     return 0
@@ -93,7 +112,7 @@ export const pruneVersions = (dir, max = MAX_VERSIONS) => {
     }
     const parsed = parseVersionEntry(entry)
     if (parsed === null) {
-      skipped.push({ name: entry, reason: '命名不符合 dsc-主版本.次版本.修订版本' })
+      skipped.push({ name: entry, reason: '命名不符合 dsc-主版本.次版本.修订版本(-alpha.序号)' })
       continue
     }
     if (!lstatSync(path.join(root, entry)).isDirectory()) {
