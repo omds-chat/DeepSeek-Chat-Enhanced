@@ -21,8 +21,9 @@ name: Deploy GitHub Pages
 #   release 事件触发时 tag 的后缀必须与 Release 的预发行标记一致,不匹配即拒绝执行;
 #   四条分支必须两两无公共祖先;并行分支缺失时报错中止,不自动创建
 # - 版本留存: 三条并行分支的 version 目录各自只保留最近 1000 个版本,裁剪在 commit 之前完成
-# - 组装 RUNNER_TEMP/pages: 构建产物在站点根,certs/ 与 index.json 同样放在站点根,
-#   使 index.json 里 certs/... 的相对路径在站点根、version/latest 与 version/<tag> 内都成立;
+# - 组装 RUNNER_TEMP/pages: 正式发行时站点根是本轮构建产物,certs/ 与 index.json 同样放在站点根,
+#   预发行时站点根维持最近一次正式发行的产物,不把预发行构建顶上站点根;
+#   index.json 里 certs/... 的相对路径在站点根、version/latest 与 version/<tag> 内都成立;
 #   三条归档分支的 version 目录全部释放合并进页面包,/version/<tag>/ 是该版本的完整快照
 #   (构建产物、certs/、index.json);组装完成后上传并用 actions/deploy-pages 部署
 
@@ -426,17 +427,31 @@ jobs:
           pages="${RUNNER_TEMP}/pages"
           rm -rf "${pages}"
           mkdir -p "${pages}" "${pages}/version"
-          cp -a "${BUILD_DIR}/." "${pages}/"
-          # 站点根信任材料统一取自本版快照目录 version/<tag>:
-          # 正式发行时该目录与分支根目录三份一致,预发行时分支根目录不被触碰,本版材料只在这里;
-          # 归档步骤每次运行都重建本版目录,组装取到的永远是本轮刚构建的内容
-          if [ ! -d "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" ] || [ ! -f "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" ]; then
-            echo "::error::归档分支缺少本版信任材料(version/${RELEASE_TAG}/certs 与 version/${RELEASE_TAG}/index.json),页面包不完整,中止"
+          # 站点根: 正式发行用本轮构建产物;预发行用最近一次正式发行的产物(dist-history 分支根),
+          # 不把预发行构建顶上站点根——预发行对站点根的唯一改动是新增 version/<tag>/。
+          # 尚无任何正式发行时(分支根只有 README),退回本轮构建产物兜底。
+          site_root="${BUILD_DIR}"
+          if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ] && [ -f "${DIST_HISTORY_WORKTREE}/index.html" ]; then
+            site_root="${DIST_HISTORY_WORKTREE}"
+          fi
+          cp -a "${site_root}/." "${pages}/"
+          # 站点根信任材料与站点根同口径: 正式发行用分支根目录(本轮内容),预发行用分支根目录
+          # (最近一次正式发行的材料,分支根未被预发行触碰);分支尚无内容时退回本版快照目录。
+          if [ -d "${CERTS_WORKTREE}/certs" ]; then
+            cp -a "${CERTS_WORKTREE}/certs" "${pages}/certs"
+          elif [ -d "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" ]; then
+            cp -a "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" "${pages}/certs"
+          fi
+          if [ -f "${TRUSTED_MANIFEST_WORKTREE}/index.json" ]; then
+            cp -a "${TRUSTED_MANIFEST_WORKTREE}/index.json" "${pages}/index.json"
+          elif [ -f "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" ]; then
+            cp -a "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" "${pages}/index.json"
+          fi
+          # 两者缺一时页面包不完整,直接中止而不是上传半份信任材料
+          if [ ! -d "${pages}/certs" ] || [ ! -f "${pages}/index.json" ]; then
+            echo "::error::页面包缺少 certs/ 或 index.json,中止"
             exit 1
           fi
-          mkdir -p "${pages}/certs"
-          cp -a "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs/." "${pages}/certs/"
-          cp -a "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" "${pages}/index.json"
           # 三个归档分支的 version 目录全部释放进页面包:
           # version/<tag>/ 因此是该版本的完整快照(构建产物 + certs/ + index.json + README.md),
           # 同名文件按「产物 -> 证书 -> 清单」的顺序后者覆盖前者(清单分支的 README.md 最终生效)

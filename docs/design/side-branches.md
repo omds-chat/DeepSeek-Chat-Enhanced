@@ -30,9 +30,9 @@
 
 | 位置 | 内容 |
 |:---:|:---:|
-| 站点根 | 构建产物(页面、静态资源、`LICENSE`) |
-| 站点根 `certs/` | 当前证书目录,来自 `certs` 分支 |
-| 站点根 `index.json` | 当前信任清单,来自 `trusted-manifest` 分支 |
+| 站点根 | 构建产物(页面、静态资源、`LICENSE`)。正式发行用本轮构建顶上站点根;预发行不动站点根,维持最近一次正式发行的产物(来自 `dist-history` 分支根) |
+| 站点根 `certs/` | 当前证书目录,来自 `certs` 分支根目录 |
+| 站点根 `index.json` | 当前信任清单,来自 `trusted-manifest` 分支根目录 |
 | 站点根 `version/latest/`、`version/<tag>/` | 三条归档分支的历史版本释放合并成一份,每个版本目录是该版本的完整快照:构建产物(来自 `dist-history`)、`certs/`(来自 `certs` 分支)、`index.json` 与 `README.md`(来自 `trusted-manifest` 分支) |
 
 站点 `version/<tag>/` 的结构:
