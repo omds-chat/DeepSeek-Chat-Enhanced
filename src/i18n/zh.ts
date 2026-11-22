@@ -187,6 +187,8 @@ export const zh = {
   settingsLocaleEnUS: 'English',
   pluginBypassDetected: '检测到绕过插件引擎直接访问内核的调用，已拦截：{capability}',
   pluginInstallRejected: '插件 {id} 安装失败：{reason}',
+  pluginAssetInstalled: '资产包 {id} 安装完成',
+  pluginAssetInstallFailed: '资产包 {id} 安装失败：{reason}',
   pluginActivateFailed: '插件 {id} 启动失败：{reason}',
   pluginActivateMissingDependency: '插件 {id} 未启用，已标记为停用：{reason}',
   pluginDependencyAutoStopped: '插件 {id} 已自动停用：它依赖的插件 {dependency} 未启用',
