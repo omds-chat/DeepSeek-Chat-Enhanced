@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "collections": [
+    {
+      "id": "awesome-dsc-plugin",
+      "eec": "awesome-dsc-plugin/awesome-dsc-plugin-eec.crt"
+    }
+  ]
+}

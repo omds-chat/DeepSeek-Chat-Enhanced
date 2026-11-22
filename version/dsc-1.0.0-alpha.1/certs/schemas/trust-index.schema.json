@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/omds-chat/DeepSeek-Chat-Enhanced/certs/schemas/trust-index.schema.json",
+  "title": "trusted-manifest 信任清单",
+  "description": "trusted-manifest 分支根目录 index.json 的结构。所有路径都相对 certs 分支根目录,指向从 certs 包原样复制过来的证书。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "rootCa",
+    "collections"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2,
+      "description": "清单结构版本,当前固定为 2。"
+    },
+    "rootCa": {
+      "$ref": "#/$defs/relativePath",
+      "description": "根证书的相对路径,按 certs 布局为 certs/ds-chat/ds-chat-root-ca.crt;只作比对,信任锚始终是构建内嵌的根证书。"
+    },
+    "crl": {
+      "description": "吊销列表的相对路径,按 certs 分支根目录解析;没有吊销列表时为 null。",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/relativePath"
+        }
+      ]
+    },
+    "collections": {
+      "type": "array",
+      "description": "已登记的插件合集,每项给出合集 id 与其 EEC 证书路径。",
+      "items": {
+        "$ref": "#/$defs/collection"
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "description": "相对 certs 分支根目录的路径,正斜杠分隔,不得为绝对路径、不得带协议、不得含两个点开头的目录穿越。",
+      "minLength": 1,
+      "pattern": "^(?!\\./)(?![A-Za-z][A-Za-z0-9+.-]*:)(?!/)(?!.*(^|/)\\.\\.(/|$))(?!.*\\\\)\\S+$"
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "eec"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "合集 id,同时是合集在 certs 下的目录名。",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "eec": {
+          "$ref": "#/$defs/relativePath",
+          "description": "该合集 EEC 证书的相对路径,按 certs 布局为 certs/<合集 id>/<合集 id>-eec.crt。"
+        }
+      }
+    }
+  }
+}
