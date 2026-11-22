@@ -51,8 +51,7 @@ env:
   # 主工作区的构建产物目录: rspack 的输出目录,也是 .gitignore 里的 dist/,与分支名无关
   BUILD_DIR: dist
   # 三条并行分支的归档 tag 后缀。
-  # git 的 tag 位于整个仓库共用的 refs/tags 命名空间,三条分支无法持有同名 tag:
-  # 先打的 tag 会让后一步的「已发布」预检查命中并整步跳过,因此按分支加后缀。
+  # git 的 tag 位于整个仓库共用的 refs/tags 命名空间,三条分支无法持有同名 tag,因此按分支加后缀。
   # 后缀与分支名完全一致,不做另一套缩写;基础 tag 即发布 tag(形如 dsc-1.0.0),
   # 归档分支的标记 tag 为基础 tag 加后缀,version 目录名使用基础 tag,即 version/dsc-1.0.0/。
   DIST_HISTORY_TAG_SUFFIX: -dist-history
@@ -211,30 +210,6 @@ jobs:
           assert_orphan dist-history "${sha_dist_history}" trusted-manifest "${sha_trusted_manifest}"
           assert_orphan certs "${sha_certs}" trusted-manifest "${sha_trusted_manifest}"
 
-      # 预检查: 各分支内是否已有同名 tag。
-      # 判定在本轮 push 之前完成并写入步骤输出,避免先发布的步骤新打的 tag 影响后续判定。
-      - name: Resolve archive tags
-        id: archive
-        run: |
-          set -euo pipefail
-          resolve_tag() {
-            local name="$1"
-            local worktree="$2"
-            local suffix="$3"
-            local key="$4"
-            local tag="${RELEASE_TAG}${suffix}"
-            if [ -n "$(git -C "${worktree}" tag --list "${tag}")" ]; then
-              echo "${name} 分支已有 tag ${tag},跳过整个 ${name} 步骤"
-              echo "${key}=true" >> "${GITHUB_OUTPUT}"
-            else
-              echo "${name} 分支没有 tag ${tag},执行 ${name} 步骤"
-              echo "${key}=false" >> "${GITHUB_OUTPUT}"
-            fi
-          }
-          resolve_tag dist-history "${DIST_HISTORY_WORKTREE}" "${DIST_HISTORY_TAG_SUFFIX}" skip_dist_history
-          resolve_tag certs "${CERTS_WORKTREE}" "${CERTS_TAG_SUFFIX}" skip_certs
-          resolve_tag trusted-manifest "${TRUSTED_MANIFEST_WORKTREE}" "${TRUSTED_MANIFEST_TAG_SUFFIX}" skip_trusted_manifest
-
       - name: Set up pnpm
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
@@ -289,10 +264,12 @@ jobs:
       # 正式发行: 分支根目录、version/latest、version/<tag> 三份内容完全一致。
       # 预发行: 不清理、不动根目录与 version/latest,只在 version/<tag>/ 新增一个目录存放本版产物。
       - name: Publish dist-history branch
-        if: steps.archive.outputs.skip_dist_history == 'false'
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${DIST_HISTORY_TAG_SUFFIX}"
+          # 幂等重建: 本版目录与本地旧 tag 一律先清再建
+          rm -rf "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
+          git -C "${DIST_HISTORY_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
           mkdir -p "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
           cp -a "${BUILD_DIR}/." "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}/"
           if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ]; then
@@ -328,10 +305,12 @@ jobs:
       # trusted-manifest 分支的 index.json 用 certs/... 相对路径登记证书,两条分支与合并后的页面包里路径因此一致。
       # 本步骤不生成、不签发、不替换任何证书,只做复制。
       - name: Publish certs branch
-        if: steps.archive.outputs.skip_certs == 'false'
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${CERTS_TAG_SUFFIX}"
+          # 幂等重建: 本版目录与本地旧 tag 一律先清再建
+          rm -rf "${CERTS_WORKTREE}/version/${RELEASE_TAG}"
+          git -C "${CERTS_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
           # 本版目录两条路径都先写好: 预发行只写这一处,正式发行随后复用
           mkdir -p "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs"
           cp -a certs/. "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs/"
@@ -379,10 +358,12 @@ jobs:
       # 整体签名还会把清单分发的完整性绑到同一张 EEC 私钥上,轮换私钥就要重签全部历史版本。
       # 因此这里只依赖根证书内嵌与逐张 EEC 的链校验,省略整体签名。
       - name: Publish trusted-manifest branch
-        if: steps.archive.outputs.skip_trusted_manifest == 'false'
         run: |
           set -euo pipefail
           archive_tag="${RELEASE_TAG}${TRUSTED_MANIFEST_TAG_SUFFIX}"
+          # 幂等重建: 本版目录与本地旧 tag 一律先清再建
+          rm -rf "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"
+          git -C "${TRUSTED_MANIFEST_WORKTREE}" tag -d "${archive_tag}" 2>/dev/null || true
           mkdir -p "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}"
           # 清单先在临时目录生成,预发行不落分支根目录,正式发行随后分发
           tmp_index="${RUNNER_TEMP}/trusted-index.json"
@@ -448,7 +429,7 @@ jobs:
           cp -a "${BUILD_DIR}/." "${pages}/"
           # 站点根信任材料统一取自本版快照目录 version/<tag>:
           # 正式发行时该目录与分支根目录三份一致,预发行时分支根目录不被触碰,本版材料只在这里;
-          # 已发布过的 tag 重跑时归档步骤整体跳过,本版材料仍然在本版目录里,口径不随重跑改变
+          # 归档步骤每次运行都重建本版目录,组装取到的永远是本轮刚构建的内容
           if [ ! -d "${CERTS_WORKTREE}/version/${RELEASE_TAG}/certs" ] || [ ! -f "${TRUSTED_MANIFEST_WORKTREE}/version/${RELEASE_TAG}/index.json" ]; then
             echo "::error::归档分支缺少本版信任材料(version/${RELEASE_TAG}/certs 与 version/${RELEASE_TAG}/index.json),页面包不完整,中止"
             exit 1
@@ -476,7 +457,7 @@ jobs:
 
       # 归档推送: 放在流程最末尾,组装与上传全部成功后才推三条分支与归档 tag,
       # 中途任何一步失败都不会在归档分支留下半套提交或 tag 污染。
-      # 已发布过的 tag 重跑时本步为幂等推送(远端同名 tag 指向同一对象,推送结果为 up-to-date)。
+      # 分支推送按快进前进;tag 每次重建,用 --force 覆盖远端旧 tag。
       - name: Push archive branches
         run: |
           set -euo pipefail
@@ -485,7 +466,7 @@ jobs:
             local branch="$2"
             local suffix="$3"
             git -C "${worktree}" push origin "HEAD:${branch}"
-            git -C "${worktree}" push origin "refs/tags/${RELEASE_TAG}${suffix}"
+            git -C "${worktree}" push origin "refs/tags/${RELEASE_TAG}${suffix}" --force
           }
           push_archive "${DIST_HISTORY_WORKTREE}" dist-history "${DIST_HISTORY_TAG_SUFFIX}"
           push_archive "${CERTS_WORKTREE}" certs "${CERTS_TAG_SUFFIX}"
