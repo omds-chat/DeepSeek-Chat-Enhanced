@@ -12,11 +12,13 @@ name: Deploy GitHub Pages
 #   online-data -> certs + trusted-manifest: 原来一份内容按「证书本体」与「信任清单」拆成两条分支
 # - 网页产物在主工作区构建并签名,签名完成的产物再复制到 dist-history 的三处,
 #   保证分支根目录、version/latest、version/<tag> 三份一致且各自可自校验
-# - 测试版(tag 形如 dsc-主版本.次版本.修订版本-alpha.序号,序号为十进制数)是正式版之外的发布形态:
+# - 预发行(tag 形如 dsc-主版本.次版本.修订版本-XXX.序号,XXX 为小写字母串,序号为十进制数)
+#   是正式版之外的发布形态,XXX 不限定具体词表是为了保留扩展性(alpha、beta、rc 等):
 #   归档口径收敛为只在 dist-history 的 version/ 下新增 version/<tag>/ 一个目录存放本版产物,
 #   不替换 dist-history 分支根目录内容,不替换 version/latest,也不改动 certs 与 trusted-manifest 两条分支;
 #   version/<tag>/ 目录随页面包照常发布
-# - 预检查: 发布 tag 必须形如 dsc-主版本.次版本.修订版本 或 dsc-主版本.次版本.修订版本-alpha.序号;
+# - 预检查: 发布 tag 必须形如 dsc-主版本.次版本.修订版本(正式发行)或 dsc-主版本.次版本.修订版本-XXX.序号(预发行);
+#   release 事件触发时 tag 的后缀必须与 Release 的预发行标记一致,不匹配即拒绝执行;
 #   四条分支必须两两无公共祖先;并行分支缺失时报错中止,不自动创建
 # - 版本留存: 三条并行分支的 version 目录各自只保留最近 1000 个版本,裁剪在 commit 之前完成
 # - 组装 RUNNER_TEMP/pages: 构建产物在站点根,certs/ 与 index.json 同样放在站点根,
@@ -65,9 +67,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      # 预检查: 发布 tag 的命名格式。
+      # 预检查: 发布 tag 的命名格式与触发方式的对应性。
       # 版本号统一为 dsc-主版本.次版本.修订版本,三段均为十进制数;
-      # 测试版在其后追加 -alpha.序号(序号为十进制数),属于测试版本而非正式版本;
+      # 预发行在其后追加 -XXX.序号(XXX 为小写字母串,序号为十进制数),属于预发行而非正式发行;
+      # release 事件触发时,tag 后缀必须与 Release 的预发行标记一致,不匹配拒绝执行;
+      # workflow_dispatch 触发时按 tag 后缀判定发行类型;
       # 格式不符直接中止,避免不合规的 tag 进入 version 目录并污染后续归档。
       - name: Validate release tag format
         id: tagcheck
@@ -77,16 +81,26 @@ jobs:
             echo "::error::未取得发布 tag"
             exit 1
           fi
-          if [[ ! "${RELEASE_TAG}" =~ ^dsc-[0-9]+\.[0-9]+\.[0-9]+(-alpha\.[0-9]+)?$ ]]; then
-            echo "::error::发布 tag ${RELEASE_TAG} 不符合格式;正确格式为 dsc-主版本.次版本.修订版本,或测试版 dsc-主版本.次版本.修订版本-alpha.序号,三段与序号均为十进制数,例如 dsc-1.0.0 或 dsc-1.0.0-alpha.1"
+          if [[ ! "${RELEASE_TAG}" =~ ^dsc-[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+\.[0-9]+)?$ ]]; then
+            echo "::error::发布 tag ${RELEASE_TAG} 不符合格式;正式发行格式为 dsc-主版本.次版本.修订版本,预发行格式为 dsc-主版本.次版本.修订版本-XXX.序号(XXX 为小写字母串,序号为十进制数),例如 dsc-1.0.0 或 dsc-1.0.0-alpha.1"
             exit 1
           fi
-          if [[ "${RELEASE_TAG}" =~ -alpha\.[0-9]+$ ]]; then
+          if [[ "${RELEASE_TAG}" =~ -[a-z]+\.[0-9]+$ ]]; then
             echo "prerelease=true" >> "${GITHUB_OUTPUT}"
-            echo "发布 tag ${RELEASE_TAG} 是测试版,归档走测试版口径"
           else
             echo "prerelease=false" >> "${GITHUB_OUTPUT}"
-            echo "发布 tag ${RELEASE_TAG} 是正式版,格式符合 dsc-主版本.次版本.修订版本"
+          fi
+          if [ "${{ github.event_name }}" = "release" ]; then
+            flag="${{ github.event.release.prerelease }}"
+            if [ "${flag}" != "${{ steps.tagcheck.outputs.prerelease }}" ]; then
+              echo "::error::发行类型与 tag 不匹配:Release 的预发行标记为 ${flag},而 tag ${RELEASE_TAG} 的后缀格式与之不一致;两者必须对应"
+              exit 1
+            fi
+          fi
+          if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ]; then
+            echo "发布 tag ${RELEASE_TAG} 是预发行,归档走预发行口径"
+          else
+            echo "发布 tag ${RELEASE_TAG} 是正式发行"
           fi
 
       # 四份检出之一: 主工作区检出到 release tag
@@ -272,7 +286,7 @@ jobs:
 
       # dist-history 分支归档: 清理 -> 重建 version 目录 -> 复制产物 -> 裁剪历史版本 -> commit、打 tag、push
       # 正式版: 分支根目录、version/latest、version/<tag> 三份内容完全一致。
-      # 测试版: 不清理、不动根目录与 version/latest,只在 version/<tag>/ 新增一个目录存放本版产物。
+      # 预发行: 不清理、不动根目录与 version/latest,只在 version/<tag>/ 新增一个目录存放本版产物。
       - name: Publish dist-history branch
         if: steps.archive.outputs.skip_dist_history == 'false'
         run: |
@@ -281,7 +295,7 @@ jobs:
           mkdir -p "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}"
           cp -a "${BUILD_DIR}/." "${DIST_HISTORY_WORKTREE}/version/${RELEASE_TAG}/"
           if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ]; then
-            echo "测试版归档: 只新增 version/${RELEASE_TAG},根目录与 version/latest 保持原样"
+            echo "预发行归档: 只新增 version/${RELEASE_TAG},根目录与 version/latest 保持原样"
           else
             # 白名单在脚本内定义为常量,除 .git 与白名单外全部删除,隐藏文件一并删除
             node .github/scripts/clean-worktree.mjs --dir "${DIST_HISTORY_WORKTREE}"
@@ -309,7 +323,7 @@ jobs:
           git -C "${DIST_HISTORY_WORKTREE}" push origin "refs/tags/${archive_tag}"
 
       # certs 分支归档: 清理 -> 重建 version 目录 -> 复制主仓库 certs/ -> 裁剪历史版本 -> commit、打 tag、push
-      # 测试版整步跳过(测试版不动本分支)。
+      # 预发行整步跳过(预发行不动本分支)。
       # 内容来源只有主仓库 certs/ 目录,整体原样复制并保留 certs/ 这一层前缀:
       # trusted-manifest 分支的 index.json 用 certs/... 相对路径登记证书,两条分支与合并后的页面包里路径因此一致。
       # 本步骤不生成、不签发、不替换任何证书,只做复制。
@@ -343,7 +357,7 @@ jobs:
           git -C "${CERTS_WORKTREE}" push origin "refs/tags/${archive_tag}"
 
       # trusted-manifest 分支归档: 清理 -> 生成 index.json -> 渲染 README -> 重建 version 目录
-      # 测试版整步跳过(测试版不动本分支)。
+      # 预发行整步跳过(预发行不动本分支)。
       # -> 裁剪历史版本 -> commit、打 tag、push
       # 内容来源: build-trust-index.mjs 依据主仓库 certs/manifest.json 生成的 index.json(落点为本分支根目录);
       # 证书本体不在本分支,由 certs 分支分发,因此 index.json 里登记的是 certs/... 相对路径而不是证书字节。

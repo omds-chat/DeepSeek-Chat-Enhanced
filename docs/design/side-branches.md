@@ -2,14 +2,14 @@
 
 本文记录本仓库三条并行分支(`dist-history`、`certs`、`trusted-manifest`)的落地口径。分支的职责、命名规则与归档流程由组织仓库的 `.github/docs/repo-spec/side-branches.md` 规定,本文不重复其条文,只记本仓库的落地情况;三条分支都只由 `.github/workflows/pages.yml` 写入,不从 `main` 派生,也不合并回 `main`,发布流水线发现某条分支缺失时报错中止,不代为创建。
 
-## 测试版的归档口径
+## 预发行的归档口径
 
-组织级规范之外,本仓库的发布流水线对测试版产物有两条补充口径:
+组织级规范之外,本仓库的发布流水线对预发行产物(tag 形如 dsc-x.y.z-XXX.n,XXX 为小写字母串)有两条补充口径:
 
 | 事项 | 口径 |
 |:---:|:---:|
-| `dist-history`(测试版) | 测试版(`dsc-x.y.z-alpha.n`)的产物只落在 `version/<tag>/` 一个目录里,不替换分支根目录,不替换 `version/latest/` |
-| 归档(测试版) | 测试版 tag 只在 `dist-history` 的 `version/` 下新增一个版本目录并随页面包发布;不清理 `dist-history` 工作树、不动其根目录与 `version/latest/`,也不写 `certs` 与 `trusted-manifest` 两条分支 |
+| `dist-history`(预发行) | 预发行的产物只落在 `version/<tag>/` 一个目录里,不替换分支根目录,不替换 `version/latest/` |
+| 归档(预发行) | 预发行 tag 只在 `dist-history` 的 `version/` 下新增一个版本目录并随页面包发布;不清理 `dist-history` 工作树、不动其根目录与 `version/latest/`,也不写 `certs` 与 `trusted-manifest` 两条分支 |
 
 ## 旧名与新名的对应关系
 

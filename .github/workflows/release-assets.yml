@@ -1,0 +1,123 @@
+name: Attach release assets
+
+# 发行附件打包流程:把构建产物打包成 zip 并上传到对应 Release 的 assets
+# - 触发: release published(正式发行与预发行都触发),或手动指定 tag 补传附件
+# - 校验: tag 格式(正式发行 dsc-主版本.次版本.修订版本,预发行 dsc-主版本.次版本.修订版本-XXX.序号,
+#   XXX 为小写字母串,序号为十进制数);
+#   release 事件触发时,tag 后缀必须与 Release 的预发行标记一致,不匹配拒绝执行;
+#   手动触发按 tag 后缀判定发行类型,并要求该 tag 的 Release 已存在
+# - 产物: 检出该 tag 后 pnpm build,把 dist/ 内容打包为 <tag>.zip 上传;不做签名,
+#   网页签名的口径见 pages.yml(附件是产物副本,运行时校验走站点与信任材料)
+# - 上传用 --clobber:重复触发同一 tag 时覆盖同名附件
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 待打包的 tag 名
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-assets
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # 预检查: tag 格式,以及 tag 与发行类型的对应性
+      - name: Validate tag and release kind
+        id: tagcheck
+        run: |
+          set -euo pipefail
+          if [ -z "${RELEASE_TAG}" ]; then
+            echo "::error::未取得发布 tag"
+            exit 1
+          fi
+          if [[ ! "${RELEASE_TAG}" =~ ^dsc-[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+\.[0-9]+)?$ ]]; then
+            echo "::error::发布 tag ${RELEASE_TAG} 不符合格式;正式发行格式为 dsc-主版本.次版本.修订版本,预发行格式为 dsc-主版本.次版本.修订版本-XXX.序号(XXX 为小写字母串,序号为十进制数),例如 dsc-1.0.0 或 dsc-1.0.0-alpha.1"
+            exit 1
+          fi
+          if [[ "${RELEASE_TAG}" =~ -[a-z]+\.[0-9]+$ ]]; then
+            echo "prerelease=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+          fi
+          if [ "${{ github.event_name }}" = "release" ]; then
+            flag="${{ github.event.release.prerelease }}"
+            if [ "${flag}" != "${{ steps.tagcheck.outputs.prerelease }}" ]; then
+              echo "::error::发行类型与 tag 不匹配:Release 的预发行标记为 ${flag},而 tag ${RELEASE_TAG} 的后缀格式与之不一致;两者必须对应"
+              exit 1
+            fi
+          else
+            if ! gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" > /dev/null 2>&1; then
+              echo "::error::仓库中不存在 tag ${RELEASE_TAG} 对应的 Release;请先创建 Release,再手动补传附件"
+              exit 1
+            fi
+          fi
+          if [ "${{ steps.tagcheck.outputs.prerelease }}" = "true" ]; then
+            echo "tag ${RELEASE_TAG} 是预发行,附件将上传到对应 Release"
+          else
+            echo "tag ${RELEASE_TAG} 是正式发行,附件将上传到对应 Release"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 12.6.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check types
+        run: pnpm type
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      # 打包: dist/ 内容为 zip 根,文件名与 tag 一致
+      - name: Package dist
+        run: |
+          set -euo pipefail
+          if [ ! -d dist ]; then
+            echo "::error::构建产物目录 dist 不存在"
+            exit 1
+          fi
+          zip -r "${RUNNER_TEMP}/${RELEASE_TAG}.zip" .
+        working-directory: dist
+
+      - name: Upload to release
+        run: |
+          set -euo pipefail
+          gh release upload "${RELEASE_TAG}" "${RUNNER_TEMP}/${RELEASE_TAG}.zip" --clobber --repo "${GITHUB_REPOSITORY}"
+          echo "已上传 ${RELEASE_TAG}.zip 到 Release ${RELEASE_TAG}"
+        env:
+          GH_TOKEN: ${{ github.token }}
