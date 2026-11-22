@@ -29,13 +29,6 @@ const injectedAwesomePages = (): string =>
   typeof __AWESOME_DSC_PLUGIN_PAGES_LINK__ === 'string' ? __AWESOME_DSC_PLUGIN_PAGES_LINK__ : ''
 
 /**
- * 内置来源的 Pages 地址：注入的本地地址合法时优先使用，否则用线上地址。
- * 注入值同样要过 isSourceUrl 判定，本地地址不享受任何例外。
- */
-const pagesBaseUrl = (injected: string, online: string): string =>
-  normalizeBaseUrl(injected) ?? online
-
-/**
  * 旧版内置来源 id 到合集目录名的映射。
  * 来源 id 现在与合集目录名一致，读取旧配置时按此表迁移，避免用户配置失效。
  */
@@ -50,22 +43,31 @@ const LEGACY_IDS: Record<string, string> = {
  * 单个来源内的 base_url 也按顺序尝试：awesome-dsc-plugin 依次尝试 CDN 分发、raw 兜底与 Pages 兜底，
  * dsc-inner-plugin 只走 Pages。
  */
+/**
+ * 单个来源的 base_url 列表：注入了合法的本地地址时只用本地那一个，不再列线上兜底。
+ * 开发构建的语义是「不碰网络」，把线上地址留在候选里等于让它继续发请求。
+ */
+const sourceBaseUrls = (injected: string, online: readonly string[]): string[] => {
+  const local = normalizeBaseUrl(injected)
+  return local === null ? [...online] : [local]
+}
+
 export const DEFAULT_SOURCES: readonly MarketSource[] = [
   {
     id: 'dsc-inner-plugin',
     name: 'dsc-inner-plugin',
     builtin: true,
-    baseUrls: [pagesBaseUrl(injectedInnerPages(), 'https://omds-chat.github.io/dsc-inner-plugin/')],
+    baseUrls: sourceBaseUrls(injectedInnerPages(), ['https://omds-chat.github.io/dsc-inner-plugin/']),
   },
   {
     id: 'awesome-dsc-plugin',
     name: 'awesome-dsc-plugin',
     builtin: true,
-    baseUrls: [
+    baseUrls: sourceBaseUrls(injectedAwesomePages(), [
       'https://cdn.jsdelivr.net/gh/omds-chat/awesome-dsc-plugin@main/',
       'https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/main/',
-      pagesBaseUrl(injectedAwesomePages(), 'https://omds-chat.github.io/awesome-dsc-plugin/'),
-    ],
+      'https://omds-chat.github.io/awesome-dsc-plugin/',
+    ]),
   },
 ]
 

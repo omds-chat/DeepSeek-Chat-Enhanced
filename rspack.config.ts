@@ -249,7 +249,10 @@ export const createConfig = ({
         __DEV__: JSON.stringify(dev),
       }),
       new rspack.CopyRspackPlugin({
-        patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
+        patterns: [
+          { from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' },
+          { from: path.resolve(root, 'src/favicon.ico'), to: 'favicon.ico', toType: 'file' },
+        ],
       }),
     ],
     performance: { hints: false },
