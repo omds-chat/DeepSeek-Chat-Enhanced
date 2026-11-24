@@ -1,45 +1,70 @@
-/* 会话视图标签栏: 挂在页头行内右侧, 不单独占一行主区; 无插件登记时整块不渲染 */
+/*
+ * 页签栏: 文字页签, 字号 13/20、字重 500, 标签之间 32px。
+ * 命中区向上下左右各撑 10px: 左右用内距撑, 相邻标签因此仍留 32px 间距;
+ * 上方那 10px 落在页头之内(标题行下方), 由负上外边距抵回, 页签行只占 20px 高,
+ * 页头总高不因命中区变大。下方那 10px 会越出页头并被消息层盖住, 不作交互依赖。
+ */
 .bar {
   display: flex;
   flex-shrink: 0;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  padding-right: 0;
-}
-
-/* 窄屏标签栏落在移动端顶栏下方，右缩进跟顶栏的 10px 对齐 */
-@media not all and (min-width: 768px) {
-  .bar {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
+  align-items: flex-start;
+  gap: 32px;
+  height: 30px;
+  margin-top: -10px;
 }
 
 .tab {
-  padding: 4px 12px;
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 10px 10px 0;
   border: none;
-  border-radius: 10px;
   background-color: transparent;
-  color: var(--dsw-alias-label-secondary);
+  color: var(--dsw-alias-label-tertiary);
   font: inherit;
   font-size: 13px;
   line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  outline: none;
-  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: color var(--ds-transition-duration) var(--ds-ease-in-out);
 
-  &:hover {
-    color: var(--dsw-alias-label-primary);
+  @media (hover: hover) {
+    &:hover {
+      color: var(--dsw-alias-label-primary);
+    }
   }
 
-  &:focus-visible {
-    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+  &.tabActive {
+    color: var(--dsw-alias-label-primary);
+
+    /* 选中态是 2px 业务蓝下划条, 与页签下沿(页头下沿)齐 */
+    &::after {
+      content: '';
+      position: absolute;
+      right: 10px;
+      bottom: 0;
+      left: 10px;
+      height: 2px;
+      border-radius: 999px;
+      background-color: var(--dsw-alias-state-business-primary);
+    }
   }
 }
 
-.tabActive {
-  background-color: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+/* 窄屏页签落在移动端顶栏下方, 命中区不向上溢出, 行高与原来一致 */
+@media not all and (min-width: 768px) {
+  .bar {
+    align-items: center;
+    height: 28px;
+    margin-top: 0;
+    padding: 0 10px;
+  }
+
+  .tab {
+    height: 20px;
+    padding: 4px 10px;
+  }
 }

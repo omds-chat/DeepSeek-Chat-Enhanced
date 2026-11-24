@@ -12,27 +12,56 @@
   min-height: 0;
 }
 
-/* 消息区在这层里撑满; min-width: 0 让长内容压缩自身而不是把右栏挤出视口 */
+/*
+ * 消息区在这层里撑满; min-width: 0 让长内容压缩自身而不是把右栏挤出视口。
+ * container-type 让这一层成为宽度查询容器: 正文列与输入卡都用 64cqw 解析出同一个值,
+ * 不靠 JS 测量, 也不靠两处各自算百分比。容器查询不会让浮层改锚: 本层的浮层
+ * (提示、菜单、拖拽遮罩、悬停卡) 都挂到 body 上。
+ */
 .conversation {
+  --ds-chat-content-width: clamp(680px, 64cqw, 880px);
+
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
+  container-type: inline-size;
 }
 
+/*
+ * 页头高度取 --ds-page-header-height(68px: 上内距 10 + 标题行 30 + 页签间隔 8 + 页签文字 20),
+ * 该令牌定义在 design-tokens.css, 主区各页共用这一刻度。
+ * 没有插件页签时塌一档到 48(上内距 10 + 标题行 30 + 下内距 8), 不留一行空白,
+ * 与 dsh「没有 tab 的会话高度塌到自然高」同一取舍。移动端走 MobileHeader, 不受这里影响。
+ */
 .header {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   flex-shrink: 0;
-  height: 60px;
-  padding: 12px 18px 0;
   box-sizing: border-box;
+  height: var(--ds-page-header-height);
+  padding: 10px 18px 0;
   background: var(--dsw-alias-bg-base);
 }
 
+.headerCompact {
+  height: 48px;
+}
+
+/* 标题行: 标题在左, 右栏开关在右; 标题吃掉剩余宽度并保留省略号 */
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  height: 30px;
+}
+
 .title {
+  min-width: 0;
   max-width: 480px;
-  padding: 8px 12px;
+  padding: 4px 12px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -40,10 +69,33 @@
   color: var(--dsw-alias-label-primary);
 }
 
-.withCollapsedSider {
-  margin-left: 113px;
+/*
+ * 页签行: 自身占 20px, 页签的命中区向上溢出 10px 由 .bar 的负上外边距抵回,
+ * 仍落在页头之内(页签行之上的 8px 间隔与标题行底部), 页头总高保持 68px。
+ */
+.tabsRow {
+  display: flex;
+  flex-shrink: 0;
+  align-items: flex-start;
+  height: 20px;
+  margin-top: 8px;
 }
 
+/*
+ * 侧栏收起时让开左上角的悬浮按钮组。
+ * 悬浮组右边界 = --ds-collapsed-float-right(140px, 公式见 design-tokens.css);
+ * 标题文字要落在 143px, 即离开悬浮组 3px, 故 140 + 3 - 30(页头左内距 18 + 标题左内距 12) = 113px。
+ * 插件页与设置页按各自的 24px 页内距算出的 119px 出自同一公式(见各自样式表的注释)。
+ */
+.withCollapsedSider {
+  margin-left: calc(var(--ds-collapsed-float-right) + 3px - 30px);
+}
+
+/*
+ * 输入卡宽度 = 正文列 + 32px, 与正文列共用 --ds-chat-content-width 的同一中轴。
+ * 停靠渐变带用 px 停点而不是百分比: 草稿最高 336px, 容器变高时百分比停点会把
+ * 渐变区拉成一百多像素, 正文被半透明区吃掉一片。
+ */
 .inputContainer {
   position: sticky;
   bottom: 0;
@@ -52,16 +104,10 @@
   flex-direction: column;
   align-items: center;
   box-sizing: border-box;
-  width: calc(var(--message-list-max-width) - 64px);
+  width: calc(var(--ds-chat-content-width) + 32px);
   max-width: calc(100% - 32px);
   margin: auto auto 0;
-  background: linear-gradient(
-    to bottom,
-    transparent 0%,
-    transparent 30%,
-    var(--dsw-alias-bg-base) 30%,
-    var(--dsw-alias-bg-base) 100%
-  );
+  background: linear-gradient(to bottom, transparent 0, var(--dsw-alias-bg-base) 36px);
 }
 
 .caveat {
@@ -75,6 +121,11 @@
 }
 
 @media not all and (min-width: 768px) {
+  /* 移动端正文列与输入卡按可用宽满铺, 两侧清距只由 max-width 给 */
+  .conversation {
+    --ds-chat-content-width: 100%;
+  }
+
   .inputContainer {
     position: relative;
     bottom: auto;

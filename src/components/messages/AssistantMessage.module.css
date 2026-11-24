@@ -1,14 +1,33 @@
+/*
+ * 助手消息与上方相邻块取「助手回复」档 12px。
+ * 轮与轮之间的 16px 由本消息尾部内距给出: 正文下内距 + 动作行下内距 = 16,
+ * 所以下一条用户消息自己不再加外边距, 两档不会叠成 32。
+ */
 .message {
   position: relative;
+  margin-top: var(--ds-chat-flow-gap-reply);
 
   &:hover .actions,
   &:focus-within .actions {
     opacity: 1;
   }
 
+  /* 正文下内距是轮间隔 16px 的一部分(另 10px 在动作行下内距里) */
   :global(.ds-assistant-message-main-content) {
-    padding-bottom: 6px;
+    padding-bottom: calc(var(--ds-chat-flow-gap-turn) - 10px);
   }
+}
+
+/* 同一轮内的过程行(思考、工具卡、正文)取最紧凑的一档 4px */
+.message > * + * {
+  margin-top: var(--ds-chat-flow-gap-step);
+}
+
+/* 空块与隐藏块不占高度, 也不参与节奏 */
+.message > :empty,
+.message > [hidden] {
+  display: none;
+  margin: 0;
 }
 
 .waiting {
@@ -50,7 +69,7 @@
   display: flex;
   align-items: flex-start;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: var(--ds-chat-flow-gap-reply);
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-state-error-primary);
@@ -81,6 +100,10 @@
   }
 }
 
+/*
+ * 动作行: 与正文之间 16px, 下方 10px 与正文下内距合成轮间隔 16px;
+ * 左移 6px 让动作图标与 28px 命中区的视觉左缘对齐正文。
+ */
 .bottom {
   position: relative;
   left: -6px;
@@ -88,7 +111,8 @@
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  padding-top: 12px;
+  margin-top: 0;
+  padding-top: 16px;
   padding-bottom: 10px;
 }
 
@@ -112,7 +136,7 @@
   display: flex;
   align-items: center;
   width: fit-content;
-  margin-top: 16px;
+  margin-top: var(--ds-chat-flow-gap-reply);
   padding: 4px 10px 4px 4px;
   border-radius: 100px;
   border: 1px solid var(--dsw-alias-border-l2);

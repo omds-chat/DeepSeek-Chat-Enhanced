@@ -455,6 +455,7 @@ export const zh = {
   sessionPanelAsideLabel: '会话面板',
   sessionPanelShow: '展开会话面板',
   sessionPanelHide: '收起会话面板',
+  backToBottom: '回到底部',
   trustListRootMismatch: '插件来源的信任数据与当前版本不一致，已跳过来源信任校验，请自行判断是否继续使用',
   trustListCollectionsUntrusted:
     '插件来源 {ids}（共 {count} 个）无法确认可信，已标记为不可信，请自行判断是否继续使用',

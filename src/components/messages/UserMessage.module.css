@@ -1,8 +1,13 @@
+/*
+ * 用户消息是轮次的起点: 与上一轮之间的 16px 由上一轮助手消息的尾部内距给出
+ * (见 AssistantMessage.module.css), 这里不再补下内距, 否则两档会叠成 32。
+ * 与下方助手回复之间的 12px 由助手消息自己的上外边距给出。
+ */
 .container {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  padding-bottom: 16px;
+  margin-top: 0;
 
   &.isFirst {
     padding-top: 34px;
@@ -27,11 +32,15 @@
   --message-file-image-size: 64px;
 }
 
+/*
+ * 气泡宽度按正文列取比例: 0.702 是「气泡 / 列宽」的设计比例, 82% 是窄列下的绝对上限。
+ * 气泡的包含块就是正文列, 两个百分比同源, 换行位置随列宽联动而不是死减固定像素。
+ */
 .bubble {
-  max-width: calc(100% - 88px);
+  max-width: min(calc(100% * 0.702), 82%);
   box-sizing: border-box;
   padding: 10px 16px;
-  border-radius: 22px;
+  border-radius: var(--ds-radius-xl);
   font-size: 16px;
   line-height: 24px;
   color: var(--dsw-alias-label-primary);
@@ -40,9 +49,10 @@
   word-break: break-word;
 }
 
+/* 440 以下保留一档更宽的气泡: 在同一比例上加 20px, 对应原先 -88px 收窄到 -68px 的那 20px */
 @media not all and (min-width: 440px) {
   .bubble {
-    max-width: calc(100% - 68px);
+    max-width: min(calc(100% * 0.702 + 20px), 82%);
   }
 }
 
@@ -74,7 +84,7 @@
   width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--dsw-alias-brand-primary);
-  border-radius: 22px;
+  border-radius: var(--ds-radius-xl);
   background-color: var(--dsw-alias-bg-base);
   overflow: hidden;
 }

@@ -489,6 +489,7 @@ export const en = {
   sessionPanelAsideLabel: 'Session panel',
   sessionPanelShow: 'Show the session panel',
   sessionPanelHide: 'Hide the session panel',
+  backToBottom: 'Back to bottom',
   trustListRootMismatch:
     'The trust data of plugin sources does not match this build, so source trust checks were skipped; decide for yourself whether to continue',
   trustListCollectionsUntrusted:

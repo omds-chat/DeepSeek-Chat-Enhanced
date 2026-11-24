@@ -1,3 +1,4 @@
+/* 消息滚动层: 滚动条槽位两侧恒定预留, 输入卡与正文列因此不会随滚动条有无横向跳动 */
 .container {
   flex: 1;
   min-height: 0;
@@ -5,11 +6,20 @@
   flex-direction: column;
   overflow-y: auto;
   scrollbar-gutter: stable both-edges;
-  scrollbar-color: var(--scroll-color) transparent;
 }
 
 .scroll {
   display: contents;
+}
+
+/*
+ * 标准滚动条属性只在实现不了 webkit 伪元素的引擎里声明, 否则 Chromium 会丢弃
+ * 该元素的全部 ::-webkit-scrollbar* 规则(含悬停换色)。桌面与移动两套滚动容器各自成门。
+ */
+@supports not selector(::-webkit-scrollbar) {
+  .container {
+    scrollbar-color: var(--ds-scrollbar-thumb) transparent;
+  }
 }
 
 @media not all and (min-width: 768px) {
@@ -25,13 +35,40 @@
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior-y: contain;
-    scrollbar-color: var(--scroll-color) transparent;
+  }
+
+  /* 移动端滚动容器自己的门: 不能与桌面那条合并, 否则桌面断点也会带上这条声明 */
+  @supports not selector(::-webkit-scrollbar) {
+    .scroll {
+      scrollbar-color: var(--ds-scrollbar-thumb) transparent;
+    }
   }
 }
 
+/*
+ * 正文列宽由会话容器用容器查询算出来(见 SessionView.module.css 的 .conversation),
+ * 与输入卡共用同一个 --ds-chat-content-width: 两者严格同轴心, 输入卡恒比正文列宽 32px。
+ * max-width 只兜住窗口更窄的情形: 容器查询算出的 680px 下限可能超过可用宽。
+ */
 .column {
-  width: calc(var(--message-list-max-width) - 2 * var(--message-list-padding-horizontal));
+  /*
+   * 消息节奏三档: 同一轮内的过程行 4、助手回复与相邻块 12、轮与轮之间 16。
+   * 分三个名字而不是共用一个可重绑的变量: 同一条消息既要按上一档取自身外边距,
+   * 又要给子元素另一档, 单名重绑会互相覆盖。
+   */
+  --ds-chat-flow-gap-step: 4px;
+  --ds-chat-flow-gap-reply: 12px;
+  --ds-chat-flow-gap-turn: 16px;
+
+  width: var(--ds-chat-content-width);
   max-width: calc(100% - 40px);
   margin: 0 auto;
   padding-bottom: 24px;
+}
+
+/* 空块与隐藏块不占高度也不产生间距: 结构化排除, 不依赖各组件自觉 */
+.column > :empty,
+.column > [hidden] {
+  display: none;
+  margin: 0;
 }

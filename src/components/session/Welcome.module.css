@@ -1,9 +1,21 @@
+/*
+ * 新对话页: 这里同样建立宽度查询容器, 输入卡与会话页取同一口径(正文列 64cqw, 夹在 680–880),
+ * 所以同一个窗口宽下两页的输入卡宽度一致。
+ */
 .container {
   position: absolute;
   inset: 0;
   display: flex;
+  container-type: inline-size;
+  --ds-chat-content-width: clamp(680px, 64cqw, 880px);
 }
 
+/*
+ * 问候语与输入卡同宽: 输入卡内盒 = 正文列 + 32, 与会话页输入卡逐像素一致。
+ * 宽度不在本元素上封顶(它就是整列宽), 由子项各自封顶: 桌面下本元素与会话页的消息
+ * 滚动层同构(双侧留滚动条槽), 子项的 100% 因此与会话页输入卡取到同一可用宽,
+ * 再用 max-width 封到「正文列 + 32」, 两页在任何窗口宽下都等宽。
+ */
 .welcome {
   display: flex;
   flex-direction: column;
@@ -11,9 +23,31 @@
   justify-content: center;
   box-sizing: border-box;
   width: 100%;
-  max-width: var(--message-list-max-width);
   margin: auto;
-  padding: 0 32px 64px;
+  padding: 0 16px 64px;
+}
+
+/*
+ * 桌面(>=768)才给输入卡封顶, 移动端保持原样(整列宽减两侧 16px 内距)。
+ */
+@media (min-width: 768px) {
+  /*
+   * 内盒 = min(可用宽, 正文列 + 32): 正文列的 32 与输入卡同口径, 两侧清距仍由本元素的
+   * 16px 内距给, 所以横向内距不要再叠进 max-width(早期写成 +32 再配 0 32px 内距,
+   * 内盒因此变成「正文列 - 32」, 从新对话页发第一句话时输入卡会横向宽 64px)。
+   */
+  .welcome > * {
+    max-width: calc(var(--ds-chat-content-width) + 32px);
+  }
+
+  /*
+   * 双侧滚动条槽: 会话页的输入卡长在 MessageList 的双侧留槽滚动容器里, 可用宽是
+   * 「列宽 - 2x槽宽」; 新对话页留同样的槽, 窄列下两页的输入卡才逐像素等宽。
+   */
+  .welcome {
+    overflow-y: auto;
+    scrollbar-gutter: stable both-edges;
+  }
 }
 
 .greeting {

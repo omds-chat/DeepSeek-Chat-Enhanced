@@ -1,0 +1,36 @@
+/*
+ * 回到底部悬浮钮: 34px 全圆, 投影取 --ds-elevation-panel。
+ * 定位父级是吸底座位(position: sticky), bottom: 100% + 16px 因此恒为
+ * 「输入卡上沿之上 16px」: 输入卡随草稿变高时按钮跟着上移, 不会压在输入卡上。
+ * 右缘与输入卡右缘对齐, 即比正文列右缘再往外一个 16px 清距。
+ * 层级由座位给出(座位 z-index 高于正文): 按钮随座位浮在正文之上,
+ * 输入区自己的菜单与提示挂在 body 上、层级更高, 需要时盖住它。
+ */
+.button {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 16px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  box-shadow: var(--ds-elevation-panel);
+  cursor: pointer;
+  transition: color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  @media (hover: hover) {
+    &:hover {
+      color: var(--dsw-alias-label-primary);
+    }
+  }
+
+  &:active {
+    color: var(--dsw-alias-label-primary);
+  }
+}

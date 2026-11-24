@@ -1,16 +1,18 @@
 declare const styles: {
   readonly "wrapper": string;
-  readonly "session": string;
-  readonly "home": string;
   readonly "attachments": string;
   readonly "attachment": string;
   readonly "remove": string;
   readonly "uploading": string;
-  readonly "spin": string;
+  readonly "attachmentFailed": string;
   readonly "failed": string;
+  readonly "failedStatic": string;
+  readonly "failedReason": string;
+  readonly "invalidRemove": string;
   readonly "textareaWrapper": string;
   readonly "textarea": string;
   readonly "mirror": string;
+  readonly "textareaHidden": string;
   readonly "functionRow": string;
   readonly "toggles": string;
   readonly "collapsedToggles": string;
@@ -22,4 +24,3 @@ declare const styles: {
   readonly "disabled": string;
 };
 export = styles;
-
