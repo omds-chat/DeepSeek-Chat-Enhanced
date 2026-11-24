@@ -112,6 +112,7 @@ body.change-theme *::after {
 @media (prefers-reduced-motion: reduce) {
   :root,
   body {
+    --ds-transition-duration-fast: 0s;
     --ds-transition-duration: 0s;
     --ds-transition-duration-slow: 0s;
   }

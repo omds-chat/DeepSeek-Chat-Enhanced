@@ -9,16 +9,16 @@
   background-color: transparent;
   cursor: pointer;
   font-size: 16px;
-  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
-
-  &:active:not(:disabled) {
-    background-color: var(--dsw-alias-interactive-bg-hover);
-  }
+  transition: background-color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 
   @media (hover: hover) {
     &:hover:not(:disabled) {
       background-color: var(--dsw-alias-interactive-bg-hover);
     }
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--dsw-alias-interactive-bg-active);
   }
 
   &:disabled {

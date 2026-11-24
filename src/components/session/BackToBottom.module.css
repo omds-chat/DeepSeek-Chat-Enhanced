@@ -22,7 +22,7 @@
   color: var(--dsw-alias-label-secondary);
   box-shadow: var(--ds-elevation-panel);
   cursor: pointer;
-  transition: color var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 
   @media (hover: hover) {
     &:hover {

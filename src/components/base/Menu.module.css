@@ -40,6 +40,10 @@
     background-color: var(--dsw-alias-interactive-bg-hover);
     outline: none;
   }
+
+  &:active {
+    background-color: var(--dsw-alias-interactive-bg-active);
+  }
 }
 
 .icon {

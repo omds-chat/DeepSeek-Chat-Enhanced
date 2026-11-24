@@ -417,7 +417,7 @@
   cursor: pointer;
 
   &:disabled {
-    opacity: 0.45;
+    opacity: var(--ds-disabled-opacity);
     cursor: default;
   }
 }

@@ -291,7 +291,7 @@
   }
 
   &:disabled {
-    opacity: 0.4;
+    opacity: var(--ds-disabled-opacity);
     cursor: not-allowed;
   }
 
@@ -339,7 +339,7 @@
   }
 
   &.disabled {
-    opacity: 0.4;
+    opacity: var(--ds-disabled-opacity);
     cursor: not-allowed;
   }
 }

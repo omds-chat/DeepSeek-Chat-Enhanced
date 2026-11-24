@@ -28,6 +28,10 @@ body {
     'JetBrains Mono', 'Fira Code', Cousine, 'Roboto Mono', 'Courier New', Courier, sans-serif,
     system-ui;
 
+  /* 禁用态统一透明度: dsh 口径 0.4, 所有禁用控件共用同一档 */
+  --ds-disabled-opacity: 0.4;
+
+  --ds-transition-duration-fast: 0.1s;
   --ds-transition-duration: 0.2s;
   --ds-transition-duration-slow: 0.3s;
 }

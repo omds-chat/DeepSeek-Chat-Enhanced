@@ -20,7 +20,7 @@
     opacity var(--ds-transition-duration) var(--ds-ease-in-out);
 
   &:disabled {
-    opacity: 0.45;
+    opacity: var(--ds-disabled-opacity);
     cursor: not-allowed;
   }
 }
@@ -69,6 +69,10 @@
     &:hover:not(:disabled) {
       background-color: var(--dsw-alias-interactive-bg-hover);
     }
+  }
+
+  &:active:not(:disabled) {
+    background-color: var(--dsw-alias-interactive-bg-active);
   }
 }
 

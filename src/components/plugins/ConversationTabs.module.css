@@ -48,7 +48,7 @@
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  transition: color var(--ds-transition-duration) var(--ds-ease-in-out);
+  transition: color var(--ds-transition-duration-fast) var(--ds-ease-in-out);
 
   /* 页签行是横向滚动容器, 向外的环会被裁掉, 环画在盒内 */
   &:focus-visible {

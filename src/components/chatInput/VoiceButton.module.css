@@ -31,14 +31,14 @@
   cursor: pointer;
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
-  &:active:not(.recording):not(.disabled) {
-    background-color: var(--dsw-alias-interactive-bg-hover);
-  }
-
   @media (hover: hover) {
     &:hover:not(.recording):not(.disabled) {
       background-color: var(--dsw-alias-interactive-bg-hover);
     }
+  }
+
+  &:active:not(.recording):not(.disabled) {
+    background-color: var(--dsw-alias-interactive-bg-active);
   }
 }
 
