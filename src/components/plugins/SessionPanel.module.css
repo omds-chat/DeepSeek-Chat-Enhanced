@@ -67,8 +67,10 @@
   background-color: transparent;
   cursor: pointer;
 
-  &:hover {
-    color: var(--dsw-alias-label-primary);
+  @media (hover: hover) {
+    &:hover {
+      color: var(--dsw-alias-label-primary);
+    }
   }
 
   /* 标签条是横向滚动容器, 向外的环会被裁掉, 环画在盒内 */

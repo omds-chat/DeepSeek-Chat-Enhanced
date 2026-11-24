@@ -12,8 +12,10 @@
   user-select: none;
   transition: color 0.2s;
 
-  &:hover {
-    color: var(--dsw-alias-label-primary);
+  @media (hover: hover) {
+    &:hover {
+      color: var(--dsw-alias-label-primary);
+    }
   }
 }
 
@@ -169,8 +171,10 @@
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
 
-  &.clickable:hover::before {
-    opacity: 1;
+  @media (hover: hover) {
+    &.clickable:hover::before {
+      opacity: 1;
+    }
   }
 
   &.active::before {
@@ -178,9 +182,14 @@
     opacity: 1;
   }
 
-  &.clickable:hover,
   &.active {
     --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
+  }
+
+  @media (hover: hover) {
+    &.clickable:hover {
+      --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
+    }
   }
 }
 
@@ -263,9 +272,11 @@
 .pageDone .pageText {
   color: var(--dsw-alias-label-secondary);
 
-  &:hover {
-    color: var(--dsw-alias-label-primary);
-    text-decoration-color: var(--dsw-alias-label-tertiary);
+  @media (hover: hover) {
+    &:hover {
+      color: var(--dsw-alias-label-primary);
+      text-decoration-color: var(--dsw-alias-label-tertiary);
+    }
   }
 }
 
@@ -313,4 +324,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * 减弱动态: 光带文字还原为普通次级文字(只停动画会停在半透明渐变上),
+ * 脉冲点定格, 查询词淡入取消。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background: none;
+    color: var(--dsw-alias-label-secondary);
+  }
+
+  .dotInner {
+    animation: none;
+  }
+
+  .query {
+    animation: none;
+  }
 }

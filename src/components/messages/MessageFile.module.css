@@ -64,8 +64,10 @@ button.image {
   background-color: rgba(0, 0, 0, 0.4);
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
-  button:hover > & {
-    background-color: rgba(0, 0, 0, 0.5);
+  @media (hover: hover) {
+    button:hover > & {
+      background-color: rgba(0, 0, 0, 0.5);
+    }
   }
 }
 
@@ -111,5 +113,12 @@ button.image {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* 减弱动态: 进度环定格, 停转后仍留一段彩色弧 */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
   }
 }

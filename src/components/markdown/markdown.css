@@ -88,9 +88,14 @@
    * 原选择器写作 ":focus"(缺 &)，按嵌套规则编译成后代选择器，链接自身的焦点态从未命中；
    * 这里只补选择器写法，聚焦观感与悬停一致，不新增视觉。
    */
-  &:hover,
   &:focus-visible {
     text-decoration: underline var(--dsw-alias-brand-text);
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      text-decoration: underline var(--dsw-alias-brand-text);
+    }
   }
 }
 
@@ -296,8 +301,10 @@
   }
 }
 
-.ds-markdown-cite:hover {
-  background: var(--dsw-alias-markdown-citation);
+@media (hover: hover) {
+  .ds-markdown-cite:hover {
+    background: var(--dsw-alias-markdown-citation);
+  }
 }
 
 .ds-markdown .md-code-block {

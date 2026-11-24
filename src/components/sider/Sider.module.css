@@ -87,11 +87,13 @@
     0 1px 2px rgba(72, 104, 178, 0.08);
   transition: box-shadow 0.3s ease;
 
-  &:hover {
-    box-shadow:
-      0 4px 4px 0 rgba(72, 104, 178, 0.04),
-      0 -3px 4px 0 rgba(72, 104, 178, 0.04),
-      0 6px 6px 0 rgba(106, 111, 117, 0.1);
+  @media (hover: hover) {
+    &:hover {
+      box-shadow:
+        0 4px 4px 0 rgba(72, 104, 178, 0.04),
+        0 -3px 4px 0 rgba(72, 104, 178, 0.04),
+        0 6px 6px 0 rgba(106, 111, 117, 0.1);
+    }
   }
 
   [data-ds-dark-theme] & {
@@ -216,8 +218,10 @@
   cursor: pointer;
   user-select: none;
 
-  &:hover {
-    background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-specific-sidebar-nav-item-hover);
+    }
   }
 
   /* 父级列表会裁掉向外的环, 环画在盒内 */
@@ -294,8 +298,10 @@
   cursor: pointer;
   user-select: none;
 
-  &:hover {
-    background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-specific-sidebar-nav-item-hover);
+    }
   }
 
   &:focus-visible {

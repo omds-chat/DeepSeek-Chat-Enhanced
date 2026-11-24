@@ -7,9 +7,14 @@
   position: relative;
   margin-top: var(--ds-chat-flow-gap-reply);
 
-  &:hover .actions,
   &:focus-within .actions {
     opacity: 1;
+  }
+
+  @media (hover: hover) {
+    &:hover .actions {
+      opacity: 1;
+    }
   }
 
   /* 正文下内距是轮间隔 16px 的一部分(另 10px 在动作行下内距里) */
@@ -95,8 +100,10 @@
   text-decoration: none;
   cursor: pointer;
 
-  &:hover {
-    text-decoration: underline;
+  @media (hover: hover) {
+    &:hover {
+      text-decoration: underline;
+    }
   }
 }
 
@@ -155,9 +162,24 @@
     margin-left: 6px;
   }
 
-  &:hover,
   &.summaryActive {
     background-color: var(--dsw-alias-interactive-bg-hover);
     --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-alias-interactive-bg-hover);
+      --search-row-site-logo-color: var(--dsw-alias-interactive-bg-hover);
+    }
+  }
+}
+
+/*
+ * 减弱动态: 等待点定格在全亮, 不再逐点明暗循环。
+ */
+@media (prefers-reduced-motion: reduce) {
+  .waitingDot {
+    animation: none;
   }
 }

@@ -13,16 +13,20 @@
   cursor: default;
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
-  &:hover .remove {
-    opacity: 1;
+  @media (hover: hover) {
+    &:hover .remove {
+      opacity: 1;
+    }
   }
 }
 
 .clickable {
   cursor: pointer;
 
-  &:hover {
-    background-color: var(--dsw-alias-interactive-bg-hover);
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-alias-interactive-bg-hover);
+    }
   }
 }
 
@@ -128,4 +132,11 @@
   opacity: 1;
   color: var(--dsw-alias-label-primary-foreground);
   background-color: var(--dsw-alias-state-error-primary);
+}
+
+/* 减弱动态: 进度环定格, 停转后仍留一段彩色弧 */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
 }

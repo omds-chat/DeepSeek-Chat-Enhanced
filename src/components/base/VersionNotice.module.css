@@ -46,3 +46,10 @@
     transform: translateY(-8px);
   }
 }
+
+/* 减弱动态: 位移入场取消, 直接出现在终点位置 */
+@media (prefers-reduced-motion: reduce) {
+  .notice {
+    animation: none;
+  }
+}

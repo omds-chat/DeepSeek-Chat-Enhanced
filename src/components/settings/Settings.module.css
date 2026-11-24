@@ -106,9 +106,14 @@
     flex-shrink: 0;
   }
 
-  &:hover,
   &.navItemActive {
     background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-alias-interactive-bg-hover);
+    }
   }
 
   /* 焦点环来自全局 :focus-visible; 横向导航条会裁掉向外的环, 故画在盒内 */
@@ -288,9 +293,14 @@
   user-select: none;
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
-  &:hover,
   &.themeOptionSelected {
     background-color: var(--dsw-specific-selector);
+  }
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-specific-selector);
+    }
   }
 }
 

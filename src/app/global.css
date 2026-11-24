@@ -103,3 +103,16 @@ body.change-theme *::after {
     overscroll-behavior-y: none;
   }
 }
+
+/*
+ * 减弱动态的令牌归零: 走 --ds-transition-duration 的过渡(开关旋钮位移、底色过渡等)
+ * 在这里一次性立即完成, 不必逐组件写覆盖; 组件级只处理关键帧动画。
+ * 令牌在 theme.css 里声明于 body, 故 :root 与 body 一并归零, 不能只写 :root。
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root,
+  body {
+    --ds-transition-duration: 0s;
+    --ds-transition-duration-slow: 0s;
+  }
+}

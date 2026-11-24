@@ -13,8 +13,10 @@
     padding-top: 34px;
   }
 
-  &:hover .actions {
-    opacity: 1;
+  @media (hover: hover) {
+    &:hover .actions {
+      opacity: 1;
+    }
   }
 }
 

@@ -34,8 +34,10 @@
   cursor: pointer;
 }
 
-.backButton:hover {
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .backButton:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .title {
@@ -104,8 +106,10 @@
   cursor: pointer;
 }
 
-.resetButton:hover {
-  color: var(--dsw-alias-label-primary);
+@media (hover: hover) {
+  .resetButton:hover {
+    color: var(--dsw-alias-label-primary);
+  }
 }
 
 .controlRow {
@@ -230,6 +234,8 @@
   cursor: pointer;
 }
 
-.nameButton:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .nameButton:hover {
+    text-decoration: underline;
+  }
 }

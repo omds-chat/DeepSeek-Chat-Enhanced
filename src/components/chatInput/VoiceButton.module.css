@@ -146,6 +146,10 @@
     display: none;
   }
 
+  .loading {
+    animation: none;
+  }
+
   .halo {
     scale: none;
   }

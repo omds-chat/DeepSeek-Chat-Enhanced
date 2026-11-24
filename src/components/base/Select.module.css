@@ -21,8 +21,10 @@
     background-color var(--ds-transition-duration) var(--ds-ease-in-out),
     color var(--ds-transition-duration) var(--ds-ease-in-out);
 
-  &:hover:not(:disabled) {
-    background: var(--dsw-alias-interactive-bg-hover-accent);
+  @media (hover: hover) {
+    &:hover:not(:disabled) {
+      background: var(--dsw-alias-interactive-bg-hover-accent);
+    }
   }
 
   &:disabled {

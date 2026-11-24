@@ -59,8 +59,10 @@
     object-fit: cover;
   }
 
-  &:hover .remove {
-    opacity: 1;
+  @media (hover: hover) {
+    &:hover .remove {
+      opacity: 1;
+    }
   }
 }
 
@@ -282,8 +284,10 @@
   transition-property: border, background;
   transition-duration: 0.2s;
 
-  &:hover:not(:disabled) {
-    background-color: var(--dsw-alias-interactive-bg-hover);
+  @media (hover: hover) {
+    &:hover:not(:disabled) {
+      background-color: var(--dsw-alias-interactive-bg-hover);
+    }
   }
 
   &:disabled {
@@ -296,8 +300,10 @@
     color: var(--dsw-alias-brand-text);
     border-color: var(--dsw-alias-button-ghost-active-border);
 
-    &:hover {
-      background-color: var(--dsw-alias-button-ghost-active-hover);
+    @media (hover: hover) {
+      &:hover {
+        background-color: var(--dsw-alias-button-ghost-active-hover);
+      }
     }
   }
 }
@@ -326,12 +332,21 @@
   cursor: pointer;
   transition: background 0.2s ease;
 
-  &:not(.disabled):hover {
-    background: var(--dsw-alias-button-primary-hover);
+  @media (hover: hover) {
+    &:not(.disabled):hover {
+      background: var(--dsw-alias-button-primary-hover);
+    }
   }
 
   &.disabled {
     opacity: 0.4;
     cursor: not-allowed;
+  }
+}
+
+/* 减弱动态: 上传进度环定格, 停转后仍留一段彩色弧 */
+@media (prefers-reduced-motion: reduce) {
+  .uploading::after {
+    animation: none;
   }
 }
