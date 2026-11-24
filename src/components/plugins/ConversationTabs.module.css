@@ -3,14 +3,33 @@
  * 命中区向上下左右各撑 10px: 左右用内距撑, 相邻标签因此仍留 32px 间距;
  * 上方那 10px 落在页头之内(标题行下方), 由负上外边距抵回, 页签行只占 20px 高,
  * 页头总高不因命中区变大。下方那 10px 会越出页头并被消息层盖住, 不作交互依赖。
+ * 登记项超出时在本行内横向滚动: 滚动视口就是这条 30px 高的行本身, 页签盒与命中区
+ * 都在视口之内, 裁剪削不到向上那 10px; 左右各留 10px 内距, 首末页签滚到端点时命中区
+ * 仍完整, 内距由负外边距抵回, 首枚页签的位置不因此右移。
  */
 .bar {
   display: flex;
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  box-sizing: border-box;
   align-items: flex-start;
   gap: 32px;
+  min-width: 0;
   height: 30px;
-  margin-top: -10px;
+  margin: -10px -10px 0;
+  padding: 0 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  /*
+   * 隐藏滚动条的两条路径互斥: 标准属性在 Chromium 121+ 与 Firefox 生效,
+   * 这些引擎随即丢弃本元素上的 ::-webkit-scrollbar* 规则; 老内核不认标准属性,
+   * 只走伪元素分支。两条同时写是各管一半引擎, 不叠加。
+   */
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .tab {
@@ -30,6 +49,11 @@
   cursor: pointer;
   user-select: none;
   transition: color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  /* 页签行是横向滚动容器, 向外的环会被裁掉, 环画在盒内 */
+  &:focus-visible {
+    outline-offset: -2px;
+  }
 
   @media (hover: hover) {
     &:hover {
@@ -57,9 +81,10 @@
 /* 窄屏页签落在移动端顶栏下方, 命中区不向上溢出, 行高与原来一致 */
 @media not all and (min-width: 768px) {
   .bar {
+    flex: 0 0 auto;
     align-items: center;
     height: 28px;
-    margin-top: 0;
+    margin: 0;
     padding: 0 10px;
   }
 

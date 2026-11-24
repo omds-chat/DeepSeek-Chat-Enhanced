@@ -44,7 +44,17 @@
   min-width: 0;
   max-width: 50%;
   overflow-x: auto;
+
+  /*
+   * 隐藏滚动条的两条路径互斥: 标准属性在 Chromium 121+ 与 Firefox 生效,
+   * 这些引擎随即丢弃本元素上的 ::-webkit-scrollbar* 规则; 老内核不认标准属性,
+   * 只走伪元素分支。两条同时写是各管一半引擎, 不叠加。
+   */
   scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .toolbarButton {
