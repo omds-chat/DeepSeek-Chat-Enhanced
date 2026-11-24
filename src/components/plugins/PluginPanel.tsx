@@ -90,46 +90,53 @@ export const PluginPanel = () => {
   return (
     <div className={styles.page}>
       {isMobile ? <MobileHeader /> : null}
-      <div className={styles.header}>
-        <h1 className={styles.title}>{t('pluginPanelTitle')}</h1>
-        <IconButton
-          icon={<IconRefreshOutline16 />}
-          tooltip={t('pluginRefresh')}
-          tooltipPlacement="bottom"
-          onClick={refresh}
-        />
-      </div>
-      <div className={styles.tabsBar}>
-        <div role="tablist" className={styles.tabs} onKeyDown={onTabKeyDown}>
-          {tabs.map((item, index) => (
-            <button
-              key={item.value}
-              ref={(node) => {
-                tabRefs.current[index] = node
-              }}
-              id={tabId(item.value)}
-              type="button"
-              role="tab"
-              aria-selected={tab === item.value}
-              aria-controls={panelId}
-              tabIndex={tab === item.value ? 0 : -1}
-              className={clsx(styles.tab, tab === item.value && styles.tabActive)}
-              onClick={() => setPluginPanelTab(item.value)}
-            >
-              {t(item.label)}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className={styles.body} role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
-        {tab === 'installed' ? (
-          <div className={styles.scroll}>
-            <PendingConflicts plugins={plugins} refresh={refresh} />
-            <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
+      {/* 滚动上提到页面层：滚动条落在主区右缘，页头与页签条在其中吸顶 */}
+      <div className={styles.feed}>
+        <div className={styles.stickyBar}>
+          <div className={styles.bar}>
+            <div className={styles.header}>
+              <h1 className={styles.title}>{t('pluginPanelTitle')}</h1>
+              <IconButton
+                icon={<IconRefreshOutline16 />}
+                tooltip={t('pluginRefresh')}
+                tooltipPlacement="bottom"
+                onClick={refresh}
+              />
+            </div>
+            <div className={styles.tabsBar}>
+              <div role="tablist" className={styles.tabs} onKeyDown={onTabKeyDown}>
+                {tabs.map((item, index) => (
+                  <button
+                    key={item.value}
+                    ref={(node) => {
+                      tabRefs.current[index] = node
+                    }}
+                    id={tabId(item.value)}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === item.value}
+                    aria-controls={panelId}
+                    tabIndex={tab === item.value ? 0 : -1}
+                    className={clsx(styles.tab, tab === item.value && styles.tabActive)}
+                    onClick={() => setPluginPanelTab(item.value)}
+                  >
+                    {t(item.label)}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        ) : (
-          <MarketPlugins installedIds={installedIds} onInstalled={refresh} />
-        )}
+        </div>
+        <div className={styles.column} role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
+          {tab === 'installed' ? (
+            <>
+              <PendingConflicts plugins={plugins} refresh={refresh} />
+              <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
+            </>
+          ) : (
+            <MarketPlugins installedIds={installedIds} onInstalled={refresh} />
+          )}
+        </div>
       </div>
       {tab === 'installed' ? <InstallFromUrl onInstalled={refresh} /> : null}
     </div>
@@ -212,44 +219,46 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
 
   return (
     <div className={styles.installBar}>
-      <div className={styles.installHeader}>
-        <div className={styles.installTitle}>{t('pluginInstallFromUrl')}</div>
-        <LocalInstall onInstalled={onInstalled} />
-      </div>
-      <div className={styles.installRow}>
-        <input
-          className={clsx(styles.input, styles.inputUrl, invalid && styles.inputInvalid)}
-          value={url}
-          placeholder={t('pluginInstallUrlPlaceholder')}
-          aria-label={t('pluginInstallUrlLabel')}
-          aria-invalid={invalid}
-          autoComplete="off"
-          spellCheck={false}
-          disabled={installing}
-          onChange={(event) => {
-            setUrl(event.target.value)
-            setInvalid(false)
-            setFailure(null)
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-              void submit()
-            }
-          }}
-        />
-        <Button variant="primary" size="m" disabled={installing} onClick={() => void submit()}>
-          {installing ? t('pluginInstalling') : t('pluginActionInstall')}
-        </Button>
-      </div>
-      {invalid ? <div className={styles.fieldError}>{t('pluginInstallUrlInvalid')}</div> : null}
-      {!installing && failure !== null ? (
-        <div
-          className={clsx(styles.fieldError, failure.tone === 'notice' && styles.fieldNotice)}
-          role={failure.tone === 'notice' ? 'status' : 'alert'}
-        >
-          {failure.text}
+      <div className={styles.installBarInner}>
+        <div className={styles.installHeader}>
+          <div className={styles.installTitle}>{t('pluginInstallFromUrl')}</div>
+          <LocalInstall onInstalled={onInstalled} />
         </div>
-      ) : null}
+        <div className={styles.installRow}>
+          <input
+            className={clsx(styles.input, styles.inputUrl, invalid && styles.inputInvalid)}
+            value={url}
+            placeholder={t('pluginInstallUrlPlaceholder')}
+            aria-label={t('pluginInstallUrlLabel')}
+            aria-invalid={invalid}
+            autoComplete="off"
+            spellCheck={false}
+            disabled={installing}
+            onChange={(event) => {
+              setUrl(event.target.value)
+              setInvalid(false)
+              setFailure(null)
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                void submit()
+              }
+            }}
+          />
+          <Button variant="primary" size="m" disabled={installing} onClick={() => void submit()}>
+            {installing ? t('pluginInstalling') : t('pluginActionInstall')}
+          </Button>
+        </div>
+        {invalid ? <div className={styles.fieldError}>{t('pluginInstallUrlInvalid')}</div> : null}
+        {!installing && failure !== null ? (
+          <div
+            className={clsx(styles.fieldError, failure.tone === 'notice' && styles.fieldNotice)}
+            role={failure.tone === 'notice' ? 'status' : 'alert'}
+          >
+            {failure.text}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

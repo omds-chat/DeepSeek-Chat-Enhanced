@@ -8,10 +8,11 @@
   margin: 12px 12px 0;
 }
 
+/* 提示条留在输入区内，属行内控件: 1px 实描边保留(不并入浮层投影)，左侧 3px 是语义色条 */
 .notice {
   box-sizing: border-box;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--ds-radius-md);
   border: 1px solid var(--dsw-alias-border-l2);
   border-left-width: 3px;
   font-size: 13px;
@@ -60,6 +61,11 @@
   background-color: transparent;
   cursor: pointer;
 
+  /* 工具条是横向滚动容器，向外的环会被裁掉，环画在盒内 */
+  &:focus-visible {
+    outline-offset: -2px;
+  }
+
   &:hover {
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
@@ -73,7 +79,7 @@
 
 /*
  * 全局面板通知栈: 右上角悬浮卡片, 按插件分组, 不拦截页面点击。
- * 顶部让开轻提示: Toast 顶边 40px、高 36px(20 行高 + 7x2 内距 + 2 边框)故底边 76px, 栈从 80px 起;
+ * 顶部让开轻提示: Toast 顶边 40px、高 34px(20 行高 + 7x2 内距, 描边改由投影承担不占高度)故底边 74px, 栈从 80px 起;
  * 层级低于 VersionNotice 的 1800, 两张浮层叠在一起时更新提示始终在上。
  */
 .overlayStack {
@@ -91,12 +97,10 @@
 .overlayCard {
   box-sizing: border-box;
   padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0;
+  border-radius: var(--ds-radius-md);
   background-color: var(--dsw-alias-bg-layer-2);
-  box-shadow:
-    0 0 4px 2px rgba(0, 0, 0, 0.04),
-    0 4px 16px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: var(--ds-elevation-panel);
   pointer-events: auto;
 }
 
@@ -144,7 +148,7 @@
 .messageActionButton {
   padding: 3px 6px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--ds-radius-sm);
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-secondary);
@@ -172,7 +176,7 @@
   width: 100%;
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
+  border-radius: var(--ds-radius-md);
   text-align: left;
   background-color: transparent;
   cursor: pointer;

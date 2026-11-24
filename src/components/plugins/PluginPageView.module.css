@@ -2,11 +2,11 @@
 
 /*
  * 侧边栏收起时让开左上角的悬浮按钮组。
- * 悬浮组右边界 = 16(左边距) + 34(面板图标列) + 12(组间距) + 78(胶囊: 2px 边框 + 2x2px 内距 + 2x34px 圆钮 + 4px 间距) = 140px;
- * 本页自带 24px 左内距，故让位 119px: 24 + 119 = 143px，与会话页标题文字同一起点，且离开悬浮组 3px。
+ * 悬浮组右边界 = --ds-collapsed-float-right(140px, 公式见 design-tokens.css)；
+ * 本页自带 24px 左内距, 故让位 140 + 3 - 24 = 119px: 24 + 119 = 143px，与会话页标题文字同一起点，且离开悬浮组 3px。
  */
 .headerCollapsed {
-  margin-left: 119px;
+  margin-left: calc(var(--ds-collapsed-float-right) + 3px - 24px);
 }
 
 .text {
@@ -30,8 +30,9 @@
   padding: 12px 0;
 }
 
+/* 行间分隔是纯分隔线而非控件描边，取 0.5px 发丝: 用 box-shadow 画，不占行高 */
 .listItem + .listItem {
-  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+  box-shadow: inset 0 0.5px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
 }
 
 .listItemHead {

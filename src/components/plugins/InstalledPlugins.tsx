@@ -331,7 +331,7 @@ export const InstalledPlugins = ({
           <div role="columnheader">{t('pluginColumnName')}</div>
           <div role="columnheader">{t('pluginColumnVersion')}</div>
           <div role="columnheader">{t('pluginColumnState')}</div>
-          <div className={styles.sourceCell} role="columnheader">
+          <div role="columnheader">
             {t('pluginColumnSource')}
           </div>
           <div role="columnheader">{t('pluginColumnActions')}</div>
@@ -436,11 +436,7 @@ export const InstalledPlugins = ({
               <div role="cell" data-label={t('pluginColumnState')}>
                 {t(stateLabels[plugin.state])}
               </div>
-              <div
-                className={styles.sourceCell}
-                role="cell"
-                data-label={t('pluginColumnSource')}
-              >
+              <div role="cell" data-label={t('pluginColumnSource')}>
                 {t(sourceLabel(plugin))}
               </div>
               <div className={styles.actions} role="cell">
