@@ -4,7 +4,7 @@ import type { SlotName } from '../dsc-plugin-engine/index.js'
 /**
  * 主区面板的单一命名空间, 与 dsh 的 MainPanelId | null 同构:
  * null 表示会话(含会话视图标签栏), 'plugins' 是插件管理面板,
- * 其余是插件槽位页 { slot, pluginId, id }。
+ * 'settings' 是设置整页(与插件页一样占满主区), 其余是插件槽位页 { slot, pluginId, id }。
  * 面板选中与会话选中是两套独立状态: 切面板不改会话, 标签切换不丢失会话上下文;
  * 选中会话一律回到 null, 落点在 services/chat/store.ts 的 selectSession 与 newChat。
  */
@@ -14,7 +14,16 @@ export type SlotPageRef = {
   readonly id: string
 }
 
-export type PanelId = 'plugins' | SlotPageRef
+/** 静态面板: 不随槽位登记变化的整页; 其余面板 id 都是槽位页引用 */
+export type StaticPanelId = 'plugins' | 'settings'
+
+export type PanelId = StaticPanelId | SlotPageRef
+
+const staticPanels: readonly StaticPanelId[] = ['plugins', 'settings']
+
+/** 字符串面板 id 是否属于静态面板; 用于收窄外部传入的面板标识 */
+export const isStaticPanel = (id: string): id is StaticPanelId =>
+  staticPanels.includes(id as StaticPanelId)
 
 export type PluginViewState = {
   activePanelId: PanelId | null
@@ -38,15 +47,19 @@ export const isPanelActive = (active: PanelId | null, id: PanelId | null): boole
   return sameSlotPage(active, id)
 }
 
-/** 把面板 id 收窄成槽位页; 不在槽位页上(会话或插件面板)时为 null */
+/** 把面板 id 收窄成槽位页; 不在槽位页上(会话、插件面板或设置页)时为 null */
 export const asSlotPage = (id: PanelId | null): SlotPageRef | null =>
   id !== null && typeof id !== 'string' ? id : null
 
 /**
  * 切到某个面板; 已经在该面板上时什么都不做, 免得订阅者空转重渲染。
- * 未登记的面板由调用方保证(导航行与标签栏都从登记表派生), 这里不再校验。
+ * 槽位页的登记由调用方保证(导航行与标签栏都从登记表派生);
+ * 字符串面板只认静态面板清单, 拼错的名字直接忽略, 不落成一块空白主区。
  */
 export const selectPanel = (id: PanelId | null): void => {
+  if (typeof id === 'string' && !isStaticPanel(id)) {
+    return
+  }
   if (isPanelActive(usePluginView.getState().activePanelId, id)) {
     return
   }

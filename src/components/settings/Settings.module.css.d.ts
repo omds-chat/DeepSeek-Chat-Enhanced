@@ -1,6 +1,11 @@
 declare const styles: {
   readonly "dialog": string;
   readonly "dialogMain": string;
+  readonly "page": string;
+  readonly "pageHeader": string;
+  readonly "pageHeaderCollapsed": string;
+  readonly "pageTitle": string;
+  readonly "pageBody": string;
   readonly "navigation": string;
   readonly "navItem": string;
   readonly "navItemActive": string;
@@ -8,6 +13,9 @@ declare const styles: {
   readonly "cell": string;
   readonly "row": string;
   readonly "text": string;
+  readonly "switch": string;
+  readonly "switchOn": string;
+  readonly "switchThumb": string;
   readonly "label": string;
   readonly "uploadButton": string;
   readonly "locationCell": string;
@@ -29,10 +37,14 @@ declare const styles: {
   readonly "confirm": string;
   readonly "cellButton": string;
   readonly "mobileConfirm": string;
-  readonly "importConfirm": string;
-  readonly "importConfirmText": string;
-  readonly "deleteConfirm": string;
-  readonly "deleteActions": string;
+  readonly "pluginData": string;
+  readonly "pluginDataHead": string;
+  readonly "pluginDataList": string;
+  readonly "pluginDataRow": string;
+  readonly "pluginDataId": string;
+  readonly "pluginDataKeys": string;
+  readonly "pluginDataSize": string;
+  readonly "pluginDataEmpty": string;
+  readonly "pluginDataFooter": string;
 };
 export = styles;
-

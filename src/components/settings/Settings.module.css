@@ -1,38 +1,97 @@
+/*
+ * 首启的 API Key 弹窗：设置里唯一的模态例外。宽度按单个输入单元收窄，
+ * 高度由内容决定，不再是 760x500 的设置面板。
+ */
 .dialog {
   --modal-header-gap: 8px;
-  width: 760px;
-  height: 500px;
+  width: 480px;
   max-height: calc(100vh - 32px);
 }
 
 .dialogMain {
   display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
   color: var(--dsw-alias-label-primary);
 }
 
+/*
+ * 设置整页：页头 + 左侧导航轨 + 自身滚动的内容区，底色用主区底色，
+ * 不铺遮罩、不做居中悬浮面板。
+ * 页头高度取 --ds-page-header-height（与会话页头同一刻度，令牌定义在 design-tokens.css），
+ * 两页来回切换时标题落在同一条水平线上。
+ */
+.page {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background-color: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.pageHeader {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: var(--ds-page-header-height);
+  padding: 0 24px;
+}
+
+/*
+ * 侧栏收起时让开左上角的悬浮按钮组，算法与插件页面板一致：
+ * 悬浮组右边界 = --ds-collapsed-float-right(140px, 公式见 design-tokens.css)，
+ * 本页页头自带 24px 左内距，故让位 140 + 3 - 24 = 119px，标题落在 143px。
+ */
+.pageHeaderCollapsed {
+  margin-left: calc(var(--ds-collapsed-float-right) + 3px - 24px);
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.pageBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/*
+ * 导航轨：188px 固定宽，单元 40 高、圆角取 --ds-radius-md，
+ * 内距 10/12 让单元文字起点与内容列的 24px 内距对齐。
+ */
 .navigation {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   gap: 4px;
-  width: 172px;
-  margin: 6px 12px 0 -12px;
-  padding-top: 4px;
+  box-sizing: border-box;
+  width: 188px;
+  padding: 10px 12px;
+  overflow-y: auto;
 }
 
 .navItem {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
-  width: calc(100% - 8px);
+  width: 100%;
   min-height: 40px;
-  margin: 0 4px;
-  padding: 8px 10px;
+  padding: 9px 16px 9px 12px;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--ds-radius-md);
   background-color: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -41,7 +100,6 @@
   text-align: left;
   cursor: pointer;
   user-select: none;
-  outline: none;
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
   svg {
@@ -53,20 +111,34 @@
     background-color: var(--dsw-alias-interactive-bg-hover);
   }
 
+  /* 焦点环来自全局 :focus-visible; 横向导航条会裁掉向外的环, 故画在盒内 */
   &:focus-visible {
-    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
+    outline-offset: -2px;
   }
 }
 
+/* 内容区自身滚动，滚动条落在主区右缘而不是内容列内 */
 .content {
   display: flex;
   flex: 1 0 0;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  margin-right: -24px;
-  padding: 0 24px;
+  padding: 0 24px 24px;
   overflow-y: auto;
+}
+
+/*
+ * 导航轨与内容区是设置整页的两个滚动容器, 共用一道门:
+ * Chromium 走 global.css 的 ::-webkit-scrollbar 分支(5px 细条, 滑块悬停换色),
+ * Firefox 走标准属性分支(scrollbar-width: thin 与同一滑块色)。
+ * 不加门控时, 这条 scrollbar-color 会让 Chromium 丢弃两者的全部 webkit 伪元素规则。
+ */
+@supports not selector(::-webkit-scrollbar) {
+  .navigation,
+  .content {
+    scrollbar-color: var(--ds-scrollbar-thumb) transparent;
+  }
 }
 
 .cell {
@@ -79,7 +151,8 @@
   line-height: 22px;
 
   & + & {
-    box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+    /* 单元之间的分隔线用发丝线 0.5px，不再用 1px 实线 */
+    box-shadow: inset 0 0.5px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
   }
 }
 
@@ -110,12 +183,7 @@
   border-radius: 999px;
   background-color: var(--dsw-alias-border-l2);
   cursor: pointer;
-  outline: none;
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
-
-  &:focus-visible {
-    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
-  }
 }
 
 .switchOn {
@@ -208,7 +276,7 @@
   min-height: 82px;
   padding: 12px 16px;
   border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
+  border-radius: var(--ds-radius-md);
   background-color: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
@@ -218,16 +286,11 @@
   white-space: nowrap;
   cursor: pointer;
   user-select: none;
-  outline: none;
   transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
   &:hover,
   &.themeOptionSelected {
     background-color: var(--dsw-specific-selector);
-  }
-
-  &:focus-visible {
-    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
   }
 }
 
@@ -327,25 +390,119 @@
   }
 }
 
+.mobileConfirm {
+  display: block;
+  flex-shrink: 0;
+  width: calc(100% - 16px);
+  height: 52px;
+  margin: 16px 8px 0;
+  border: none;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-static-neutral-bluish-00);
+  font: inherit;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+}
+
+/* 插件数据区块：标题、逐项列表与底部整体清理 */
+.pluginData {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px 0;
+  box-shadow: inset 0 0.5px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+.pluginDataHead {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pluginDataList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 每行四列：插件 id、键数量、占用大小、清理按钮；单元格文本一律水平居中 */
+.pluginDataRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 88px 88px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+
+  & + & {
+    box-shadow: inset 0 0.5px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
+  }
+}
+
+/* id 来自插件清单，长度不受控；截断而不是撑破列宽 */
+.pluginDataId {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pluginDataKeys,
+.pluginDataSize {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.pluginDataEmpty {
+  padding: 12px 0;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.pluginDataFooter {
+  display: flex;
+  justify-content: flex-end;
+}
+
 @media not all and (min-width: 768px) {
+  /* 首启弹窗在窄屏贴底展开，高度随内容，与设置页的整页形态无关 */
   .dialog {
     align-self: flex-end;
     width: 100%;
     max-width: none;
-    height: calc(100% - 64px);
-    max-height: 800px;
-    border-radius: 24px 24px 0 0;
+    /* 贴底展开的浮层大卡只保留上两个圆角 */
+    border-radius: var(--ds-radius-lg) var(--ds-radius-lg) 0 0;
   }
 
-  .dialogMain {
+  .pageHeader {
+    min-height: 52px;
+    padding: 0 16px;
+  }
+
+  /* 窄屏：导航改横向条，单元等分且不小于 108，两端各留 16 */
+  .pageBody {
     flex-direction: column;
   }
 
   .navigation {
     flex-direction: row;
     width: auto;
-    margin: 6px -4px;
-    padding: 4px 0;
+    padding: 0 16px 8px;
     overflow-x: auto;
   }
 
@@ -354,22 +511,12 @@
     justify-content: center;
     width: auto;
     min-width: 108px;
-    margin: 0;
     white-space: nowrap;
-
-    &:first-child {
-      margin-left: 4px;
-    }
-
-    &:last-child {
-      margin-right: 4px;
-    }
   }
 
   .content {
-    padding-top: 24px;
-    padding-left: 0;
-    padding-bottom: env(safe-area-inset-bottom);
+    /* 内容区全宽内距 16，底部再让开手机的安全区 */
+    padding: 0 16px max(16px, env(safe-area-inset-bottom));
   }
 
   .text {
@@ -421,129 +568,6 @@
 
   .cellButton svg {
     display: none;
-  }
-}
-
-/* 插件数据区块：标题、逐项列表与底部整体清理 */
-.pluginData {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 8px;
-  box-sizing: border-box;
-  padding: 12px 0;
-  box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
-}
-
-.pluginDataHead {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.pluginDataList {
-  display: flex;
-  flex-direction: column;
-}
-
-/* 每行四列：插件 id、键数量、占用大小、清理按钮；单元格文本一律水平居中 */
-.pluginDataRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 84px 88px 88px;
-  gap: 8px;
-  align-items: center;
-  padding: 8px 0;
-  font-size: 14px;
-  line-height: 22px;
-  text-align: center;
-
-  & + & {
-    box-shadow: inset 0 1px 0 0 var(--dsw-alias-border-l2-darkmode-thin);
-  }
-}
-
-/* id 来自插件清单，长度不受控；截断而不是撑破列宽 */
-.pluginDataId {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.pluginDataKeys,
-.pluginDataSize {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-  white-space: nowrap;
-}
-
-.pluginDataEmpty {
-  padding: 12px 0;
-  font-size: 13px;
-  line-height: 20px;
-  text-align: center;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.pluginDataFooter {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.mobileConfirm {
-  display: block;
-  flex-shrink: 0;
-  width: calc(100% - 16px);
-  height: 52px;
-  margin: 16px 8px 0;
-  border: none;
-  border-radius: 999px;
-  background-color: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-static-neutral-bluish-00);
-  font: inherit;
-  font-size: 17px;
-  line-height: 24px;
-  font-weight: 500;
-  cursor: pointer;
-
-  &:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-}
-
-.importConfirm {
-  padding-top: 24px;
-  padding-bottom: 24px;
-}
-
-.importConfirmText {
-  color: var(--dsw-alias-label-primary);
-}
-
-.deleteConfirm {
-  max-height: calc(100dvh - 32px);
-  overflow-y: auto;
-}
-
-.deleteActions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  width: 100%;
-}
-
-@media not all and (min-width: 768px) {
-  .deleteActions > button {
-    min-height: 44px;
-    height: auto;
-    padding-top: 10px;
-    padding-bottom: 10px;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    max-width: 100%;
   }
 
   /* 窄屏只保留 id、键数量与大小三列，清理按钮换行居中，避免横向溢出 */

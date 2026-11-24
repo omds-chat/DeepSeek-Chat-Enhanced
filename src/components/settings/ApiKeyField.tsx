@@ -7,11 +7,17 @@ import { useApiKeyForm } from './useApiKeyForm.js'
 import { useTranslate } from '../../i18n/index.js'
 import styles from './Settings.module.css'
 
-/** API Key 的编辑状态：输入框与移动端底部的「确定」按钮共用 */
-export const useApiKeyEditor = () => {
+/**
+ * API Key 的编辑状态：输入框与移动端底部的「确定」按钮共用。
+ * onSaved 交给宿主收尾：首启弹窗用它自行关闭，设置页不传。
+ */
+export const useApiKeyEditor = (onSaved?: () => void) => {
   const apiKey = useSettings((state) => state.apiKey)
   const [editing, setEditing] = useState(false)
-  const form = useApiKeyForm(() => setEditing(false))
+  const form = useApiKeyForm(() => {
+    setEditing(false)
+    onSaved?.()
+  })
   return { apiKey, editing, setEditing, form, showInput: !apiKey || editing }
 }
 

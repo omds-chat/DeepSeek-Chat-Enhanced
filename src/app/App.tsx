@@ -16,6 +16,7 @@ import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
+import { SettingsPage } from '../components/settings/SettingsPage.js'
 import { PluginPanel } from '../components/plugins/PluginPanel.js'
 import { PluginPageView } from '../components/plugins/PluginPageView.js'
 import { bindPluginViewLifecycle } from '../components/plugins/pluginViewLifecycle.js'
@@ -56,7 +57,8 @@ export const App = () => {
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
   )
   const activeId = useChatStore((state) => state.activeId)
-  // 主区面板的单一命名空间: null 是会话, 'plugins' 是插件面板, 其余是插件槽位页
+  // 主区面板的单一命名空间: null 是会话, 'plugins' 是插件面板, 'settings' 是设置整页,
+  // 其余是插件槽位页
   const activePanelId = usePluginView((state) => state.activePanelId)
 
   usePreventPageScroll(isMobile)
@@ -104,7 +106,9 @@ export const App = () => {
           ) : null}
           <div className={styles.content}>
             {siderCollapsed ? <CollapsedSider /> : null}
-            {activePanelId !== null && typeof activePanelId === 'object' ? (
+            {activePanelId === 'settings' ? (
+              <SettingsPage siderCollapsed={siderCollapsed} />
+            ) : activePanelId !== null && typeof activePanelId === 'object' ? (
               <PluginPageView page={activePanelId} siderCollapsed={siderCollapsed} />
             ) : activePanelId === 'plugins' ? (
               <PluginPanel />
