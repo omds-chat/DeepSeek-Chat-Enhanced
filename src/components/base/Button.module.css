@@ -15,14 +15,9 @@
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
-  outline: none;
   transition:
     background-color var(--ds-transition-duration) var(--ds-ease-in-out),
     opacity var(--ds-transition-duration) var(--ds-ease-in-out);
-
-  &:focus-visible {
-    box-shadow: 0 0 0 2px var(--dsw-alias-button-primary-fill);
-  }
 
   &:disabled {
     opacity: 0.45;
@@ -90,9 +85,5 @@
 
   &:hover:not(:disabled) {
     background-color: var(--dsw-alias-interactive-bg-hover-danger);
-  }
-
-  &:focus-visible {
-    box-shadow: 0 0 0 2px var(--dsw-alias-state-error-primary);
   }
 }

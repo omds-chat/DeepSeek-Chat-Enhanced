@@ -1,0 +1,70 @@
+/*
+ * 设计令牌层: 半径与浮层描边、投影在此集中声明，颜色与字号仍由 theme.css 承担。
+ * 消费方只写令牌名，不再写 px 魔法数；999px 的全圆形状属于形状而非刻度，不并入半径表。
+ */
+
+:root {
+  --ds-radius-xs: 4px;
+  --ds-radius-sm: 8px;
+  --ds-radius-md: 12px;
+  --ds-radius-lg: 16px;
+  --ds-radius-xl: 20px;
+  --ds-radius-panel: 28px;
+
+  /*
+   * 主区各页页头同一刻度: 由会话页头定义(上内距 10 + 标题行 30 + 页签间隔 8 + 页签文字 20)。
+   * 设置页、插件设置页与插件槽位页、会话右栏页头都取这一处，切页时标题落在同一条水平线上。
+   */
+  --ds-page-header-height: 68px;
+
+  /*
+   * 侧栏收起时左上角悬浮按钮组的右边界:
+   * 16(左边距) + 34(面板图标列) + 12(组间距) + 78(胶囊: 2px 边框 + 2x2px 内距 + 2x34px 圆钮 + 4px 间距) = 140px。
+   * 各页让位 = 本值 + 3px(与悬浮组留 3px) - 自己的页左内距，见各自样式表。
+   */
+  --ds-collapsed-float-right: 140px;
+}
+
+body {
+  --ds-elevation-stroke-color: var(--dsw-alias-border-l4);
+}
+
+/*
+ * 深色主题下描边色下降一档: 深底上 0.2 白线比浅色主题的 0.16 黑线更醒目，
+ * 取 l3 与原先 1px l2 描边的视觉重量接近。
+ */
+body[data-ds-dark-theme] {
+  --ds-elevation-stroke-color: var(--dsw-alias-border-l3);
+}
+
+/*
+ * 派生投影逐元素声明，不只写在 body 上: 继承下来的是在 body 上就已经替换完
+ * var() 的值，后代再重绑 --ds-elevation-stroke-color 无法进入；逐元素声明让每个
+ * 元素按自己看到的描边色重新替换 var()，表面才能按需重绑描边。
+ * 描边作为 box-shadow 的第一层，组件配 border: 0，所以 0.5px 发丝线不占布局，
+ * 也不会在缩放时被撑粗。
+ */
+body,
+body * {
+  --ds-elevation-stroke: 0 0 0 0.5px var(--ds-elevation-stroke-color);
+  --ds-elevation-panel:
+    var(--ds-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.03), 0 0 16px 0 rgba(0, 0, 0, 0.02);
+  --ds-elevation-prominent:
+    var(--ds-elevation-stroke), 0 3px 8px 0 rgba(0, 0, 0, 0.04), 0 0 20px 0 rgba(0, 0, 0, 0.05);
+  --ds-elevation-soft:
+    var(--ds-elevation-stroke), 0 4px 16px 0 rgba(0, 0, 0, 0.03), 0 0 24px 0 rgba(0, 0, 0, 0.03);
+}
+
+/*
+ * 浮层层级表: 只做记录，数值与各组件 z-index 一致；新增浮层先在此找到档位再取值。
+ * Toast 2000
+ * Tooltip 2000
+ * VersionNotice 1800
+ * 插件通知栈 1700、资产下载卡 1700
+ * Select 下拉 1050
+ * Modal 1000
+ * 悬停卡片 950
+ * 下拉菜单 900
+ * 侧栏抽屉遮罩 800、侧栏抽屉 799
+ * 搜索面板(移动端) 700
+ */

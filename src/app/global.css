@@ -1,13 +1,5 @@
 :root {
-  --message-list-max-width: 840px;
-  --message-list-padding-horizontal: 44px;
-}
-
-@media (max-width: 1023px) {
-  :root {
-    --message-list-max-width: 712px;
-    --message-list-padding-horizontal: 36px;
-  }
+  --ds-focus-ring-width: 2px;
 }
 
 body {
@@ -24,8 +16,12 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  --scroll-color: rgba(0, 0, 0, 0.08);
-  --scroll-color-hover: rgba(0, 0, 0, 0.15);
+  /*
+   * 滚动条刻度: 细条 5px、轨道透明，滑块圆角与背景走下列变量。
+   */
+  --ds-scrollbar-width: 5px;
+  --ds-scrollbar-thumb: rgba(0, 0, 0, 0.08);
+  --ds-scrollbar-thumb-hover: rgba(0, 0, 0, 0.15);
 }
 
 body.dark {
@@ -33,8 +29,63 @@ body.dark {
 }
 
 body[data-ds-dark-theme] {
-  --scroll-color: rgba(255, 255, 255, 0.15);
-  --scroll-color-hover: rgba(255, 255, 255, 0.24);
+  --ds-scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --ds-scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+}
+
+/*
+ * 焦点环: 颜色取业务蓝(交互态语义)，宽度取令牌；偏移量由组件按需给，
+ * 所以除边到边的密集行以外不再逐组件写环。
+ */
+:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-width: var(--ds-focus-ring-width);
+}
+
+/*
+ * 指针模态下不画环: 只把环色置透明，不动 outline 的层级，也不动选中态描边；
+ * 可编辑控件(:read-write)始终保留环，鼠标点进输入框仍看得到焦点落在哪。
+ */
+html[data-input-modality='pointer'] body :focus-visible:not(:read-write) {
+  outline-color: transparent;
+}
+
+/*
+ * 滚动条的两条路径互斥，这里的门是必需的: 只要写了标准的 scrollbar-width 或
+ * scrollbar-color, Chromium 与 Safari 就会丢弃该元素上全部 ::-webkit-scrollbar*
+ * 规则(含 :hover)，因此标准属性只放在「不实现该伪元素」的引擎里生效。
+ * Firefox 没有悬停伪元素，滑块悬停色在该路径上由浏览器自行推导。
+ */
+@supports not selector(::-webkit-scrollbar) {
+  /*
+   * 逐元素声明而不是从 body 继承: 继承下来的是已替换完颜色值的变量，
+   * 后代重绑 --ds-scrollbar-thumb 就不再生效；scrollbar-width 本身不继承。
+   */
+  body,
+  body * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ds-scrollbar-thumb) transparent;
+  }
+}
+
+/* 伪元素选择器不加门控: 不实现它们的引擎会直接丢弃这些规则 */
+::-webkit-scrollbar {
+  width: var(--ds-scrollbar-width);
+  height: var(--ds-scrollbar-width);
+}
+
+/* 轨道透明，只有一枚 5px 宽的圆头条，底部内容从下方透出 */
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: var(--ds-scrollbar-thumb);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ds-scrollbar-thumb-hover);
 }
 
 body.change-theme *,

@@ -286,7 +286,7 @@
   height: 20px;
   margin-right: 4px;
   padding: 0 5px;
-  border-radius: 6px;
+  border-radius: var(--ds-radius-sm);
   font: var(--dsw-font-xs-13);
   line-height: 20px;
   color: var(--dsw-alias-label-secondary);
