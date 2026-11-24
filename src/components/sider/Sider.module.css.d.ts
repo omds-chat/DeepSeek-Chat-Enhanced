@@ -26,5 +26,6 @@ declare const styles: {
   readonly "drawer": string;
   readonly "drawerMask": string;
   readonly "mobile": string;
+  readonly "pointerInside": string;
 };
 export = styles;

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconPanelLeftOutline16, IconSettingsOutline16, NewChatIcon } from '../base/icons.js'
 import { setSiderCollapsed } from '../../services/settings.js'
@@ -16,6 +16,9 @@ import { closeMobileSider, useMobileSider } from './mobileSiderState.js'
 import { SessionItem } from './SessionItem.js'
 import styles from './Sider.module.css'
 
+/** 指针离开侧栏后等待多久再把滚动条滑块置透明(ms): 留一点缓冲, 滑块本身再 200ms 线性淡出 */
+const SCROLLBAR_FADE_DELAY = 500
+
 /**
  * 展开的侧边栏：名称与收起按钮、开启新对话、导航行区域(插件面板与各 nav.panel 登记项)、
  * 按时间分组的会话列表与底部设置。
@@ -31,6 +34,23 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   const groups = useMemo(() => groupSessions(sessions, now, t), [sessions, now, t])
   const [deleting, setDeleting] = useState<SessionSummary | null>(null)
   const [deletePending, setDeletePending] = useState(false)
+  const [pointerInside, setPointerInside] = useState(false)
+  const leaveTimerRef = useRef(0)
+
+  useEffect(() => () => window.clearTimeout(leaveTimerRef.current), [])
+
+  /** 指针进入即恢复滑块; 离开后延迟置透明, 免得来回移动时忽隐忽现 */
+  const trackPointer = (inside: boolean) => {
+    window.clearTimeout(leaveTimerRef.current)
+    if (inside) {
+      setPointerInside(true)
+      return
+    }
+    leaveTimerRef.current = window.setTimeout(
+      () => setPointerInside(false),
+      SCROLLBAR_FADE_DELAY
+    )
+  }
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>
@@ -57,7 +77,11 @@ export const Sider = ({ mobile = false }: { mobile?: boolean }) => {
   }, [])
 
   return (
-    <div className={clsx(styles.sider, mobile && styles.mobile)}>
+    <div
+      className={clsx(styles.sider, mobile && styles.mobile, pointerInside && styles.pointerInside)}
+      onPointerEnter={() => trackPointer(true)}
+      onPointerLeave={() => trackPointer(false)}
+    >
       <div className={styles.top}>
         <div className={styles.appName}>
           <span className={styles.appNameLine}>{t('appNameLine1')}</span>

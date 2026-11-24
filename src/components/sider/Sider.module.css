@@ -114,12 +114,53 @@
   margin-top: 24px;
 }
 
+/*
+ * 列表滚动条: 槽位恒定预留, 否则细条出现与消失会把整列行挤动 5px。
+ * 颜色走 --ds-scrollbar-thumb(深浅主题各自定义), 静默逻辑见下面的 pointerInside 规则。
+ */
 .list {
   height: 100%;
   margin: 0 -2px;
   padding: 0 2px;
   overflow-y: auto;
-  scrollbar-color: var(--scroll-color) transparent;
+  scrollbar-gutter: stable;
+}
+
+/*
+ * 标准滚动条属性只在实现不了 webkit 伪元素的引擎里声明, 否则 Chromium 会丢弃
+ * .list 上全部 ::-webkit-scrollbar* 规则(含下方的滑块过渡与静默换色)。
+ */
+@supports not selector(::-webkit-scrollbar) {
+  .list {
+    scrollbar-color: var(--ds-scrollbar-thumb) transparent;
+  }
+}
+
+/*
+ * 静默滚动条: 指针不在侧栏内时把滑块重绑为透明。
+ * 用透明而不是 display: none, 以保住 scrollbar-gutter 的预留宽度;
+ * 类名由 Sider 在指针离开 500ms 后加上, 滑块自身再以 200ms 线性淡出
+ * (过渡挂在伪元素上, 引擎不支持时退化为直接切换)。
+ */
+.sider:not(.pointerInside) .list {
+  --ds-scrollbar-thumb: transparent;
+  --ds-scrollbar-thumb-hover: transparent;
+}
+
+.list::-webkit-scrollbar-thumb {
+  transition: background-color 200ms linear;
+}
+
+/* 列表底部 24px 渐隐: 纯装饰层, 不接管指针事件, 色取侧栏底色; 左右各外扩 2px 盖住列表的负外边距 */
+.listWrap::after {
+  content: '';
+  position: absolute;
+  right: -2px;
+  bottom: 0;
+  left: -2px;
+  height: 24px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill));
 }
 
 .section {
@@ -136,7 +177,7 @@
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: 2px 10px;
+  padding: 2px 12px;
   font-size: 12px;
   line-height: 18px;
   font-weight: 500;
@@ -153,27 +194,35 @@
   margin-bottom: 4px;
 }
 
+/*
+ * 面板行: 桌面行盒 32px(原 44), 与会话行同档; 触屏在 .mobile 里回到 44。
+ * 行首内距 12 = 透明描边 3 + 内距 9; border-inline 与 background-clip 让悬停/选中底色
+ * 比行盒窄 3px 一条, 视觉上像浮在列里的胶囊而不是贴边色块。
+ */
 .panelRow {
   display: flex;
   align-items: center;
   box-sizing: border-box;
   width: 100%;
-  padding: 6px 2px 6px 6px;
-  border: none;
-  border-radius: 12px;
+  height: 32px;
+  padding: 0 3px 0 9px;
+  border: 0;
+  border-inline: 3px solid transparent;
+  border-radius: var(--ds-radius-md);
   background: none;
+  background-clip: padding-box;
   font: inherit;
   text-align: left;
   cursor: pointer;
   user-select: none;
-  outline: none;
 
   &:hover {
     background-color: var(--dsw-specific-sidebar-nav-item-hover);
   }
 
+  /* 父级列表会裁掉向外的环, 环画在盒内 */
   &:focus-visible {
-    box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill);
+    outline-offset: -2px;
   }
 }
 
@@ -187,19 +236,20 @@
   }
 }
 
+/* 图标盒与图标同宽, 与文字之间才正好是 6px 缝 */
 .panelRowIcon {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 16px;
+  height: 16px;
   color: var(--dsw-alias-label-primary);
 }
 
 .panelRowTitle {
   min-width: 0;
-  margin-left: 4px;
+  margin-left: 6px;
   overflow: hidden;
   font-size: 14px;
   white-space: nowrap;
@@ -223,27 +273,33 @@
   padding: 2px 0 6px;
 }
 
+/*
+ * 设置行是页脚入口, 桌面保持 40px(比会话行与面板行高一档), 触屏同为 44;
+ * 行首内距与涂色内缩同列表行。
+ */
 .settings {
   display: flex;
   align-items: center;
   box-sizing: border-box;
   width: 100%;
-  padding: 6px 2px 6px 6px;
-  border: none;
-  border-radius: 12px;
+  height: 40px;
+  padding: 0 3px 0 9px;
+  border: 0;
+  border-inline: 3px solid transparent;
+  border-radius: var(--ds-radius-md);
   background: none;
+  background-clip: padding-box;
   font: inherit;
   text-align: left;
   cursor: pointer;
   user-select: none;
-  outline: none;
 
   &:hover {
     background-color: var(--dsw-specific-sidebar-nav-item-hover);
   }
 
   &:focus-visible {
-    box-shadow: inset 0 0 0 2px var(--dsw-alias-button-primary-fill);
+    outline-offset: -2px;
   }
 }
 
@@ -252,14 +308,14 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 32px;
-  height: 32px;
+  width: 16px;
+  height: 16px;
   color: var(--dsw-alias-label-primary);
 }
 
 .settingsLabel {
   min-width: 0;
-  margin-left: 4px;
+  margin-left: 6px;
   overflow: hidden;
   font-size: 14px;
   white-space: nowrap;
@@ -285,7 +341,7 @@
   min-height: 40px;
   padding: 0 2px;
   box-sizing: border-box;
-  border-radius: 999px;
+  border-radius: var(--ds-radius-md);
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-3);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
@@ -314,19 +370,17 @@
   }
 
   .sectionHeader {
-    padding: 4px 10px;
+    padding: 4px 12px;
     font-size: 14px;
     line-height: 22px;
   }
 
-  /* 触屏上面板行抬高，标题放大一档 */
+  /* 触屏上面板行回到 44 高: 手指命中优先于桌面密度, 行首内距仍是 12 */
   .panelRow {
-    padding: 8px 10px;
-    border-radius: 12px;
+    height: 44px;
   }
 
   .panelRowTitle {
-    margin-left: 10px;
     font-size: 16px;
     line-height: 22px;
   }
@@ -336,7 +390,7 @@
   }
 
   .settings {
-    padding: 8px 10px;
+    height: 44px;
   }
 
   .settingsIcon {
@@ -350,7 +404,6 @@
   }
 
   .settingsLabel {
-    margin-left: 10px;
     font-size: 16px;
     line-height: 22px;
   }

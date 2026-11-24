@@ -1,11 +1,19 @@
+/*
+ * 会话行: 桌面 32 / 触屏 44(见文件末尾的移动端覆盖)。
+ * 桌面一档提高同屏会话数, 32 仍高于 28 的可点下限; 触屏保留手指命中的高度。
+ * 行首内距 12 = 透明描边 3 + 内距 9; border-inline 与 background-clip 让悬停/选中底色
+ * 比行盒窄 3px 一条, 与面板行、设置行同一口径。
+ */
 .item {
   position: relative;
   display: flex;
   align-items: center;
   box-sizing: border-box;
-  height: 40px;
-  padding: 8px 6px 8px 10px;
-  border-radius: 12px;
+  height: 32px;
+  padding: 0 3px 0 9px;
+  border-inline: 3px solid transparent;
+  border-radius: var(--ds-radius-md);
+  background-clip: padding-box;
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-label-primary);
@@ -48,9 +56,9 @@
 .renameInput {
   box-sizing: border-box;
   width: 100%;
-  height: 40px;
+  height: 32px;
   padding: 0 10px;
-  border-radius: 12px;
+  border-radius: var(--ds-radius-md);
   border: 1px solid var(--dsw-alias-brand-primary);
   background-color: var(--dsw-specific-input-major);
   color: var(--dsw-alias-label-primary);
@@ -65,11 +73,10 @@
   }
 }
 
+/* 触屏改为 44: 行首内距仍是 12(3 描边 + 9 内距), 字号放大一档 */
 @media not all and (min-width: 768px) {
   .item {
     height: 44px;
-    padding: 8px 6px 8px 12px;
-    border-radius: 12px;
     font-size: 16px;
   }
 
@@ -79,8 +86,6 @@
 
   .renameInput {
     height: 44px;
-    padding: 0 12px;
-    border-radius: 12px;
     font-size: 16px;
   }
 }
