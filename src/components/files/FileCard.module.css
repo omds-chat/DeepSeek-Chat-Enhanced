@@ -8,10 +8,10 @@
   min-height: 64px;
   padding: 0 12px 0 14px;
   border-radius: var(--ds-radius-lg);
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   background-color: var(--dsw-specific-input-major);
   cursor: default;
-  transition: background-color 0.2s ease-in-out;
+  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
 
   &:hover .remove {
     opacity: 1;
@@ -89,7 +89,7 @@
   overflow: hidden;
   font-size: 14px;
   line-height: 22px;
-  font-weight: 400;
+  font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--dsw-alias-label-primary);
@@ -121,7 +121,7 @@
   background-color: var(--dsw-alias-button-contrast-fill);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s ease-in-out;
+  transition: opacity var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
 .invalidRemove {
