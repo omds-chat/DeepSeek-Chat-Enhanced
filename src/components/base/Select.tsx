@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useAnchoredPosition, useDismiss } from './anchored.js'
 import { IconCheckOutline16, IconChevronDownOutline14 } from './icons.js'
+import { dismissFloating, MENU_ITEM_TAB_INDEX, useFloatingMenuKeys } from './menuFocus.js'
 import styles from './Select.module.css'
 
 export type SelectOption<T extends string> = { value: T; label: string; lang?: string }
@@ -10,6 +11,7 @@ export type SelectOption<T extends string> = { value: T; label: string; lang?: s
 /**
  * 胶囊形选择器：触发器高 36px、圆角 18px、浅灰底，下拉菜单选中项右侧打勾；
  * 点外部或 Esc 关闭。value 不匹配任何选项时触发器显示 placeholder。
+ * 键盘: 展开时聚焦首项, 方向键移动, Enter/Space 选中, Esc/Tab 关闭并交还焦点(见 menuFocus)。
  */
 export const Select = <T extends string>({
   value,
@@ -35,8 +37,22 @@ export const Select = <T extends string>({
     HTMLButtonElement,
     HTMLDivElement
   >(open, { align: 'end', maxHeight: 320, minSpace: 160 })
-  // Esc 只关菜单，不让外层弹窗一起关闭
-  useDismiss(open, [anchorRef, floatingRef], () => setOpen(false), { captureEscape: true })
+  const getTrigger = () => anchorRef.current
+  // Esc 只关菜单，不让外层弹窗一起关闭; 关闭时若焦点在菜单内则交还触发器
+  useDismiss(
+    open,
+    [anchorRef, floatingRef],
+    () => {
+      dismissFloating(floatingRef.current, () => setOpen(false), getTrigger)
+    },
+    { captureEscape: true }
+  )
+  const onKeyDown = useFloatingMenuKeys({
+    open,
+    containerRef: floatingRef,
+    onClose: () => setOpen(false),
+    getTrigger,
+  })
 
   return (
     <>
@@ -67,11 +83,13 @@ export const Select = <T extends string>({
               style={position ?? undefined}
               role="listbox"
               aria-label={ariaLabel}
+              onKeyDown={onKeyDown}
             >
               {options.map((option) => (
                 <div
                   key={option.value}
                   role="option"
+                  tabIndex={MENU_ITEM_TAB_INDEX}
                   lang={option.lang}
                   aria-selected={option.value === value}
                   className={styles.option}
