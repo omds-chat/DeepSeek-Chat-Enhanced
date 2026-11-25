@@ -117,6 +117,13 @@ export type PluginManifest = {
    */
   conflicts?: string[]
   /**
+   * 宿主能力标记；清单声明为真表示这份能力属于宿主自身，不是一条可管理的插件条目。
+   * 引擎对它的处置与普通插件完全一致（装载、启停、日志、list() 照常返回），
+   * 只有插件列表的分组不看它：既不进「已安装」组，也不进「内部插件」组。
+   * 该字段只由内置清单声明，不从外部产物或持久化记录里读取，避免插件自我隐藏。
+   */
+  hostCapability?: boolean
+  /**
    * 申请的能力；必须在核心能力表内。
    * `net:fetch` 只对内置插件开放，`assets:read` 对全部插件开放。
    */
@@ -477,6 +484,8 @@ export type PluginStateView = {
   sourceTrustFailure?: SourceTrustFailure
   /** 安装记录没有任何一项校验字段,即旧版本安装；界面据此提示重新安装 */
   verificationMissing?: boolean
+  /** 宿主能力标记；清单声明为宿主能力时透出，插件列表据此跳过该条目 */
+  hostCapability?: boolean
   /** 用户期望的运行状态，落盘后用于下次启动恢复 */
   enabled: boolean
   /** 清单声明的依赖插件 id */

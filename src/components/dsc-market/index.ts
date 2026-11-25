@@ -2,12 +2,17 @@ import { ensureTrustList } from '../../services/trust/index.js'
 import type { DscPlugin, PluginManifest } from '../dsc-plugin-engine/types.js'
 import { createMarketClient, type MarketClient } from './client.js'
 
-/** 内置插件清单；POST 计数请求复用 net:fetch 的申请口径，不额外声明能力 */
+/**
+ * 内置插件清单；POST 计数请求复用 net:fetch 的申请口径，不额外声明能力。
+ * hostCapability 标记它是宿主能力而非插件条目：市场页本身要它运行，
+ * 但它不可卸载、也没有可配置表面，不进插件列表的任何分组。
+ */
 export const dscMarketManifest: PluginManifest = {
   id: 'dsc-market',
   name: 'dsc-market',
   version: '1.0.0',
   engines: '^1.0.0',
+  hostCapability: true,
   capabilities: ['net:fetch', 'plugins:storage'],
 }
 

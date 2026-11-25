@@ -1584,6 +1584,7 @@ export const installPluginEngine = (): PluginEngine => {
         ? {}
         : { sourceTrustFailure: record.origin.trustFailure }),
       ...(record.origin?.verificationMissing === true ? { verificationMissing: true } : {}),
+      ...(record.manifest.hostCapability === true ? { hostCapability: true } : {}),
       enabled: record.enabled,
       dependencies: [...(record.manifest.dependencies ?? [])],
       capabilities: [...record.manifest.capabilities],

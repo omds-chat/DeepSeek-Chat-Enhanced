@@ -3,7 +3,14 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { isUnlistedTrust, verdictTextKey } from '../../i18n/pluginVerdicts.js'
-import { market, readRecordDataBase, type ReinstallPlan, type UpdateCheck } from '../dsc-market/index.js'
+import {
+  market,
+  readRecordDataBase,
+  toPluginId,
+  type CatalogPlugin,
+  type ReinstallPlan,
+  type UpdateCheck,
+} from '../dsc-market/index.js'
 import { dependencyStatusMap } from '../dsc-plugin-engine/dependencies.js'
 import {
   getPluginEngine,
@@ -34,6 +41,7 @@ import { showToast } from '../base/toastState.js'
 import { formatDateTime } from '../../utils/format.js'
 import { isLegacyInstall } from './legacyInstall.js'
 import { openPluginDetail, setPluginPanelTab } from './pluginPanelState.js'
+import { useInternalCatalog } from './usePluginList.js'
 import styles from './PluginPanel.module.css'
 
 const stateLabels: Record<PluginState, TranslationKey> = {
@@ -42,6 +50,14 @@ const stateLabels: Record<PluginState, TranslationKey> = {
   failed: 'pluginStateFailed',
   registered: 'pluginStateRegistered',
 }
+
+/**
+ * 状态标签只挂真状态：未启动与启动失败。
+ * 启用与停用由开关自己表达，不再额外挂一枚「运行中 / 已停用」的胶囊；
+ * 这样卡片刻度与 dsh 的插件行一致，标题行也不会每张卡都多一枚标签。
+ */
+const stateTagOf = (state: PluginState): TranslationKey | null =>
+  state === 'failed' || state === 'registered' ? stateLabels[state] : null
 
 /** 来源类型文案；内置与宿主直接注册的插件另有文案 */
 const sourceTypeLabels: Record<PluginSourceType, TranslationKey> = {
@@ -71,7 +87,10 @@ const CONFIRM_MS = 3000
 const HIGHLIGHT_MS = 2400
 
 /** 正在进行的操作；用于卡内控件的忙碌文案与禁用 */
-type Busy = { id: string; action: 'toggle' | 'uninstall' | 'update' | 'reinstall' | 'check' }
+type Busy = {
+  id: string
+  action: 'toggle' | 'uninstall' | 'update' | 'reinstall' | 'check' | 'install'
+}
 
 /** 需要二次确认的操作；3 秒内再次点击同一按钮才真正执行 */
 type PendingConfirm = { id: string; kind: 'update' | 'reinstall' }
@@ -81,6 +100,9 @@ type LogSnapshot = { name: string; lines: readonly string[]; capturedAt: number 
 
 /** 卡内的一行中性补充：来源、签名结论、目录校验、旧安装与内置说明 */
 type CardNote = { text: string; danger?: boolean }
+
+/** 内部插件组的一条：所属来源 id、解析出的插件 id 与目录条目本身 */
+type InternalEntry = { sourceId: string; id: string; plugin: CatalogPlugin }
 
 /** 已安装插件列表：卡片行为主，状态标记、启停开关与 ⋯ 菜单 */
 export const InstalledPlugins = ({
@@ -114,6 +136,32 @@ export const InstalledPlugins = ({
   const running = busy !== null
   /** 卡片节点：新装插件按 id 取节点做滚动定位 */
   const cards = useRef(new Map<string, HTMLLIElement>())
+
+  /** 内置内部插件来源的目录条目；市场未就绪或该来源没有运行态时为 null */
+  const catalog = useInternalCatalog()
+  /** 宿主能力不是插件条目：引擎照常持有它的记录与日志，但任何分组都不列它 */
+  const installed = useMemo(
+    () => plugins.filter((plugin) => plugin.hostCapability !== true),
+    [plugins]
+  )
+  /** 引擎已有记录的 id；内部插件组据此滤掉已安装的条目 */
+  const installedIds = useMemo(() => new Set(plugins.map((plugin) => plugin.id)), [plugins])
+  /**
+   * 内部插件组：内置内部来源目录里、引擎尚无安装记录的条目。
+   * 组内顺序沿用来源目录给出的顺序（市场按插件名排好），不另立排序口径。
+   */
+  const internal = useMemo<InternalEntry[]>(() => {
+    if (catalog === null) {
+      return []
+    }
+    return catalog.plugins
+      .map((plugin) => ({
+        sourceId: catalog.sourceId,
+        id: plugin.manifest?.id ?? toPluginId(plugin.name) ?? plugin.key,
+        plugin,
+      }))
+      .filter((entry) => !installedIds.has(entry.id))
+  }, [catalog, installedIds])
 
   /**
    * 依赖关系状态：徽标与启用开关的可用性都从这里取值。
@@ -222,6 +270,78 @@ export const InstalledPlugins = ({
       }
       await engine.activate(plugin.id)
     })
+  }
+
+  /**
+   * 内部插件组的安装：打开开关就安装，不另设「安装」文字按钮。
+   * 计划与信任判定都取条目所属的来源，与市场安装走同一条路径；
+   * 装完由 refresh 重读引擎列表，条目自己移入「已安装」组。
+   */
+  const installInternal = async ({ sourceId, id, plugin }: InternalEntry) => {
+    const client = market()
+    const engine = getPluginEngine()
+    if (!client) {
+      showToast({ type: 'error', key: 'pluginMarketUnavailable' })
+      return
+    }
+    if (!engine) {
+      showToast({ type: 'error', key: 'pluginEngineUnavailable' })
+      return
+    }
+    const plan = client.plan(sourceId, plugin)
+    if (!plan) {
+      showToast({
+        type: 'error',
+        key: 'pluginMarketInstallUnavailable',
+        params: { id: plugin.name },
+      })
+      return
+    }
+    const runtime = client.runtime(sourceId)
+    const trustFailure = runtime?.trustFailure ?? null
+    setBusy({ id, action: 'install' })
+    try {
+      // 来源信任判定一并交给引擎，只用于界面展示是否被官方认可
+      const result = await engine.installFromUrl(plan.url, plan.manifest, {
+        sourceType: plan.sourceType,
+        dataBase: plan.dataBase,
+        pluginBase: plan.pluginBase,
+        ...(plan.eec === undefined ? {} : { eec: plan.eec }),
+        ...(plan.eecUrls === undefined ? {} : { eecUrls: plan.eecUrls }),
+        sigUrl: plan.sigUrl,
+        authorPubUrl: plan.authorPubUrl,
+        authorSigUrl: plan.authorSigUrl,
+        catalogVerified: plan.catalogVerified,
+        metaVerified: plan.metaVerified,
+        revisions: plan.revisions,
+        ...(plan.authorPubSha512 === undefined ? {} : { authorPubSha512: plan.authorPubSha512 }),
+        ...(runtime === null ? {} : { trust: runtime.trust }),
+        ...(trustFailure === null ? {} : { trustFailure }),
+      })
+      if (result.ok) {
+        client.countInstall(sourceId, plugin)
+        // 自动启用被拒时引擎已经提示原因，这里不再用安装完成盖掉它
+        if (result.activation?.ok !== false) {
+          showToast({ key: 'pluginInstalled', params: { id: plugin.name } })
+        }
+        return
+      }
+      // 失败只走既有气泡：未安装项不新造卡内失败行
+      showToast({
+        type: 'error',
+        key: 'pluginInstallRejected',
+        params: { id: plugin.name, reason: pluginReasonText(result.reason, result.detail) },
+      })
+    } catch {
+      showToast({
+        type: 'error',
+        key: 'pluginInstallRejected',
+        params: { id: plugin.name, reason: pluginReasonText('load-failed') },
+      })
+    } finally {
+      setBusy(null)
+      refresh()
+    }
   }
 
   /** 已启用且声明依赖该插件的插件；卸载被拒的原因由引擎提示，这里只用来避免重复提示 */
@@ -460,7 +580,7 @@ export const InstalledPlugins = ({
   if (!ready) {
     return <div className={styles.empty}>{t('pluginEngineUnavailable')}</div>
   }
-  if (plugins.length === 0) {
+  if (installed.length === 0 && internal.length === 0) {
     return (
       <div className={styles.empty}>
         <div>{t('pluginEmptyInstalled')}</div>
@@ -473,283 +593,347 @@ export const InstalledPlugins = ({
 
   return (
     <>
-      <ul className={styles.pluginCards} role="list">
-        {plugins.map((plugin) => {
-          const builtin = plugin.source?.kind === 'builtin'
-          const active = plugin.state === 'active'
-          const check = updates.get(plugin.id) ?? null
-          const legacy = isLegacyInstall(plugin)
-          const confirmingUpdate = pending?.id === plugin.id && pending.kind === 'update'
-          const confirmingReinstall = pending?.id === plugin.id && pending.kind === 'reinstall'
-          const updating = busy?.id === plugin.id && busy.action === 'update'
-          const reinstalling = busy?.id === plugin.id && busy.action === 'reinstall'
-          const checking = busy?.id === plugin.id && busy.action === 'check'
-          const uninstalling = busy?.id === plugin.id && busy.action === 'uninstall'
-          const uninstallOpen = confirmingUninstall === plugin.id
-          const status = dependency.get(plugin.id)
-          const missing = status?.missing ?? []
-          // 依赖未满足时启用会被引擎拒绝，开关直接置灰；停用不置灰，被依赖时按拒绝处理
-          const enableBlocked = !active && missing.length > 0
-          const toggleHint = active
-            ? status?.dependentBlocked
-              ? t('pluginBadgeDependentBlockedHint', { id: (status?.dependents ?? []).join(', ') })
-              : undefined
-            : enableBlocked
-              ? t('pluginEnableBlockedHint', { id: missing.join(', ') })
-              : undefined
+      {installed.length === 0 ? null : (
+        <section className={styles.pluginGroup} aria-label={t('pluginGroupInstalled')}>
+          <div className={styles.pluginGroupHead}>
+            <div className={styles.pluginGroupTitle}>{t('pluginGroupInstalled')}</div>
+          </div>
+          <ul className={styles.pluginCards} role="list">
+            {installed.map((plugin) => {
+              const builtin = plugin.source?.kind === 'builtin'
+              const active = plugin.state === 'active'
+              const stateTag = stateTagOf(plugin.state)
+              const check = updates.get(plugin.id) ?? null
+              const legacy = isLegacyInstall(plugin)
+              const confirmingUpdate = pending?.id === plugin.id && pending.kind === 'update'
+              const confirmingReinstall = pending?.id === plugin.id && pending.kind === 'reinstall'
+              const updating = busy?.id === plugin.id && busy.action === 'update'
+              const reinstalling = busy?.id === plugin.id && busy.action === 'reinstall'
+              const checking = busy?.id === plugin.id && busy.action === 'check'
+              const uninstalling = busy?.id === plugin.id && busy.action === 'uninstall'
+              const uninstallOpen = confirmingUninstall === plugin.id
+              const status = dependency.get(plugin.id)
+              const missing = status?.missing ?? []
+              // 依赖未满足时启用会被引擎拒绝，开关直接置灰；停用不置灰，被依赖时按拒绝处理
+              const enableBlocked = !active && missing.length > 0
+              const toggleHint = active
+                ? status?.dependentBlocked
+                  ? t('pluginBadgeDependentBlockedHint', { id: (status?.dependents ?? []).join(', ') })
+                  : undefined
+                : enableBlocked
+                  ? t('pluginEnableBlockedHint', { id: missing.join(', ') })
+                  : undefined
 
-          // 卡片只留名称、版本、状态与徽标在标题行，其余中性补充统一排到描述行下方
-          const notes: CardNote[] = [{ text: t(sourceLabel(plugin)) }]
-          if (plugin.source !== null && plugin.source.kind !== 'builtin') {
-            notes.push({
-              text: t(
-                verdictTextKey(
-                  plugin.sourceVerdict,
-                  plugin.sourceVerdictReason,
-                  plugin.sourceTrustFailure
-                )
-              ),
-              danger: plugin.sourceVerdict === 'failed',
-            })
-          }
-          if (plugin.catalogVerified !== undefined) {
-            notes.push({
-              text: t(plugin.catalogVerified ? 'pluginCatalogVerified' : 'pluginCatalogUnverified'),
-            })
-          }
-          if (legacy) {
-            notes.push({ text: t('pluginLegacyInstallHint') })
-          }
-          if (plugin.sourceVerdict === 'confirmed' && isUnlistedTrust(plugin.sourceTrust)) {
-            notes.push({ text: t('pluginMarketNotListed') })
-          }
-          if (builtin) {
-            notes.push({ text: t('pluginBuiltinUninstallHint') })
-          }
+              // 卡片只留名称、版本、状态与徽标在标题行，其余中性补充统一排到描述行下方
+              const notes: CardNote[] = [{ text: t(sourceLabel(plugin)) }]
+              if (plugin.source !== null && plugin.source.kind !== 'builtin') {
+                notes.push({
+                  text: t(
+                    verdictTextKey(
+                      plugin.sourceVerdict,
+                      plugin.sourceVerdictReason,
+                      plugin.sourceTrustFailure
+                    )
+                  ),
+                  danger: plugin.sourceVerdict === 'failed',
+                })
+              }
+              if (plugin.catalogVerified !== undefined) {
+                notes.push({
+                  text: t(plugin.catalogVerified ? 'pluginCatalogVerified' : 'pluginCatalogUnverified'),
+                })
+              }
+              if (legacy) {
+                notes.push({ text: t('pluginLegacyInstallHint') })
+              }
+              if (plugin.sourceVerdict === 'confirmed' && isUnlistedTrust(plugin.sourceTrust)) {
+                notes.push({ text: t('pluginMarketNotListed') })
+              }
+              if (builtin) {
+                notes.push({ text: t('pluginBuiltinUninstallHint') })
+              }
 
-          // 详情 / 日志 / 检查更新常驻；更新与重装只在有结论或旧记录时出现，卸载对内置插件不开放
-          const options: MenuOption[] = [
-            {
-              key: 'detail',
-              label: t('pluginCardDetails'),
-              icon: <IconSettingsOutline16 />,
-              onSelect: guard(() => openPluginDetail(plugin.id)),
-            },
-            {
-              key: 'logs',
-              label: t('pluginCardLogs'),
-              icon: <IconDataOutline16 />,
-              onSelect: guard(() => openLogs(plugin)),
-            },
-            {
-              key: 'check',
-              label: checking ? t('pluginOperationBusy') : t('pluginCardCheckUpdate'),
-              icon: <IconSearchOutline16 />,
-              onSelect: guard(() => void checkNow(plugin)),
-            },
-          ]
-          // 选中只武装确认：真正执行要再点一次卡右端原地换出来的确认按钮
-          if (check?.status === 'outdated') {
-            options.push({
-              key: 'update',
-              label: updating ? t('pluginOperationBusy') : t('pluginUpdateAvailable'),
-              icon: <IconDownloadOutline16 />,
-              onSelect: guard(() => armConfirm(plugin.id, 'update')),
-            })
-          }
-          if (legacy) {
-            options.push({
-              key: 'reinstall',
-              label: reinstalling ? t('pluginOperationBusy') : t('pluginActionReinstall'),
-              icon: <IconRefreshOutline16 />,
-              onSelect: guard(() => armConfirm(plugin.id, 'reinstall')),
-            })
-          }
-          if (!builtin) {
-            options.push({
-              key: 'uninstall',
-              label: t('pluginActionUninstall'),
-              icon: <IconTrashOutline16 />,
-              danger: true,
-              onSelect: guard(() => armUninstall(plugin.id)),
-            })
-          }
+              // 详情 / 日志 / 检查更新常驻；更新与重装只在有结论或旧记录时出现，卸载对内置插件不开放
+              const options: MenuOption[] = [
+                {
+                  key: 'detail',
+                  label: t('pluginCardDetails'),
+                  icon: <IconSettingsOutline16 />,
+                  onSelect: guard(() => openPluginDetail(plugin.id)),
+                },
+                {
+                  key: 'logs',
+                  label: t('pluginCardLogs'),
+                  icon: <IconDataOutline16 />,
+                  onSelect: guard(() => openLogs(plugin)),
+                },
+                {
+                  key: 'check',
+                  label: checking ? t('pluginOperationBusy') : t('pluginCardCheckUpdate'),
+                  icon: <IconSearchOutline16 />,
+                  onSelect: guard(() => void checkNow(plugin)),
+                },
+              ]
+              // 选中只武装确认：真正执行要再点一次卡右端原地换出来的确认按钮
+              if (check?.status === 'outdated') {
+                options.push({
+                  key: 'update',
+                  label: updating ? t('pluginOperationBusy') : t('pluginUpdateAvailable'),
+                  icon: <IconDownloadOutline16 />,
+                  onSelect: guard(() => armConfirm(plugin.id, 'update')),
+                })
+              }
+              if (legacy) {
+                options.push({
+                  key: 'reinstall',
+                  label: reinstalling ? t('pluginOperationBusy') : t('pluginActionReinstall'),
+                  icon: <IconRefreshOutline16 />,
+                  onSelect: guard(() => armConfirm(plugin.id, 'reinstall')),
+                })
+              }
+              if (!builtin) {
+                options.push({
+                  key: 'uninstall',
+                  label: t('pluginActionUninstall'),
+                  icon: <IconTrashOutline16 />,
+                  danger: true,
+                  onSelect: guard(() => armUninstall(plugin.id)),
+                })
+              }
 
-          /** 已武装的二次确认：卡右端在 3 秒内换成确认对，超时回归 */
-          const armed =
-            uninstallOpen
-              ? 'uninstall'
-              : confirmingUpdate && check?.status === 'outdated'
-                ? 'update'
-                : confirmingReinstall && legacy
-                  ? 'reinstall'
-                  : null
+              /** 已武装的二次确认：卡右端在 3 秒内换成确认对，超时回归 */
+              const armed =
+                uninstallOpen
+                  ? 'uninstall'
+                  : confirmingUpdate && check?.status === 'outdated'
+                    ? 'update'
+                    : confirmingReinstall && legacy
+                      ? 'reinstall'
+                      : null
 
-          return (
-            <li
-              key={plugin.id}
-              ref={(node) => {
-                if (node) {
-                  cards.current.set(plugin.id, node)
-                } else {
-                  cards.current.delete(plugin.id)
-                }
-              }}
-              className={styles.pluginCard}
-              role="listitem"
-              aria-busy={busy?.id === plugin.id}
-              data-plugin-highlight={highlightId === plugin.id ? '' : undefined}
-            >
-              <div className={styles.pluginCardHead}>
-                {/* 插件的状态视图没有图标字段，统一用插件字形占位 */}
-                <div className={styles.pluginCardIcon} aria-hidden="true">
-                  <IconPluginOutline16 />
-                </div>
-                <div className={styles.pluginCardMain}>
-                  <div className={styles.pluginCardTitleRow}>
-                    <button
-                      type="button"
-                      className={styles.pluginCardTitle}
-                      onClick={() => openPluginDetail(plugin.id)}
-                    >
-                      {plugin.name}
-                    </button>
-                    <span className={styles.pluginMetaTag}>{plugin.version}</span>
-                    <span className={styles.pluginStatusTag}>{t(stateLabels[plugin.state])}</span>
-                    {status?.dependencyMissing ? (
-                      <span
-                        className={clsx(styles.dependencyBadge, styles.dependencyBadgeUnmet)}
-                        title={t('pluginBadgeDependencyMissingHint', { id: missing.join(', ') })}
-                      >
-                        {t('pluginBadgeDependencyMissing')}
-                      </span>
-                    ) : null}
-                    {status?.dependentBlocked ? (
-                      <span
-                        className={styles.dependencyBadge}
-                        title={t('pluginBadgeDependentBlockedHint', {
-                          id: (status?.dependents ?? []).join(', '),
-                        })}
-                      >
-                        {t('pluginBadgeDependentBlocked')}
-                      </span>
-                    ) : null}
-                    {plugin.sourceType === 'inner' && plugin.source?.kind === 'url' ? (
-                      <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
-                    ) : null}
-                  </div>
-                  <div className={styles.pluginCardDesc}>{plugin.id}</div>
-                  <div>
-                    {notes.map((note, index) => (
-                      <Fragment key={index}>
-                        {index > 0 ? ' · ' : null}
-                        <span className={note.danger ? styles.errorText : styles.caption}>
-                          {note.text}
-                        </span>
-                      </Fragment>
-                    ))}
-                  </div>
-                  {/* 确认态下补一句说明，讲清为什么要再点一次 */}
-                  {armed === null ? null : (
-                    <div className={styles.caption} role="status">
-                      {armed === 'uninstall'
-                        ? `${t('pluginUninstallDescription', { name: plugin.name })} ${t('pluginUninstallKeepDataHint')}`
-                        : t(armed === 'update' ? 'pluginUpdateHint' : 'pluginReinstallHint')}
+              return (
+                <li
+                  key={plugin.id}
+                  ref={(node) => {
+                    if (node) {
+                      cards.current.set(plugin.id, node)
+                    } else {
+                      cards.current.delete(plugin.id)
+                    }
+                  }}
+                  className={styles.pluginCard}
+                  role="listitem"
+                  aria-busy={busy?.id === plugin.id}
+                  data-plugin-highlight={highlightId === plugin.id ? '' : undefined}
+                >
+                  <div className={styles.pluginCardHead}>
+                    {/* 插件的状态视图没有图标字段，统一用插件字形占位 */}
+                    <div className={styles.pluginCardIcon} aria-hidden="true">
+                      <IconPluginOutline16 />
                     </div>
-                  )}
-                </div>
-                {/* 确认态把开关与菜单原地换成「危险按钮 + 取消」，3 秒后回归 */}
-                <div className={styles.pluginCardEnd}>
-                  {armed === 'uninstall' ? (
-                    <>
-                      <Button
-                        variant="danger"
-                        size="s"
-                        disabled={running}
-                        onClick={() => void uninstall(plugin)}
-                      >
-                        {uninstalling ? t('pluginOperationBusy') : t('pluginActionUninstall')}
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="s"
-                        disabled={running}
-                        onClick={cancelUninstall}
-                      >
-                        {t('cancel')}
-                      </Button>
-                    </>
-                  ) : armed === 'update' && check !== null ? (
-                    <>
-                      <Button
-                        variant="danger"
-                        size="s"
-                        disabled={running}
-                        onClick={() => void rebuildPlugin(plugin, check.latest, 'update')}
-                      >
-                        {updating ? t('pluginOperationBusy') : t('pluginUpdateConfirm')}
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="s"
-                        disabled={running}
-                        onClick={cancelConfirm}
-                      >
-                        {t('cancel')}
-                      </Button>
-                    </>
-                  ) : armed === 'reinstall' ? (
-                    <>
-                      <Button
-                        variant="danger"
-                        size="s"
-                        disabled={running}
-                        onClick={() => void rebuildPlugin(plugin, plugin.version, 'reinstall')}
-                      >
-                        {reinstalling ? t('pluginOperationBusy') : t('pluginReinstallConfirm')}
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="s"
-                        disabled={running}
-                        onClick={cancelConfirm}
-                      >
-                        {t('cancel')}
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      {/* 开关自己承担 switch 语义，轨道与圆钮由 .pluginSwitch 画 */}
+                    <div className={styles.pluginCardMain}>
+                      <div className={styles.pluginCardTitleRow}>
+                        <button
+                          type="button"
+                          className={styles.pluginCardTitle}
+                          onClick={() => openPluginDetail(plugin.id)}
+                        >
+                          {plugin.name}
+                        </button>
+                        <span className={styles.pluginMetaTag}>{plugin.version}</span>
+                        {stateTag === null ? null : (
+                          <span className={styles.pluginStatusTag}>{t(stateTag)}</span>
+                        )}
+                        {status?.dependencyMissing ? (
+                          <span
+                            className={clsx(styles.dependencyBadge, styles.dependencyBadgeUnmet)}
+                            title={t('pluginBadgeDependencyMissingHint', { id: missing.join(', ') })}
+                          >
+                            {t('pluginBadgeDependencyMissing')}
+                          </span>
+                        ) : null}
+                        {status?.dependentBlocked ? (
+                          <span
+                            className={styles.dependencyBadge}
+                            title={t('pluginBadgeDependentBlockedHint', {
+                              id: (status?.dependents ?? []).join(', '),
+                            })}
+                          >
+                            {t('pluginBadgeDependentBlocked')}
+                          </span>
+                        ) : null}
+                        {plugin.sourceType === 'inner' && plugin.source?.kind === 'url' ? (
+                          <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
+                        ) : null}
+                      </div>
+                      <div className={styles.pluginCardDesc}>{plugin.id}</div>
+                      <div>
+                        {notes.map((note, index) => (
+                          <Fragment key={index}>
+                            {index > 0 ? ' · ' : null}
+                            <span className={note.danger ? styles.errorText : styles.caption}>
+                              {note.text}
+                            </span>
+                          </Fragment>
+                        ))}
+                      </div>
+                      {/* 确认态下补一句说明，讲清为什么要再点一次 */}
+                      {armed === null ? null : (
+                        <div className={styles.caption} role="status">
+                          {armed === 'uninstall'
+                            ? `${t('pluginUninstallDescription', { name: plugin.name })} ${t('pluginUninstallKeepDataHint')}`
+                            : t(armed === 'update' ? 'pluginUpdateHint' : 'pluginReinstallHint')}
+                        </div>
+                      )}
+                    </div>
+                    {/* 确认态把开关与菜单原地换成「危险按钮 + 取消」，3 秒后回归 */}
+                    <div className={styles.pluginCardEnd}>
+                      {armed === 'uninstall' ? (
+                        <>
+                          <Button
+                            variant="danger"
+                            size="s"
+                            disabled={running}
+                            onClick={() => void uninstall(plugin)}
+                          >
+                            {uninstalling ? t('pluginOperationBusy') : t('pluginActionUninstall')}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="s"
+                            disabled={running}
+                            onClick={cancelUninstall}
+                          >
+                            {t('cancel')}
+                          </Button>
+                        </>
+                      ) : armed === 'update' && check !== null ? (
+                        <>
+                          <Button
+                            variant="danger"
+                            size="s"
+                            disabled={running}
+                            onClick={() => void rebuildPlugin(plugin, check.latest, 'update')}
+                          >
+                            {updating ? t('pluginOperationBusy') : t('pluginUpdateConfirm')}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="s"
+                            disabled={running}
+                            onClick={cancelConfirm}
+                          >
+                            {t('cancel')}
+                          </Button>
+                        </>
+                      ) : armed === 'reinstall' ? (
+                        <>
+                          <Button
+                            variant="danger"
+                            size="s"
+                            disabled={running}
+                            onClick={() => void rebuildPlugin(plugin, plugin.version, 'reinstall')}
+                          >
+                            {reinstalling ? t('pluginOperationBusy') : t('pluginReinstallConfirm')}
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="s"
+                            disabled={running}
+                            onClick={cancelConfirm}
+                          >
+                            {t('cancel')}
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          {/* 开关自己承担 switch 语义，轨道与圆钮由 .pluginSwitch 画 */}
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={active}
+                            aria-label={t('pluginActionEnable')}
+                            className={styles.pluginSwitch}
+                            disabled={running || enableBlocked}
+                            title={toggleHint}
+                            onClick={() => void toggle(plugin)}
+                          />
+                          <Menu options={options}>
+                            {({ toggle: toggleMenu }) => (
+                              <IconButton
+                                icon={<IconEllipsisOutline16 />}
+                                aria-label={t('more')}
+                                onClick={toggleMenu}
+                              />
+                            )}
+                          </Menu>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {plugin.error ? (
+                    <div className={styles.pluginCardReason}>{pluginReasonText(plugin.error)}</div>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+      {internal.length === 0 ? null : (
+        <section className={styles.pluginGroup} aria-label={t('pluginGroupInternal')}>
+          <div className={styles.pluginGroupHead}>
+            <div className={styles.pluginGroupTitle}>{t('pluginGroupInternal')}</div>
+          </div>
+          <ul className={styles.pluginCards} role="list">
+            {internal.map((entry) => {
+              const { id, plugin, sourceId } = entry
+              const installing = busy?.id === id && busy.action === 'install'
+              return (
+                <li
+                  key={sourceId + '/' + plugin.key}
+                  className={styles.pluginCard}
+                  role="listitem"
+                  aria-busy={installing}
+                >
+                  <div className={styles.pluginCardHead}>
+                    <div className={styles.pluginCardIcon} aria-hidden="true">
+                      <IconPluginOutline16 />
+                    </div>
+                    <div className={styles.pluginCardMain}>
+                      <div className={styles.pluginCardTitleRow}>
+                        {/* 未安装项没有可打开的详情页，名称只是文字 */}
+                        <span className={styles.pluginCardTitleText}>
+                          {plugin.meta?.name ?? plugin.name}
+                        </span>
+                        {plugin.latest === null ? null : (
+                          <span className={styles.pluginMetaTag}>{plugin.latest}</span>
+                        )}
+                        <span className={clsx(styles.pluginStatusTag, styles.pluginTagNeutral)}>
+                          {t('pluginTagUninstalled')}
+                        </span>
+                      </div>
+                      <div className={styles.pluginCardDesc}>{id}</div>
+                    </div>
+                    <div className={styles.pluginCardEnd}>
+                      {/* 打开开关即安装：装完由 refresh 把条目移进上一组 */}
                       <button
                         type="button"
                         role="switch"
-                        aria-checked={active}
-                        aria-label={t('pluginActionEnable')}
+                        aria-checked={false}
+                        aria-label={installing ? t('pluginInstalling') : t('pluginActionInstall')}
                         className={styles.pluginSwitch}
-                        disabled={running || enableBlocked}
-                        title={toggleHint}
-                        onClick={() => void toggle(plugin)}
+                        disabled={running}
+                        onClick={() => void installInternal(entry)}
                       />
-                      <Menu options={options}>
-                        {({ toggle: toggleMenu }) => (
-                          <IconButton
-                            icon={<IconEllipsisOutline16 />}
-                            aria-label={t('more')}
-                            onClick={toggleMenu}
-                          />
-                        )}
-                      </Menu>
-                    </>
-                  )}
-                </div>
-              </div>
-              {plugin.error ? (
-                <div className={styles.pluginCardReason}>{pluginReasonText(plugin.error)}</div>
-              ) : null}
-            </li>
-          )
-        })}
-      </ul>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
       {logs ? (
         <Modal
           title={t('pluginLogsTitle', { name: logs.name })}
