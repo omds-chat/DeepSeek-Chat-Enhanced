@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useTranslate } from '../../i18n/index.js'
 import { MobileHeader } from '../session/MobileHeader.js'
+import { IconChevronRightOutline14 } from '../base/icons.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { returnToChat, type SlotPageRef } from './pluginViewState.js'
 import { ConversationTabs } from './ConversationTabs.js'
@@ -35,11 +36,10 @@ export const PluginPageView = ({
         {/* 会话标签页的「返回会话」由标签栏的「对话」项承担, 只有其它槽位保留这个页头按钮 */}
         {page.slot !== 'conversation.tabs' ? (
           // 返回一律回到会话: 纯面板导航, 不恢复进入前的会话, 不触发会话读取
-          <button
-            type="button"
-            className={detailStyles.backButton}
-            onClick={() => returnToChat()}
-          >
+          <button type="button" className={styles.crumb} onClick={() => returnToChat()}>
+            <span className={styles.crumbIcon} aria-hidden="true">
+              <IconChevronRightOutline14 />
+            </span>
             {t('pluginViewBackToChat')}
           </button>
         ) : null}

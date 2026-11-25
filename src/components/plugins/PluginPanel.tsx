@@ -43,7 +43,7 @@ export const PluginPanel = () => {
   const isMobile = useIsMobile()
   const tab = usePluginPanel((state) => state.tab)
   const detailPluginId = usePluginPanel((state) => state.detailPluginId)
-  const { plugins, ready, refresh } = usePluginList()
+  const { plugins, ready, loading, highlightId, refresh, clearHighlight } = usePluginList()
   const installedIds = new Set(plugins.map((plugin) => plugin.id))
   const baseId = useId()
   const tabId = (value: PluginPanelTab) => `${baseId}-tab-${value}`
@@ -175,7 +175,14 @@ export const PluginPanel = () => {
           {tab === 'installed' ? (
             <>
               <PendingConflicts plugins={plugins} refresh={refresh} />
-              <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
+              <InstalledPlugins
+                plugins={plugins}
+                ready={ready}
+                loading={loading}
+                highlightId={highlightId}
+                onHighlightShown={clearHighlight}
+                refresh={refresh}
+              />
             </>
           ) : (
             <MarketPlugins

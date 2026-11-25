@@ -67,6 +67,9 @@ const sourceLabel = (plugin: PluginStateView): TranslationKey => {
 /** 二次确认的保持时间（毫秒），与市场的安装确认同一节奏 */
 const CONFIRM_MS = 3000
 
+/** 新装插件高亮环的持续时间（毫秒），与高亮动画同一节奏 */
+const HIGHLIGHT_MS = 2400
+
 /** 正在进行的操作；用于卡内控件的忙碌文案与禁用 */
 type Busy = { id: string; action: 'toggle' | 'uninstall' | 'update' | 'reinstall' | 'check' }
 
@@ -83,10 +86,19 @@ type CardNote = { text: string; danger?: boolean }
 export const InstalledPlugins = ({
   plugins,
   ready,
+  loading,
+  highlightId,
+  onHighlightShown,
   refresh,
 }: {
   plugins: PluginStateView[]
   ready: boolean
+  /** 首读未完成：列出骨架行，空态与列表都不渲染 */
+  loading: boolean
+  /** 刚装上的插件：滚进可视区并挂 2.4s 高亮环 */
+  highlightId: string | null
+  /** 高亮环到时撤掉 */
+  onHighlightShown: () => void
   refresh: () => void
 }) => {
   const t = useTranslate()
@@ -100,6 +112,8 @@ export const InstalledPlugins = ({
   const confirmTimer = useRef(0)
   const uninstallTimer = useRef(0)
   const running = busy !== null
+  /** 卡片节点：新装插件按 id 取节点做滚动定位 */
+  const cards = useRef(new Map<string, HTMLLIElement>())
 
   /**
    * 依赖关系状态：徽标与启用开关的可用性都从这里取值。
@@ -154,6 +168,25 @@ export const InstalledPlugins = ({
     },
     []
   )
+
+  /**
+   * 新装插件：把卡片滚到可视区中部，并挂上 2.4s 的业务蓝环。
+   * 减弱动态下不做平滑滚动（环由样式表改成常驻静态环）。
+   */
+  useEffect(() => {
+    if (highlightId === null) {
+      return
+    }
+    const card = cards.current.get(highlightId)
+    if (card) {
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      card.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' })
+    }
+    const timer = window.setTimeout(onHighlightShown, HIGHLIGHT_MS)
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [highlightId, onHighlightShown])
 
   /**
    * 置忙执行一次操作，完成后刷新列表。
@@ -419,6 +452,11 @@ export const InstalledPlugins = ({
     setLogs({ name: plugin.name, lines, capturedAt: Date.now() })
   }
 
+  // 首读完成前不落空态：列表还没有内容可读，空态会误报「没有插件」
+  if (loading) {
+    return <PluginListSkeleton label={t('pluginListLoading')} />
+  }
+  // 引擎缺失是终态，不是加载中，仍按文案说明原因
   if (!ready) {
     return <div className={styles.empty}>{t('pluginEngineUnavailable')}</div>
   }
@@ -550,9 +588,17 @@ export const InstalledPlugins = ({
           return (
             <li
               key={plugin.id}
+              ref={(node) => {
+                if (node) {
+                  cards.current.set(plugin.id, node)
+                } else {
+                  cards.current.delete(plugin.id)
+                }
+              }}
               className={styles.pluginCard}
               role="listitem"
               aria-busy={busy?.id === plugin.id}
+              data-plugin-highlight={highlightId === plugin.id ? '' : undefined}
             >
               <div className={styles.pluginCardHead}>
                 {/* 插件的状态视图没有图标字段，统一用插件字形占位 */}
@@ -729,3 +775,38 @@ export const InstalledPlugins = ({
     </>
   )
 }
+
+/**
+ * 首读占位：与卡片同刻度的四行骨架。
+ * 行盒高度取真实文字行的行高（组标题 14/22、卡标题 14/20、卡描述 13/18），
+ * 图标位沿用 48 的卡图标盒，右端预留开关 36 + 间距 8 + 图标钮 28。
+ */
+const PluginListSkeleton = ({ label }: { label: string }) => (
+  <div className={styles.pluginGroup} role="status" aria-label={label}>
+    <div className={styles.pluginGroupHead} aria-hidden="true">
+      <span className={clsx(styles.skeletonText, styles.skeletonHeading)}>
+        <span className={clsx(styles.skeletonFill, styles.skeletonBar)} />
+      </span>
+    </div>
+    <ul className={styles.pluginCards} aria-hidden="true">
+      {[0, 1, 2, 3].map((row) => (
+        <li key={row} className={styles.pluginCard}>
+          <div className={styles.pluginCardHead}>
+            <span
+              className={clsx(styles.pluginCardIcon, styles.skeletonFill, styles.skeletonIcon)}
+            />
+            <div className={styles.pluginCardMain}>
+              <span className={clsx(styles.skeletonText, styles.skeletonTitle)}>
+                <span className={clsx(styles.skeletonFill, styles.skeletonBar)} />
+              </span>
+              <span className={clsx(styles.skeletonText, styles.skeletonDesc)}>
+                <span className={clsx(styles.skeletonFill, styles.skeletonBar)} />
+              </span>
+            </div>
+            <div className={styles.skeletonActions} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  </div>
+)

@@ -87,7 +87,8 @@ export const ReplyArea = memo(function ReplyArea({
         </div>
       ) : null}
       {open || !title ? (
-        <div className={styles.steps}>
+        <div>
+          {/* 容器仅作分组, 条目各自定位, 不设样式 */}
           {view.steps.map((step, index) => (
             <StepItem
               key={stepKey(step, index)}

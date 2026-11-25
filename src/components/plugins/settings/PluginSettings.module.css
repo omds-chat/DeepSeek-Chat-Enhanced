@@ -21,25 +21,6 @@
   padding: 12px 0 0;
 }
 
-.backButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 13px;
-  line-height: 20px;
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .backButton:hover {
-    color: var(--dsw-alias-label-primary);
-  }
-}
-
 .title {
   margin: 0;
   font-size: 20px;
@@ -59,6 +40,116 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/*
+ * 插件详情页形制照 dsh 的详情章节: 面包屑 12.5/18 → 32 上距 → 标题簇 → 分节 32/12。
+ * 面包屑行沿用上面的 .header 刻度, 返回入口与其它页的标题落在同一条水平线上。
+ */
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .crumb:hover {
+    color: var(--dsw-alias-label-primary);
+  }
+}
+
+/* 返回箭头: 右向箭头翻转成返回方向, 不额外引字形 */
+.crumbIcon {
+  display: inline-flex;
+  transform: rotate(180deg);
+}
+
+/* 标题簇与面包屑之间留 32 */
+.detailHead {
+  margin-top: 32px;
+}
+
+.detailMain {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.detailTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+}
+
+.detailDesc {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+/* 标识行: 插件 id 走等宽栈, 长 id 允许任意处折行 */
+.detailName {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* 分节区: 节间距 32 */
+.detailSections {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin-top: 32px;
+}
+
+/* 单节: 节内间距 12 */
+.detailSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 节标题行: 标题 14/20 500 与计数 12/18 同基线 */
+.sectionHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.sectionTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.sectionCount {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 字段列: 行距由每行自己的内距与发丝分隔给, 容器不再加间距 */
+.fields {
+  display: flex;
+  flex-direction: column;
 }
 
 .field {
@@ -180,12 +271,6 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-.hint {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 .empty {
   display: flex;
   align-items: center;
@@ -222,20 +307,4 @@
   font-size: 14px;
   line-height: 22px;
   color: var(--dsw-alias-label-tertiary);
-}
-
-.nameButton {
-  padding: 0;
-  border: none;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-@media (hover: hover) {
-  .nameButton:hover {
-    text-decoration: underline;
-  }
 }

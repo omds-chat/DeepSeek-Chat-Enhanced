@@ -25,7 +25,8 @@ export const Toast = () => {
           <IconToastError16 />
         </span>
       ) : null}
-      <span className={styles.content}>
+      {/* 文本与链接同处一行, 行内布局由外层气泡与图标决定 */}
+      <span>
         {t(message.key, message.params)}
         {message.link ? (
           <a className={styles.link} href={message.link.href} target="_blank" rel="noreferrer">

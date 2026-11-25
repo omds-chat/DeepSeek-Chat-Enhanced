@@ -285,6 +285,41 @@
   }
 }
 
+/*
+ * 新装插件的落点提示: 2.4s 后收起的业务蓝环(dsh 同一节奏)。
+ * 环叠在卡片的 ::before 上, 2px 描边取业务蓝令牌, 四成浓度由层透明度给, 不写死颜色;
+ * 伪元素不占布局、不吃指针, 整卡的点击面仍归标题按钮。
+ */
+.pluginCard[data-plugin-highlight]::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid var(--dsw-alias-state-business-primary);
+  border-radius: inherit;
+  opacity: 0.4;
+  pointer-events: none;
+  animation: pluginHighlightRing 2400ms ease-out;
+}
+
+/* 与 dsh 同一条曲线: 前 55% 保持满浓度, 尾段淡出 */
+@keyframes pluginHighlightRing {
+  0%,
+  55% {
+    opacity: 0.4;
+  }
+
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 减弱动态: 环画成常驻静态环, 不做淡出 */
+@media (prefers-reduced-motion: reduce) {
+  .pluginCard[data-plugin-highlight]::before {
+    animation: none;
+  }
+}
+
 /* 卡头：图标 48、间距 14，内距 8 */
 .pluginCardHead {
   display: flex;
@@ -410,6 +445,82 @@
 }
 
 /*
+ * 加载骨架行: 首读未完成时占住卡片的位置, 行盒高度与真实文字行一致, 落定后不跳动。
+ * 条带高 12 居中在行盒里, 底色取 bg-skeleton 令牌, 呼吸节奏照 dsh(2s)。
+ */
+.skeletonFill {
+  background-color: var(--dsw-alias-bg-skeleton);
+  animation: pluginSkeletonPulse 2s cubic-bezier(0.36, 0, 0.64, 1) infinite;
+}
+
+/* 行盒高度取真实文字行的行高, 组标题 22、卡标题 20、卡描述 18 各自给 */
+.skeletonText {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.skeletonBar {
+  width: 100%;
+  height: 12px;
+  border-radius: var(--ds-radius-xs);
+}
+
+.skeletonHeading {
+  width: 48px;
+  height: 22px;
+  line-height: 22px;
+}
+
+.skeletonTitle {
+  width: min(144px, 60%);
+}
+
+/* 描述行比标题行矮一档, 行高跟着字阶走 */
+.skeletonDesc {
+  width: min(280px, 85%);
+  height: 18px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* 图标位: 48 的方盒由 .pluginCardIcon 给, 这里只消掉发丝框 */
+.skeletonIcon {
+  border-color: transparent;
+}
+
+/* 右端控件位: 开关 36 + 间距 8 + 图标钮 28, 高度对齐开关 */
+.skeletonActions {
+  flex: none;
+  width: 72px;
+  height: 20px;
+}
+
+@keyframes pluginSkeletonPulse {
+  0% {
+    opacity: 1;
+  }
+
+  40% {
+    opacity: 0.6;
+  }
+
+  80%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/* 减弱动态: 条带停在静态浅底, 不留呼吸 */
+@media (prefers-reduced-motion: reduce) {
+  .skeletonFill {
+    animation: none;
+  }
+}
+
+/*
  * 元信息标签：版本、来源之类的小胶囊。
  * 浅色主题的 layer-3 与页面底色同为白，只靠底色看不出胶囊，因此补一道发丝框。
  */
@@ -524,7 +635,7 @@
   padding: 2px 0 8px;
 }
 
-/* 搜索框容器：清除按钮按这里收边 */
+/* 搜索框容器：清除按钮与搜索图标都按这里收边 */
 .marketSearch {
   position: relative;
   flex: 1 1 0;
@@ -533,14 +644,31 @@
 }
 
 /*
+ * 搜索图标是输入框的前置图标：绝对定位在框内左侧 9，图标 16 宽，
+ * 输入框左内距 32，图标与文本之间留 7。图标只是装饰，不吃指针事件。
+ */
+.marketSearchIcon {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  display: flex;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/*
  * 搜索框：观感复用 .input，高度与字号按工具条收一档。
- * 选择器多套一层 .marketSearch，叠加使用 .input 时不会被后者的 36 高与 14 号字反盖。
+ * 选择器多套一层 .marketSearch，叠加使用 .input 时不会被后者的 36 高与 14 号字反盖；
+ * 左内距让给框内的搜索图标，输入框宽度仍由 .marketSearch 决定，不因图标改变。
  */
 .marketSearch .marketSearchInput {
   box-sizing: border-box;
   width: 100%;
   height: var(--ds-control-height-s);
-  padding: 0 10px;
+  padding: 0 10px 0 32px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: var(--ds-radius-md);
   background-color: var(--dsw-specific-login-input);
@@ -610,6 +738,40 @@
   }
 }
 
+/*
+ * 筛选与排序：整行独占工具条的第二行（基准宽 100%）。
+ * 不靠折行算法碰运气：搜索框与元信息簇要多少给多少，三枚下拉永远整行落到下面，
+ * 不会把搜索框压成一条缝，也不会因为放不下把工具条撑到三行。
+ */
+.marketFilters {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-basis: 100%;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/*
+ * 下拉沿用 base/Select 的胶囊观感，只在本页收一档高度并让控件内文本居中（守则要求）。
+ * 选择器多套一层 .marketFilters，压过 .trigger 的 36 高、左对齐与不对称内距；
+ * 内距两岸等宽，文本才在胶囊里真正居中，右岸同时给箭头留位。
+ */
+.marketFilters .marketSelect {
+  justify-content: center;
+  height: var(--ds-control-height-s);
+  max-width: 180px;
+  min-width: 0;
+  padding: 0 28px;
+  font-size: 13px;
+  line-height: 20px;
+
+  /* 窄屏放不下时三枚一起收窄、文字截断，不为此再折一行 */
+  @media not all and (min-width: 620px) {
+    flex-shrink: 1;
+  }
+}
+
 /* 右侧元信息簇：auto 左外边距把它顶到工具条右端，浮层因此贴右收边 */
 .marketToolbarMeta {
   display: flex;
@@ -627,6 +789,24 @@
   line-height: 18px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/*
+ * 可省的元信息：更新时间与来源数，两枚都是补充说明，缺一个也照常渲染。
+ * 窄屏（沿用目录单列的 620 断点）不渲染它们，工具条才收得回两行；数据本身不裁剪。
+ */
+.marketToolbarExtra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  &:empty {
+    display: none;
+  }
+
+  @media not all and (min-width: 620px) {
+    display: none;
+  }
 }
 
 /*
