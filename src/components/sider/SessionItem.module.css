@@ -78,10 +78,7 @@
   display: flex;
 }
 
-/*
- * 焦点环由 app/global.css 的全局 :focus-visible 提供(输入框是 :read-write,
- * 指针模态下也保留环), 这里不再抑制 outline。
- */
+/* 输入类控件不画焦点环(见 app/global.css), 重命名框这里不再抑制 outline */
 .renameInput {
   box-sizing: border-box;
   width: 100%;

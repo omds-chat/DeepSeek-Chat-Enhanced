@@ -224,9 +224,7 @@
   transition: border-color var(--ds-transition-duration) var(--ds-ease-in-out);
 }
 
-.input:focus {
-  border-color: var(--dsw-alias-brand-primary);
-}
+/* 聚焦不改描边: 输入框不画焦点环, 见 app/global.css */
 
 .inputInvalid {
   border-color: var(--dsw-alias-state-error-primary);

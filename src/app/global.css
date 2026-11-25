@@ -44,10 +44,19 @@ body[data-ds-dark-theme] {
 
 /*
  * 指针模态下不画环: 只把环色置透明，不动 outline 的层级，也不动选中态描边；
- * 可编辑控件(:read-write)始终保留环，鼠标点进输入框仍看得到焦点落在哪。
+ * 环只在键盘导航时出现，鼠标点过的控件不再补环(与宿主一致)。
  */
-html[data-input-modality='pointer'] body :focus-visible:not(:read-write) {
+html[data-input-modality='pointer'] body :focus-visible {
   outline-color: transparent;
+}
+
+/*
+ * 输入类控件不画焦点环: 这是产品决定, 不是遗漏。
+ * 输入框聚焦只靠文本光标与自身描边提示位置, 再加环会与容器描边叠成双层蓝框。
+ * 覆盖输入框、多行框、选择框与可编辑区, 键盘 Tab 与鼠标点击一视同仁。
+ */
+:is(input, textarea, select, [contenteditable='true']):focus-visible {
+  outline: none;
 }
 
 /*
