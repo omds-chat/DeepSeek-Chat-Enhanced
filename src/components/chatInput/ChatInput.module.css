@@ -23,13 +23,7 @@
   box-shadow: var(--ds-elevation-soft);
   overflow: hidden;
 
-  /*
-   * 焦点在卡内任一控件时整卡界限提亮为业务蓝: 只重绑描边色, 投影几何与盒子尺寸都不动。
-   * 不额外画 outline —— 卡内控件各有自己的全局焦点环, 再画一层会叠成双环。
-   */
-  &:focus-within {
-    --ds-elevation-stroke-color: var(--dsw-alias-state-business-primary);
-  }
+  /* 整卡描边不随焦点变色，聚焦与静止同色，焦点位置由文本域光标提示。 */
 }
 
 .attachments {
@@ -193,7 +187,7 @@
   height: 100%;
   resize: none;
   /*
-   * 自身不画环: 焦点反馈由 .wrapper 的 :focus-within 把整卡描边提亮为业务蓝,
+   * 自身不画环，且整卡也不再变色：聚焦时只靠光标提示位置，
    * 这里再画一层会与卡内其它控件的全局焦点环叠成双环。
    */
   outline: none;

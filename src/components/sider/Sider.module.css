@@ -113,7 +113,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  margin-top: 24px;
+  margin-top: 12px;
 }
 
 /*
@@ -165,14 +165,16 @@
   background: linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill));
 }
 
+/* 分组间距: 其余分组取 16, 面板导航之后的首个分组不是「新一组」, 由下方同级规则收窄到 8 */
 .section {
   position: relative;
   margin-top: 16px;
   padding-top: 4px;
+}
 
-  &:first-child {
-    margin-top: 0;
-  }
+/* 面板导航之后的首个分组不是「新一组」, 只留半档分组间距 */
+.panelNav + .section {
+  margin-top: 8px;
 }
 
 .sectionHeader {
@@ -192,8 +194,8 @@
 .panelNav {
   display: flex;
   flex-direction: column;
-  padding: 2px 0 6px;
-  margin-bottom: 4px;
+  padding: 0 0 2px;
+  margin-bottom: 0;
 }
 
 /*
@@ -278,7 +280,7 @@
 }
 
 /*
- * 设置行是页脚入口, 桌面保持 40px(比会话行与面板行高一档), 触屏同为 44;
+ * 设置行是页脚入口, 桌面 32px, 与会话行、面板行同档; 触屏仍是 44;
  * 行首内距与涂色内缩同列表行。
  */
 .settings {
@@ -286,7 +288,7 @@
   align-items: center;
   box-sizing: border-box;
   width: 100%;
-  height: 40px;
+  height: 32px;
   padding: 0 3px 0 9px;
   border: 0;
   border-inline: 3px solid transparent;
@@ -372,7 +374,7 @@
   max-width: calc(100vw - 48px);
 
   .listWrap {
-    margin-top: 16px;
+    margin-top: 12px;
   }
 
   .sectionHeader {
