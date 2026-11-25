@@ -87,9 +87,12 @@ export const PendingConflicts = ({
     return null
   }
 
+  // 外层用与插件卡片同一套分组刻度：组标题行 + 组内容，内部仍是原来的分组与按钮
   return (
-    <section className={styles.pendingSection} aria-label={t('pluginConflictPendingTitle')}>
-      <div className={styles.pendingTitle}>{t('pluginConflictPendingTitle')}</div>
+    <section className={styles.pluginGroup} aria-label={t('pluginConflictPendingTitle')}>
+      <div className={styles.pluginGroupHead}>
+        <div className={styles.pluginGroupTitle}>{t('pluginConflictPendingTitle')}</div>
+      </div>
       <div className={styles.caption}>{t('pluginConflictPendingHint')}</div>
       {groups.map((group) => {
         const multiple = pairDetailsCollapsed(group.pairs.length)

@@ -8,13 +8,13 @@ import { getPluginEngine } from '../dsc-plugin-engine/index.js'
 import { isPluginSourceAllowed } from '../dsc-plugin-engine/loader.js'
 import { market, type RemovedVerdict } from '../dsc-market/index.js'
 import { Button } from '../base/Button.js'
-import { IconButton } from '../base/IconButton.js'
-import { IconRefreshOutline16 } from '../base/icons.js'
+import { Menu } from '../base/Menu.js'
+import { IconLinkOutline14, IconUploadOutline14 } from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
 import { InstalledPlugins } from './InstalledPlugins.js'
 import { PluginSettingsDetail } from './PluginSettingsDetail.js'
 import { judgeInstallFailure } from './installFailure.js'
-import { LocalInstall } from './LocalInstall.js'
+import { LocalInstall, type LocalInstallHandle } from './LocalInstall.js'
 import { MarketPlugins } from './MarketPlugins.js'
 import { PendingConflicts } from './PendingConflicts.js'
 import { MobileHeader } from '../session/MobileHeader.js'
@@ -34,7 +34,8 @@ const tabs: { value: PluginPanelTab; label: TranslationKey }[] = [
 
 /**
  * 插件面板：管理插件，占据主区域，与会话视图互斥。
- * 顶部是标题与刷新，下面分段标签页，主体滚动，安装栏固定在底部。
+ * 页头左侧是标题与副标题，右侧是刷新与「添加插件」工具条，下面是分段标签页。
+ * 安装入口全部收进页头菜单：地址安装展开一张面板，本地安装复用离线包选择。
  * 插件页面不在这里: 它是会话视图的一种, 入口在会话视图列表(见 pluginViewState)。
  */
 export const PluginPanel = () => {
@@ -50,6 +51,10 @@ export const PluginPanel = () => {
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   /** 市场工具条的挂载点：它落在吸顶块里，市场页通过 portal 把工具条挂进来 */
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null)
+  /** 地址安装面板是否展开；入口是页头「添加插件」菜单的第一项 */
+  const [adding, setAdding] = useState(false)
+  /** 本地安装的入口：文件选择框与确认对话框都在 LocalInstall 里，这里只持有触发句柄 */
+  const localInstall = useRef<LocalInstallHandle>(null)
 
   /** 标签页键盘导航：左右方向键循环切换，Home / End 跳到首尾 */
   const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -96,14 +101,45 @@ export const PluginPanel = () => {
       <div className={styles.feed}>
         <div className={styles.stickyBar}>
           <div className={styles.bar}>
-            <div className={styles.header}>
-              <h1 className={styles.title}>{t('pluginPanelTitle')}</h1>
-              <IconButton
-                icon={<IconRefreshOutline16 />}
-                tooltip={t('pluginRefresh')}
-                tooltipPlacement="bottom"
-                onClick={refresh}
-              />
+            <div className={styles.pluginHead}>
+              {/* 左块：标题与副标题纵向排列。契约只给了两个文本类，分组由无类名的 div 承担 */}
+              <div>
+                <h1 className={styles.pluginTitle}>{t('pluginPanelTitle')}</h1>
+                <div className={styles.pluginIntro}>{t('pluginPageIntro')}</div>
+              </div>
+              <div className={styles.pluginToolbar}>
+                <Button variant="outlined" size="s" onClick={refresh}>
+                  {t('pluginRefresh')}
+                </Button>
+                <Menu
+                  options={[
+                    {
+                      key: 'url',
+                      label: t('pluginAddFromUrl'),
+                      icon: <IconLinkOutline14 />,
+                      onSelect: () => setAdding(true),
+                    },
+                    {
+                      key: 'file',
+                      label: t('pluginAddFromFile'),
+                      icon: <IconUploadOutline14 />,
+                      onSelect: () => localInstall.current?.pick(),
+                    },
+                  ]}
+                >
+                  {({ open, toggle }) => (
+                    <Button
+                      variant="primary"
+                      size="s"
+                      aria-haspopup="menu"
+                      aria-expanded={open}
+                      onClick={toggle}
+                    >
+                      {t('pluginAdd')}
+                    </Button>
+                  )}
+                </Menu>
+              </div>
             </div>
             <div className={styles.tabsBar}>
               <div role="tablist" className={styles.tabs} onKeyDown={onTabKeyDown}>
@@ -132,6 +168,10 @@ export const PluginPanel = () => {
           </div>
         </div>
         <div className={styles.column} role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
+          {/* 地址安装面板落在正文最上方，收起后把高度还给列表 */}
+          {adding ? (
+            <InstallFromUrl onInstalled={refresh} onCancel={() => setAdding(false)} />
+          ) : null}
           {tab === 'installed' ? (
             <>
               <PendingConflicts plugins={plugins} refresh={refresh} />
@@ -146,7 +186,8 @@ export const PluginPanel = () => {
           )}
         </div>
       </div>
-      {tab === 'installed' ? <InstallFromUrl onInstalled={refresh} /> : null}
+      {/* 本地安装的隐藏文件输入与确认对话框常驻挂载：两个页签都能从页头菜单触发 */}
+      <LocalInstall ref={localInstall} hideTrigger onInstalled={refresh} />
     </div>
   )
 }
@@ -167,14 +208,23 @@ const removedVerdictOf = async (url: string): Promise<RemovedVerdict | null> => 
   }
 }
 
-/** 从地址安装：只输入产物地址，清单由产物自带的 manifest 导出提供 */
-const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
+/**
+ * 从地址安装：只输入产物地址，清单由产物自带的 manifest 导出提供。
+ * 面板由页头菜单展开、由「取消」收起，失败原因常驻在面板内直到重新提交。
+ */
+const InstallFromUrl = ({
+  onInstalled,
+  onCancel,
+}: {
+  onInstalled: () => void
+  onCancel: () => void
+}) => {
   const t = useTranslate()
   const locale = useSettings((state) => state.locale)
   const [url, setUrl] = useState('')
   const [invalid, setInvalid] = useState(false)
   const [installing, setInstalling] = useState(false)
-  /** 安装失败的提示，常驻在安装栏下方；notice 用于已移除插件的温馨提示 */
+  /** 安装失败的提示，常驻在面板下方；notice 用于已移除插件的温馨提示 */
   const [failure, setFailure] = useState<{ text: string; tone: 'error' | 'notice' } | null>(null)
 
   const submit = async () => {
@@ -226,47 +276,47 @@ const InstallFromUrl = ({ onInstalled }: { onInstalled: () => void }) => {
   }
 
   return (
-    <div className={styles.installBar}>
-      <div className={styles.installBarInner}>
-        <div className={styles.installHeader}>
-          <div className={styles.installTitle}>{t('pluginInstallFromUrl')}</div>
-          <LocalInstall onInstalled={onInstalled} />
-        </div>
-        <div className={styles.installRow}>
-          <input
-            className={clsx(styles.input, styles.inputUrl, invalid && styles.inputInvalid)}
-            value={url}
-            placeholder={t('pluginInstallUrlPlaceholder')}
-            aria-label={t('pluginInstallUrlLabel')}
-            aria-invalid={invalid}
-            autoComplete="off"
-            spellCheck={false}
-            disabled={installing}
-            onChange={(event) => {
-              setUrl(event.target.value)
-              setInvalid(false)
-              setFailure(null)
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                void submit()
-              }
-            }}
-          />
-          <Button variant="primary" size="m" disabled={installing} onClick={() => void submit()}>
-            {installing ? t('pluginInstalling') : t('pluginActionInstall')}
-          </Button>
-        </div>
-        {invalid ? <div className={styles.fieldError}>{t('pluginInstallUrlInvalid')}</div> : null}
-        {!installing && failure !== null ? (
-          <div
-            className={clsx(styles.fieldError, failure.tone === 'notice' && styles.fieldNotice)}
-            role={failure.tone === 'notice' ? 'status' : 'alert'}
-          >
-            {failure.text}
-          </div>
-        ) : null}
+    <div className={styles.addPanel}>
+      {/* 面板标题沿用既有的「从地址安装」文案键，菜单项另有自己的键 */}
+      <div className={styles.caption}>{t('pluginInstallFromUrl')}</div>
+      <div className={styles.installRow}>
+        <input
+          className={clsx(styles.input, styles.inputUrl, invalid && styles.inputInvalid)}
+          value={url}
+          placeholder={t('pluginInstallUrlPlaceholder')}
+          aria-label={t('pluginInstallUrlLabel')}
+          aria-invalid={invalid}
+          autoComplete="off"
+          spellCheck={false}
+          disabled={installing}
+          onChange={(event) => {
+            setUrl(event.target.value)
+            setInvalid(false)
+            setFailure(null)
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+              void submit()
+            }
+          }}
+        />
+        <Button variant="primary" size="s" disabled={installing} onClick={() => void submit()}>
+          {installing ? t('pluginInstalling') : t('pluginActionInstall')}
+        </Button>
+        {/* 安装进行中不能收起面板：面板一收，安装结论就没有落点 */}
+        <Button variant="outlined" size="s" disabled={installing} onClick={onCancel}>
+          {t('cancel')}
+        </Button>
       </div>
+      {invalid ? <div className={styles.fieldError}>{t('pluginInstallUrlInvalid')}</div> : null}
+      {!installing && failure !== null ? (
+        <div
+          className={clsx(styles.fieldError, failure.tone === 'notice' && styles.fieldNotice)}
+          role={failure.tone === 'notice' ? 'status' : 'alert'}
+        >
+          {failure.text}
+        </div>
+      ) : null}
     </div>
   )
 }

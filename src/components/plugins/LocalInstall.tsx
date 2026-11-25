@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react'
+import { forwardRef, Fragment, useImperativeHandle, useRef, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
@@ -17,17 +17,26 @@ type DialogState =
   | { kind: 'rejected'; fileName: string; reason: string }
   | { kind: 'ready'; fileName: string; inspection: ReadyInspection }
 
+/** 对外句柄：入口放在别处时，由调用方代为打开文件选择框 */
+export type LocalInstallHandle = { pick: () => void }
+
 /**
  * 从本地安装：选择 .zip 或 .tgz 离线包，预检通过后在对话框内二次确认。
  * 一次只接受一个文件；解析与校验失败的原因就地显示，不弹原生对话框。
+ * hideTrigger 时不渲染自带入口按钮，文件选择由调用方通过 ref 触发。
  */
-export const LocalInstall = ({ onInstalled }: { onInstalled: () => void }) => {
+export const LocalInstall = forwardRef<
+  LocalInstallHandle,
+  { onInstalled: () => void; hideTrigger?: boolean }
+>(({ onInstalled, hideTrigger = false }, ref) => {
   const t = useTranslate()
   const inputRef = useRef<HTMLInputElement>(null)
   const [state, setState] = useState<DialogState | null>(null)
   const [installing, setInstalling] = useState(false)
   /** 提交失败原因，留在对话框内直到用户重新提交或关闭 */
   const [failure, setFailure] = useState<string | null>(null)
+
+  useImperativeHandle(ref, () => ({ pick: () => inputRef.current?.click() }), [])
 
   const close = () => {
     if (installing) {
@@ -124,14 +133,16 @@ export const LocalInstall = ({ onInstalled }: { onInstalled: () => void }) => {
 
   return (
     <>
-      <Button
-        variant="outlined"
-        size="m"
-        disabled={installing}
-        onClick={() => inputRef.current?.click()}
-      >
-        {t('pluginInstallFromLocal')}
-      </Button>
+      {hideTrigger ? null : (
+        <Button
+          variant="outlined"
+          size="m"
+          disabled={installing}
+          onClick={() => inputRef.current?.click()}
+        >
+          {t('pluginInstallFromLocal')}
+        </Button>
+      )}
       <input
         ref={inputRef}
         className={styles.fileInput}
@@ -202,4 +213,6 @@ export const LocalInstall = ({ onInstalled }: { onInstalled: () => void }) => {
       ) : null}
     </>
   )
-}
+})
+
+LocalInstall.displayName = 'LocalInstall'

@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslate, type TranslationKey } from '../../i18n/index.js'
 import { pluginReasonText } from '../../i18n/pluginReasons.js'
 import { isUnlistedTrust, verdictTextKey } from '../../i18n/pluginVerdicts.js'
@@ -17,12 +17,23 @@ import type {
   PluginStateView,
 } from '../dsc-plugin-engine/types.js'
 import { Button } from '../base/Button.js'
+import { IconButton } from '../base/IconButton.js'
+import { Menu, type MenuOption } from '../base/Menu.js'
 import { Modal } from '../base/Modal.js'
+import {
+  IconDataOutline16,
+  IconDownloadOutline16,
+  IconEllipsisOutline16,
+  IconPluginOutline16,
+  IconRefreshOutline16,
+  IconSearchOutline16,
+  IconSettingsOutline16,
+  IconTrashOutline16,
+} from '../base/icons.js'
 import { showToast } from '../base/toastState.js'
 import { formatDateTime } from '../../utils/format.js'
 import { isLegacyInstall } from './legacyInstall.js'
-import { openPluginDetail } from './pluginPanelState.js'
-import detailStyles from './settings/PluginSettings.module.css'
+import { openPluginDetail, setPluginPanelTab } from './pluginPanelState.js'
 import styles from './PluginPanel.module.css'
 
 const stateLabels: Record<PluginState, TranslationKey> = {
@@ -53,11 +64,11 @@ const sourceLabel = (plugin: PluginStateView): TranslationKey => {
   return sourceTypeLabels[plugin.sourceType]
 }
 
-/** 更新二次确认的保持时间（毫秒），与市场的安装确认同一节奏 */
+/** 二次确认的保持时间（毫秒），与市场的安装确认同一节奏 */
 const CONFIRM_MS = 3000
 
-/** 正在进行的操作；用于按钮的忙碌文案与禁用 */
-type Busy = { id: string; action: 'toggle' | 'uninstall' | 'update' | 'reinstall' }
+/** 正在进行的操作；用于卡内控件的忙碌文案与禁用 */
+type Busy = { id: string; action: 'toggle' | 'uninstall' | 'update' | 'reinstall' | 'check' }
 
 /** 需要二次确认的操作；3 秒内再次点击同一按钮才真正执行 */
 type PendingConfirm = { id: string; kind: 'update' | 'reinstall' }
@@ -65,7 +76,10 @@ type PendingConfirm = { id: string; kind: 'update' | 'reinstall' }
 /** 日志快照：读取时间用于提示日志时效 */
 type LogSnapshot = { name: string; lines: readonly string[]; capturedAt: number }
 
-/** 已安装插件列表：状态、来源、启用/停用、卸载与查看日志 */
+/** 卡内的一行中性补充：来源、签名结论、目录校验、旧安装与内置说明 */
+type CardNote = { text: string; danger?: boolean }
+
+/** 已安装插件列表：卡片行为主，状态标记、启停开关与 ⋯ 菜单 */
 export const InstalledPlugins = ({
   plugins,
   ready,
@@ -77,16 +91,18 @@ export const InstalledPlugins = ({
 }) => {
   const t = useTranslate()
   const [busy, setBusy] = useState<Busy | null>(null)
-  const [confirming, setConfirming] = useState<PluginStateView | null>(null)
+  /** 卸载确认的插件 id：卡右端在 3 秒内换成「卸载 + 取消」 */
+  const [confirmingUninstall, setConfirmingUninstall] = useState<string | null>(null)
   const [logs, setLogs] = useState<LogSnapshot | null>(null)
   /** 版本更新检查结论；没有条目的插件不显示任何标注 */
   const [updates, setUpdates] = useState<ReadonlyMap<string, UpdateCheck>>(new Map())
   const [pending, setPending] = useState<PendingConfirm | null>(null)
   const confirmTimer = useRef(0)
+  const uninstallTimer = useRef(0)
   const running = busy !== null
 
   /**
-   * 依赖关系状态：两枚徽标与启用按钮的可用性都从这里取值。
+   * 依赖关系状态：徽标与启用开关的可用性都从这里取值。
    * 徽标常驻，随列表刷新重算，不依赖任何一次操作失败。
    */
   const dependency = useMemo(() => dependencyStatusMap(plugins), [plugins])
@@ -131,7 +147,13 @@ export const InstalledPlugins = ({
     }
   }, [targets])
 
-  useEffect(() => () => window.clearTimeout(confirmTimer.current), [])
+  useEffect(
+    () => () => {
+      window.clearTimeout(confirmTimer.current)
+      window.clearTimeout(uninstallTimer.current)
+    },
+    []
+  )
 
   /**
    * 置忙执行一次操作，完成后刷新列表。
@@ -191,7 +213,7 @@ export const InstalledPlugins = ({
       return
     }
     if (result.removed) {
-      setConfirming(null)
+      setConfirmingUninstall(null)
       // 卸载默认保留插件本地数据，遗留数据只在有数据时提示清理入口
       if (result.hasLeftoverData) {
         showToast({ key: 'pluginUninstalledDataKept' })
@@ -205,11 +227,91 @@ export const InstalledPlugins = ({
     showToast({ type: 'error', key: 'pluginUninstallFailed', params: { id: plugin.id } })
   }
 
+  /** 卸载确认：3 秒内再点一次卡片右端的「卸载」才真正执行 */
+  const armUninstall = (id: string) => {
+    // 同一时刻只保留一种确认态，先撤掉可能还在的更新/重装确认
+    setPending(null)
+    window.clearTimeout(confirmTimer.current)
+    setConfirmingUninstall(id)
+    window.clearTimeout(uninstallTimer.current)
+    uninstallTimer.current = window.setTimeout(() => setConfirmingUninstall(null), CONFIRM_MS)
+  }
+
+  const cancelUninstall = () => {
+    window.clearTimeout(uninstallTimer.current)
+    setConfirmingUninstall(null)
+  }
+
+  /** 撤销更新或重装的确认态 */
+  const cancelConfirm = () => {
+    window.clearTimeout(confirmTimer.current)
+    setPending(null)
+  }
+
   /** 更新与重装按钮的二次确认：3 秒内再次点击才真正执行 */
   const armConfirm = (id: string, kind: PendingConfirm['kind']) => {
+    // 同一时刻只保留一种确认态，先撤掉可能还在的卸载确认
+    setConfirmingUninstall(null)
+    window.clearTimeout(uninstallTimer.current)
     setPending({ id, kind })
     window.clearTimeout(confirmTimer.current)
     confirmTimer.current = window.setTimeout(() => setPending(null), CONFIRM_MS)
+  }
+
+  /** 菜单项没有禁用态，忙碌期统一由这一道拦住 */
+  const guard = (task: () => void) => () => {
+    if (!running) {
+      task()
+    }
+  }
+
+  /** 检查更新：结论合并进现有标注，随后让用户从菜单里选更新或重装 */
+  const checkNow = async (plugin: PluginStateView) => {
+    const client = market()
+    const target = targets.find((item) => item.id === plugin.id)
+    if (!client) {
+      showToast({ type: 'error', key: 'pluginMarketUnavailable' })
+      return
+    }
+    if (!target) {
+      showToast({
+        type: 'error',
+        key: 'pluginUpdateUnavailable',
+        params: { name: plugin.name },
+      })
+      return
+    }
+    setBusy({ id: plugin.id, action: 'check' })
+    try {
+      const report = await client.checkUpdates([target])
+      const check = report.get(plugin.id)
+      setUpdates((current) => {
+        const next = new Map(current)
+        if (check) {
+          next.set(plugin.id, check)
+        } else {
+          next.delete(plugin.id)
+        }
+        return next
+      })
+      if (!check) {
+        showToast({
+          type: 'error',
+          key: 'pluginUpdateUnavailable',
+          params: { name: plugin.name },
+        })
+        return
+      }
+      showToast({ key: check.status === 'latest' ? 'pluginUpdateLatest' : 'pluginUpdateAvailable' })
+    } catch {
+      showToast({
+        type: 'error',
+        key: 'pluginUpdateUnavailable',
+        params: { name: plugin.name },
+      })
+    } finally {
+      setBusy(null)
+    }
   }
 
   /** 安装计划转成引擎需要的来源信息；证书与市场安装同一口径，清单证书优先，来源证书地址按序兜底 */
@@ -321,34 +423,34 @@ export const InstalledPlugins = ({
     return <div className={styles.empty}>{t('pluginEngineUnavailable')}</div>
   }
   if (plugins.length === 0) {
-    return <div className={styles.empty}>{t('pluginEmptyInstalled')}</div>
+    return (
+      <div className={styles.empty}>
+        <div>{t('pluginEmptyInstalled')}</div>
+        <Button variant="outlined" size="s" onClick={() => setPluginPanelTab('market')}>
+          {t('pluginGoToMarket')}
+        </Button>
+      </div>
+    )
   }
 
   return (
     <>
-      <div className={styles.table} role="table">
-        <div className={clsx(styles.row, styles.head)} role="row">
-          <div role="columnheader">{t('pluginColumnName')}</div>
-          <div role="columnheader">{t('pluginColumnVersion')}</div>
-          <div role="columnheader">{t('pluginColumnState')}</div>
-          <div role="columnheader">
-            {t('pluginColumnSource')}
-          </div>
-          <div role="columnheader">{t('pluginColumnActions')}</div>
-        </div>
+      <ul className={styles.pluginCards} role="list">
         {plugins.map((plugin) => {
           const builtin = plugin.source?.kind === 'builtin'
           const active = plugin.state === 'active'
-          const toggling = busy?.id === plugin.id && busy.action === 'toggle'
           const check = updates.get(plugin.id) ?? null
           const legacy = isLegacyInstall(plugin)
           const confirmingUpdate = pending?.id === plugin.id && pending.kind === 'update'
           const confirmingReinstall = pending?.id === plugin.id && pending.kind === 'reinstall'
           const updating = busy?.id === plugin.id && busy.action === 'update'
           const reinstalling = busy?.id === plugin.id && busy.action === 'reinstall'
+          const checking = busy?.id === plugin.id && busy.action === 'check'
+          const uninstalling = busy?.id === plugin.id && busy.action === 'uninstall'
+          const uninstallOpen = confirmingUninstall === plugin.id
           const status = dependency.get(plugin.id)
           const missing = status?.missing ?? []
-          // 依赖未满足时启用会被引擎拒绝，按钮直接置灰；停用按钮不置灰，被依赖时按拒绝处理
+          // 依赖未满足时启用会被引擎拒绝，开关直接置灰；停用不置灰，被依赖时按拒绝处理
           const enableBlocked = !active && missing.length > 0
           const toggleHint = active
             ? status?.dependentBlocked
@@ -357,191 +459,251 @@ export const InstalledPlugins = ({
             : enableBlocked
               ? t('pluginEnableBlockedHint', { id: missing.join(', ') })
               : undefined
+
+          // 卡片只留名称、版本、状态与徽标在标题行，其余中性补充统一排到描述行下方
+          const notes: CardNote[] = [{ text: t(sourceLabel(plugin)) }]
+          if (plugin.source !== null && plugin.source.kind !== 'builtin') {
+            notes.push({
+              text: t(
+                verdictTextKey(
+                  plugin.sourceVerdict,
+                  plugin.sourceVerdictReason,
+                  plugin.sourceTrustFailure
+                )
+              ),
+              danger: plugin.sourceVerdict === 'failed',
+            })
+          }
+          if (plugin.catalogVerified !== undefined) {
+            notes.push({
+              text: t(plugin.catalogVerified ? 'pluginCatalogVerified' : 'pluginCatalogUnverified'),
+            })
+          }
+          if (legacy) {
+            notes.push({ text: t('pluginLegacyInstallHint') })
+          }
+          if (plugin.sourceVerdict === 'confirmed' && isUnlistedTrust(plugin.sourceTrust)) {
+            notes.push({ text: t('pluginMarketNotListed') })
+          }
+          if (builtin) {
+            notes.push({ text: t('pluginBuiltinUninstallHint') })
+          }
+
+          // 详情 / 日志 / 检查更新常驻；更新与重装只在有结论或旧记录时出现，卸载对内置插件不开放
+          const options: MenuOption[] = [
+            {
+              key: 'detail',
+              label: t('pluginCardDetails'),
+              icon: <IconSettingsOutline16 />,
+              onSelect: guard(() => openPluginDetail(plugin.id)),
+            },
+            {
+              key: 'logs',
+              label: t('pluginCardLogs'),
+              icon: <IconDataOutline16 />,
+              onSelect: guard(() => openLogs(plugin)),
+            },
+            {
+              key: 'check',
+              label: checking ? t('pluginOperationBusy') : t('pluginCardCheckUpdate'),
+              icon: <IconSearchOutline16 />,
+              onSelect: guard(() => void checkNow(plugin)),
+            },
+          ]
+          // 选中只武装确认：真正执行要再点一次卡右端原地换出来的确认按钮
+          if (check?.status === 'outdated') {
+            options.push({
+              key: 'update',
+              label: updating ? t('pluginOperationBusy') : t('pluginUpdateAvailable'),
+              icon: <IconDownloadOutline16 />,
+              onSelect: guard(() => armConfirm(plugin.id, 'update')),
+            })
+          }
+          if (legacy) {
+            options.push({
+              key: 'reinstall',
+              label: reinstalling ? t('pluginOperationBusy') : t('pluginActionReinstall'),
+              icon: <IconRefreshOutline16 />,
+              onSelect: guard(() => armConfirm(plugin.id, 'reinstall')),
+            })
+          }
+          if (!builtin) {
+            options.push({
+              key: 'uninstall',
+              label: t('pluginActionUninstall'),
+              icon: <IconTrashOutline16 />,
+              danger: true,
+              onSelect: guard(() => armUninstall(plugin.id)),
+            })
+          }
+
+          /** 已武装的二次确认：卡右端在 3 秒内换成确认对，超时回归 */
+          const armed =
+            uninstallOpen
+              ? 'uninstall'
+              : confirmingUpdate && check?.status === 'outdated'
+                ? 'update'
+                : confirmingReinstall && legacy
+                  ? 'reinstall'
+                  : null
+
           return (
-            <div key={plugin.id} className={styles.row} role="row" aria-busy={busy?.id === plugin.id}>
-              <div className={styles.nameCell} role="cell">
-                <button
-                  type="button"
-                  className={clsx(styles.name, detailStyles.nameButton)}
-                  onClick={() => openPluginDetail(plugin.id)}
-                >
-                  {plugin.name}
-                </button>
-                <span className={styles.caption}>{plugin.id}</span>
-                {status?.dependencyMissing ? (
-                  <span
-                    className={clsx(styles.dependencyBadge, styles.dependencyBadgeUnmet)}
-                    title={t('pluginBadgeDependencyMissingHint', { id: missing.join(', ') })}
-                  >
-                    {t('pluginBadgeDependencyMissing')}
-                  </span>
-                ) : null}
-                {status?.dependentBlocked ? (
-                  <span
-                    className={styles.dependencyBadge}
-                    title={t('pluginBadgeDependentBlockedHint', {
-                      id: (status?.dependents ?? []).join(', '),
-                    })}
-                  >
-                    {t('pluginBadgeDependentBlocked')}
-                  </span>
-                ) : null}
-                {plugin.sourceType === 'inner' && plugin.source?.kind === 'url' ? (
-                  <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
-                ) : null}
-                {plugin.source !== null && plugin.source.kind !== 'builtin' ? (
-                  <span
-                    className={clsx(
-                      styles.signatureText,
-                      plugin.sourceVerdict === 'failed' && styles.signatureFailed
-                    )}
-                  >
-                    {t(
-                      verdictTextKey(
-                        plugin.sourceVerdict,
-                        plugin.sourceVerdictReason,
-                        plugin.sourceTrustFailure
-                      )
-                    )}
-                  </span>
-                ) : null}
-                {legacy ? (
-                  <span className={styles.caption}>{t('pluginLegacyInstallHint')}</span>
-                ) : null}
-                {plugin.sourceVerdict === 'confirmed' && isUnlistedTrust(plugin.sourceTrust) ? (
-                  <span className={styles.caption}>{t('pluginMarketNotListed')}</span>
-                ) : null}
-                {plugin.catalogVerified === undefined ? null : (
-                  <span className={styles.caption}>
-                    {t(plugin.catalogVerified ? 'pluginCatalogVerified' : 'pluginCatalogUnverified')}
-                  </span>
-                )}
-                {plugin.error ? (
-                  <span className={styles.errorText}>{pluginReasonText(plugin.error)}</span>
-                ) : null}
-                {builtin ? (
-                  <span className={styles.caption}>{t('pluginBuiltinUninstallHint')}</span>
-                ) : null}
+            <li
+              key={plugin.id}
+              className={styles.pluginCard}
+              role="listitem"
+              aria-busy={busy?.id === plugin.id}
+            >
+              <div className={styles.pluginCardHead}>
+                {/* 插件的状态视图没有图标字段，统一用插件字形占位 */}
+                <div className={styles.pluginCardIcon} aria-hidden="true">
+                  <IconPluginOutline16 />
+                </div>
+                <div className={styles.pluginCardMain}>
+                  <div className={styles.pluginCardTitleRow}>
+                    <button
+                      type="button"
+                      className={styles.pluginCardTitle}
+                      onClick={() => openPluginDetail(plugin.id)}
+                    >
+                      {plugin.name}
+                    </button>
+                    <span className={styles.pluginMetaTag}>{plugin.version}</span>
+                    <span className={styles.pluginStatusTag}>{t(stateLabels[plugin.state])}</span>
+                    {status?.dependencyMissing ? (
+                      <span
+                        className={clsx(styles.dependencyBadge, styles.dependencyBadgeUnmet)}
+                        title={t('pluginBadgeDependencyMissingHint', { id: missing.join(', ') })}
+                      >
+                        {t('pluginBadgeDependencyMissing')}
+                      </span>
+                    ) : null}
+                    {status?.dependentBlocked ? (
+                      <span
+                        className={styles.dependencyBadge}
+                        title={t('pluginBadgeDependentBlockedHint', {
+                          id: (status?.dependents ?? []).join(', '),
+                        })}
+                      >
+                        {t('pluginBadgeDependentBlocked')}
+                      </span>
+                    ) : null}
+                    {plugin.sourceType === 'inner' && plugin.source?.kind === 'url' ? (
+                      <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
+                    ) : null}
+                  </div>
+                  <div className={styles.pluginCardDesc}>{plugin.id}</div>
+                  <div>
+                    {notes.map((note, index) => (
+                      <Fragment key={index}>
+                        {index > 0 ? ' · ' : null}
+                        <span className={note.danger ? styles.errorText : styles.caption}>
+                          {note.text}
+                        </span>
+                      </Fragment>
+                    ))}
+                  </div>
+                  {/* 确认态下补一句说明，讲清为什么要再点一次 */}
+                  {armed === null ? null : (
+                    <div className={styles.caption} role="status">
+                      {armed === 'uninstall'
+                        ? `${t('pluginUninstallDescription', { name: plugin.name })} ${t('pluginUninstallKeepDataHint')}`
+                        : t(armed === 'update' ? 'pluginUpdateHint' : 'pluginReinstallHint')}
+                    </div>
+                  )}
+                </div>
+                {/* 确认态把开关与菜单原地换成「危险按钮 + 取消」，3 秒后回归 */}
+                <div className={styles.pluginCardEnd}>
+                  {armed === 'uninstall' ? (
+                    <>
+                      <Button
+                        variant="danger"
+                        size="s"
+                        disabled={running}
+                        onClick={() => void uninstall(plugin)}
+                      >
+                        {uninstalling ? t('pluginOperationBusy') : t('pluginActionUninstall')}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="s"
+                        disabled={running}
+                        onClick={cancelUninstall}
+                      >
+                        {t('cancel')}
+                      </Button>
+                    </>
+                  ) : armed === 'update' && check !== null ? (
+                    <>
+                      <Button
+                        variant="danger"
+                        size="s"
+                        disabled={running}
+                        onClick={() => void rebuildPlugin(plugin, check.latest, 'update')}
+                      >
+                        {updating ? t('pluginOperationBusy') : t('pluginUpdateConfirm')}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="s"
+                        disabled={running}
+                        onClick={cancelConfirm}
+                      >
+                        {t('cancel')}
+                      </Button>
+                    </>
+                  ) : armed === 'reinstall' ? (
+                    <>
+                      <Button
+                        variant="danger"
+                        size="s"
+                        disabled={running}
+                        onClick={() => void rebuildPlugin(plugin, plugin.version, 'reinstall')}
+                      >
+                        {reinstalling ? t('pluginOperationBusy') : t('pluginReinstallConfirm')}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="s"
+                        disabled={running}
+                        onClick={cancelConfirm}
+                      >
+                        {t('cancel')}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {/* 开关自己承担 switch 语义，轨道与圆钮由 .pluginSwitch 画 */}
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={active}
+                        aria-label={t('pluginActionEnable')}
+                        className={styles.pluginSwitch}
+                        disabled={running || enableBlocked}
+                        title={toggleHint}
+                        onClick={() => void toggle(plugin)}
+                      />
+                      <Menu options={options}>
+                        {({ toggle: toggleMenu }) => (
+                          <IconButton
+                            icon={<IconEllipsisOutline16 />}
+                            aria-label={t('more')}
+                            onClick={toggleMenu}
+                          />
+                        )}
+                      </Menu>
+                    </>
+                  )}
+                </div>
               </div>
-              <div
-                className={clsx(styles.versionCell, styles.versionStack)}
-                role="cell"
-                data-label={t('pluginColumnVersion')}
-              >
-                <span>{plugin.version}</span>
-                {check?.status === 'latest' ? (
-                  <span className={styles.updateLatest}>{t('pluginUpdateLatest')}</span>
-                ) : null}
-              </div>
-              <div role="cell" data-label={t('pluginColumnState')}>
-                {t(stateLabels[plugin.state])}
-              </div>
-              <div role="cell" data-label={t('pluginColumnSource')}>
-                {t(sourceLabel(plugin))}
-              </div>
-              <div className={styles.actions} role="cell">
-                {check?.status === 'outdated' ? (
-                  <Button
-                    variant={confirmingUpdate ? 'danger' : 'primary'}
-                    size="s"
-                    disabled={running}
-                    title={confirmingUpdate ? t('pluginUpdateHint') : undefined}
-                    onClick={() => {
-                      if (!confirmingUpdate) {
-                        armConfirm(plugin.id, 'update')
-                        return
-                      }
-                      void rebuildPlugin(plugin, check.latest, 'update')
-                    }}
-                  >
-                    {updating
-                      ? t('pluginOperationBusy')
-                      : confirmingUpdate
-                        ? t('pluginUpdateConfirm')
-                        : t('pluginUpdateAvailable')}
-                  </Button>
-                ) : null}
-                {legacy ? (
-                  <Button
-                    variant={confirmingReinstall ? 'danger' : 'primary'}
-                    size="s"
-                    disabled={running}
-                    title={confirmingReinstall ? t('pluginReinstallHint') : undefined}
-                    onClick={() => {
-                      if (!confirmingReinstall) {
-                        armConfirm(plugin.id, 'reinstall')
-                        return
-                      }
-                      void rebuildPlugin(plugin, plugin.version, 'reinstall')
-                    }}
-                  >
-                    {reinstalling
-                      ? t('pluginOperationBusy')
-                      : confirmingReinstall
-                        ? t('pluginReinstallConfirm')
-                        : t('pluginActionReinstall')}
-                  </Button>
-                ) : null}
-                <Button
-                  variant="outlined"
-                  size="s"
-                  disabled={running || enableBlocked}
-                  title={toggleHint}
-                  onClick={() => void toggle(plugin)}
-                >
-                  {toggling
-                    ? t('pluginOperationBusy')
-                    : t(active ? 'pluginActionDisable' : 'pluginActionEnable')}
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="s"
-                  disabled={running}
-                  onClick={() => openLogs(plugin)}
-                >
-                  {t('pluginActionLogs')}
-                </Button>
-                <Button
-                  variant="dangerOutlined"
-                  size="s"
-                  disabled={running || builtin}
-                  title={builtin ? t('pluginBuiltinUninstallHint') : undefined}
-                  onClick={() => setConfirming(plugin)}
-                >
-                  {t('pluginActionUninstall')}
-                </Button>
-              </div>
-            </div>
+              {plugin.error ? (
+                <div className={styles.pluginCardReason}>{pluginReasonText(plugin.error)}</div>
+              ) : null}
+            </li>
           )
         })}
-      </div>
-      {confirming ? (
-        <Modal
-          title={t('pluginUninstallTitle')}
-          onClose={() => {
-            if (!running) {
-              setConfirming(null)
-            }
-          }}
-          footer={
-            <>
-              <Button variant="outlined" disabled={running} onClick={() => setConfirming(null)}>
-                {t('cancel')}
-              </Button>
-              <Button
-                variant="danger"
-                disabled={running}
-                onClick={() => void uninstall(confirming)}
-              >
-                {busy?.action === 'uninstall' ? t('pluginOperationBusy') : t('pluginActionUninstall')}
-              </Button>
-            </>
-          }
-        >
-          <div>{t('pluginUninstallDescription', { name: confirming.name })}</div>
-          <div className={styles.caption}>{t('pluginUninstallKeepDataHint')}</div>
-        </Modal>
-      ) : null}
+      </ul>
       {logs ? (
         <Modal
           title={t('pluginLogsTitle', { name: logs.name })}

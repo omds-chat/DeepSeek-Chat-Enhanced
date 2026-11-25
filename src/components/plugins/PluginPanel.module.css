@@ -38,12 +38,11 @@
 }
 
 /*
- * 内容列：页头、页签条、正文与安装栏共用一条 960px 居中列和同一份内缩，
+ * 内容列：页头、页签条与正文共用一条 960px 居中列和同一份内缩，
  * 宽屏下正文不再被拉到整屏宽。
  */
 .bar,
-.column,
-.installBarInner {
+.column {
   box-sizing: border-box;
   width: 100%;
   max-width: 960px;
@@ -61,14 +60,6 @@
   flex-direction: column;
   gap: 32px;
   padding-bottom: 48px;
-}
-
-.header {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
 }
 
 .title {
@@ -128,86 +119,6 @@
   overflow: hidden;
 }
 
-.table {
-  display: flex;
-  flex-direction: column;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) 88px 96px 72px minmax(196px, auto);
-  gap: 8px;
-  align-items: center;
-  padding: 8px 0;
-  font-size: 14px;
-  line-height: 22px;
-  text-align: center;
-  box-shadow: inset 0 0.5px 0 var(--dsw-alias-border-l2-darkmode-thin);
-}
-
-/* 表格单元格一律水平居中：表头与每一个单元格都落在列元素上，多行文本与徽章随之居中 */
-.row > [role='cell'],
-.row > [role='columnheader'] {
-  text-align: center;
-}
-
-.head {
-  padding-top: 0;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-  box-shadow: inset 0 -0.5px 0 var(--dsw-alias-border-l2-darkmode-thin);
-}
-
-.nameCell {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.name {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* 签名状态只做简短标识，与错误提示共用字号，颜色区分结论 */
-.signatureText {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.signatureFailed {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-/* 版本与作者来自清单或索引，长度不受控；截断而不是撑破固定列宽 */
-.versionCell,
-.authorCell {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* 版本单元格：版本号与更新标注纵向排列，窄列里不挤压版本号 */
-.versionStack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-
-/* 已是最新：弱标注，浅色小字 */
-.updateLatest {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-}
-
 .caption {
   font-size: 12px;
   line-height: 18px;
@@ -239,20 +150,368 @@
   word-break: break-word;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-
 .empty {
   padding: 32px 0;
   font-size: 14px;
   line-height: 22px;
   text-align: center;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* 空态里的出路按钮：与文案隔 8，不然两行贴在一起 */
+.empty > button {
+  margin-top: 8px;
+}
+
+/*
+ * 已安装页与页头的刻度假自 dsh 插件管理页实测(批次 M2-A)：
+ * 内容列 960 居中由 .bar/.column 承担，这里只管页头行、分组与卡片行的内部度量。
+ */
+
+/*
+ * 页头：左侧标题簇、右侧工具条两端对齐，窄屏折行。
+ * 本身也带一份内容列的宽度与内缩，便于单独作为吸顶行使用；
+ * 若被放进已带内距与内缩的 .bar 里，由下一条防御规则归零，两处不叠加。
+ */
+.pluginHead {
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding-top: clamp(20px, 4vw, 48px);
+  padding-inline: clamp(20px, 4vw, 48px);
+}
+
+/* 防御：页头嵌在 .bar 内时，顶部内距与左右内缩只由 .bar 给一次 */
+.bar > .pluginHead {
+  padding-top: 0;
+  padding-inline: 0;
+}
+
+.pluginTitle {
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 500;
+}
+
+/* 副标题：与标题差 4，字色弱一档 */
+.pluginIntro {
+  margin: 4px 0 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* 工具条：右对齐，左侧 auto 外边距在折行前把按钮推到右端 */
+.pluginToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 16px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+/* 从地址安装的面板：正文顶部展开的一张卡，不是浮层也不铺遮罩，描边用内阴影画 */
+.addPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: var(--ds-radius-lg);
+  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l1);
+}
+
+/* 面板内的输入框收到与同排 s 尺寸按钮同高，36 的输入框会把一行撑得高低不齐 */
+.addPanel .input {
+  height: var(--ds-control-height-s);
+}
+
+/* 分组：组标题行加卡片列表，组与组之间由页体的 32 拉开 */
+.pluginGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pluginGroupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 组标题吃满剩余宽，右侧的计数与动作贴边 */
+.pluginGroupTitle {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+}
+
+/* 卡片列表：行距 2，无内距与列表点 */
+.pluginCards {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * 卡片：左右各外扩 8，悬停面比内容列宽 16，行内文字仍与页头对齐。
+ * 圆角随外扩面一起给，底色只在悬停与按下时出现；常态透明，叠在页面底色上。
+ */
+.pluginCard {
+  position: relative;
+  min-width: 0;
+  margin: 0 -8px;
+  border-radius: var(--ds-radius-lg);
+  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-alias-interactive-bg-hover);
+    }
+  }
+
+  /* 按下反馈不门控：触屏从按下到抬起之间没有悬停态可用 */
+  &:active {
+    background-color: var(--dsw-alias-interactive-bg-active);
+  }
+}
+
+/* 卡头：图标 48、间距 14，内距 8 */
+.pluginCardHead {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px;
+}
+
+/* 卡图标：与下方行同款发丝框，字形 36 */
+.pluginCardIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 48px;
+  height: 48px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--ds-radius-lg);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 36px;
+  line-height: 1;
+
+  > svg {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+/* 卡主体：标题行与描述行，间距 4 */
+.pluginCardMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* 标题行：名称、版本、状态与徽标同排，放不下折行 */
+.pluginCardTitleRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/*
+ * 标题按钮：整卡的点击面由它的 ::after 铺满，按钮自身只画一行文字。
+ * font: inherit 会复位字号，故字号与行高再写一遍；圆角只为让铺满层 inherit 到卡片那一档。
+ */
+.pluginCardTitle {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: var(--ds-radius-lg);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+
+  /* 定位底座是 .pluginCard，铺满整卡 */
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+  }
+
+  /* 按钮自身的环会让文字跳位，环改画在铺满层上 */
+  &:focus-visible {
+    outline: none;
+  }
+
+  &:focus-visible::after {
+    outline: 2px solid var(--dsw-alias-state-business-primary);
+    outline-offset: 2px;
+  }
+}
+
+/* 描述：单行截断，字色再弱一档 */
+.pluginCardDesc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 18px;
+  word-break: break-word;
+}
+
+/*
+ * 右端控件：开关与 ⋯ 菜单浮在整卡拉伸层之上，各自可点。
+ * flex 项的 z-index 不依赖 position 即生效，position 写在这里是为了同时自成一个层叠上下文。
+ */
+.pluginCardEnd {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 卡内失败原因：左内距对齐标题文字(卡头内距 8 + 图标 48 + 间距 14)，右内距与卡头一致 */
+.pluginCardReason {
+  margin: 0;
+  padding: 0 8px 8px calc(8px + 48px + 14px);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/*
+ * 元信息标签：版本、来源之类的小胶囊。
+ * 浅色主题的 layer-3 与页面底色同为白，只靠底色看不出胶囊，因此补一道发丝框。
+ */
+.pluginMetaTag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2);
+}
+
+/*
+ * 状态胶囊：蓝字叠加 10% 同色底，底由允许的令牌派生，不写死颜色。
+ * 首行是给不支持 color-mix 的引擎留的兜底底色。
+ */
+.pluginStatusTag {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-interactive-bg-hover);
+  background-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/*
+ * 启用开关：36×20 的胶囊，圆钮 16 由 ::after 画，JSX 不必再放子元素。
+ * 关态轨道是一层中性半透明，开态取 label-primary(浅色主题即墨色)；
+ * 圆钮取 label-primary-inverted：浅色主题正是白色，暗色主题转为深灰，
+ * 开态才不会出现白钮叠在浅色轨道上。
+ */
+.pluginSwitch {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  width: 36px;
+  height: 20px;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background-color: rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  /* 圆钮：内距 2 起算，开态右移 16 落到另一端的内距上 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: var(--dsw-alias-label-primary-inverted);
+    transition: transform var(--ds-transition-duration);
+  }
+
+  &[aria-checked='true'] {
+    background-color: var(--dsw-alias-label-primary);
+  }
+
+  &[aria-checked='true']::after {
+    transform: translateX(16px);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: var(--ds-disabled-opacity);
+  }
+
+  /* 减弱动态：位移直接到位，不做滑动 */
+  @media (prefers-reduced-motion: reduce) {
+    &::after {
+      transition: none;
+    }
+  }
+}
+
+/* 暗色主题：关态轨道在深底上要提亮，胶囊边界才看得出 */
+[data-ds-dark-theme] .pluginSwitch[aria-checked='false'] {
+  background-color: rgba(255, 255, 255, 0.16);
+}
+
+/* 暗色主题：开态轨道是浅色，圆钮转为深色(与浅色主题的墨轨白钮互为镜像) */
+[data-ds-dark-theme] .pluginSwitch[aria-checked='true']::after {
+  background-color: var(--dsw-alias-bg-layer-3);
 }
 
 /*
@@ -436,34 +695,7 @@
   overflow: visible;
 }
 
-/* 安装栏固定在已安装页底部，不遮挡滚动的列表；分隔发丝线与内容列同宽 */
-.installBar {
-  flex-shrink: 0;
-  background-color: var(--dsw-alias-bg-base);
-  box-shadow: inset 0 0.5px 0 var(--dsw-alias-border-l2-darkmode-thin);
-}
-
-.installBarInner {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-block: 12px 16px;
-}
-
-/* 安装栏标题行：左侧标题，右侧「从本地安装」按钮 */
-.installHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.installTitle {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
-
+/* 地址安装面板里的输入行：输入框吃满剩余宽，按钮不压缩 */
 .installRow {
   display: flex;
   align-items: center;
@@ -937,23 +1169,7 @@
   gap: 8px;
 }
 
-/* 待决定冲突：常驻在已安装列表顶部，冲突双方就在下面的列表里 */
-.pendingSection {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  border-radius: var(--ds-radius-md);
-  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2-darkmode-thin);
-}
-
-.pendingTitle {
-  font-size: 14px;
-  line-height: 22px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
-
+/* 待决定冲突：外层已由 .pluginGroup 承担，这里只管组内的逐条冲突 */
 .pendingGroup {
   display: flex;
   flex-direction: column;
@@ -1012,10 +1228,8 @@
 }
 
 /*
- * 平板与手机：表格由多列网格改为卡片式堆叠。
- * 理由：五列最小宽度之和（已安装表约 484px）超过 768px 视口扣掉 261px 侧边栏后的可用宽度，
- * 若改为容器内横向滚动，列头会与内容错位且容易误触；堆叠后每张卡片保留全部字段，
- * 页面与列表都不产生横向滚动。断点取 900px 而非 760px，是因为应用在 768px 仍显示侧边栏。
+ * 平板与手机：页签均分整行、触控目标抬到 40，卡片行按各自刻度给例外。
+ * 断点取 900px 而非 760px，是因为应用在 768px 仍显示侧边栏，可用宽度先于视口变窄。
  */
 @media (max-width: 900px) {
   /* 标签页均分整行宽度，窄屏下不折行 */
@@ -1050,39 +1264,24 @@
     min-height: 20px;
   }
 
-  .table {
-    gap: 8px;
+  /*
+   * 卡标题按钮与开关有自己的刻度，不吃 40 的触控抬升：
+   * 标题按钮的点击面铺满整张卡，开关用一圈透明命中层补到 48×40。
+   */
+  .page .pluginCardTitle {
+    min-width: 0;
+    min-height: 0;
   }
 
-  /* 卡片堆叠后没有列，表头不再对应任何列 */
-  .head {
-    display: none;
+  .page .pluginSwitch {
+    min-width: 36px;
+    min-height: 20px;
   }
 
-  .row {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-    padding: 12px;
-    border-radius: var(--ds-radius-md);
-    box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2-darkmode-thin);
-  }
-
-  /* 卡片里每个字段自带名称，取代被隐藏的表头 */
-  .row > [role='cell'][data-label]::before {
-    content: attr(data-label);
-    display: block;
-    color: var(--dsw-alias-label-tertiary);
-    font-size: 12px;
-    line-height: 16px;
-  }
-
-  .name {
-    white-space: normal;
-  }
-
-  .actions {
-    justify-content: center;
-    padding-top: 2px;
+  .pluginSwitch::before {
+    content: '';
+    position: absolute;
+    inset: -10px -6px;
   }
 
   /* 来源行：名称与徽章占一行，操作按钮独占下一行 */
@@ -1094,12 +1293,6 @@
   .sourceActions {
     grid-column: 1 / -1;
     justify-content: flex-start;
-  }
-
-  /* 安装栏：标题行可折行，地址与安装按钮保持单行 */
-  .installHeader {
-    flex-wrap: wrap;
-    row-gap: 6px;
   }
 
   .inputId {
@@ -1116,32 +1309,15 @@
   .tabsBar {
     padding: 8px 0;
   }
-
-  .installBarInner {
-    padding-block: 10px 12px;
-  }
 }
 
 @media (max-width: 480px) {
-  .installBarInner {
-    padding-block: 8px 10px;
-  }
-
   .title {
     font-size: 17px;
     line-height: 24px;
   }
 
-  .row {
-    padding: 10px;
-  }
-
-  .actions,
   .sourceActions {
     gap: 6px;
-  }
-
-  .installHeader {
-    justify-content: flex-start;
   }
 }
