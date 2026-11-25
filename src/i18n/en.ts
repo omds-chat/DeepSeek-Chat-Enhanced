@@ -116,7 +116,6 @@ export const en = {
   apiKeyVerificationFailed: 'Verification failed: {message}',
   historyImport: 'Import chat history',
   historyImportConfirm: 'Import',
-  historyImportConfirmTitle: 'Import chat history?',
   historyImportConfirmDescription:
     'The uploaded chat history will replace all your current chats. Import anyway?',
   historyImportDescription:
@@ -132,9 +131,6 @@ export const en = {
   exportAllDownload: 'Download',
   deleteAllSessions: 'Delete all chats',
   deleteAllSessionsModalTitle: 'Once deleted, all chats will be cleared and cannot be recovered.',
-  deleteAllSessionsModalDescription:
-    'Locally saved attachments and unsent drafts will also be deleted.',
-  historyDeleting: 'Deleting...',
   historyDeleted: 'Successfully deleted.',
   settingsPluginDataTitle: 'Plugin data',
   settingsPluginDataDescription:
@@ -195,9 +191,6 @@ export const en = {
   settingsLocaleEnUS: 'English',
   pluginBypassDetected: 'A call bypassed the plugin engine to reach the core; blocked: {capability}',
   pluginInstallRejected: 'Plugin {id} failed to install: {reason}',
-  pluginToggleApplied: '{state}',
-  pluginAssetInstalled: 'Asset package {id} installed.',
-  pluginAssetInstallFailed: 'Asset package {id} could not be installed: {reason}',
   pluginActivateFailed: 'Plugin {id} failed to start: {reason}',
   pluginActivateMissingDependency:
     'Plugin {id} was not enabled and is now marked as disabled: {reason}',
@@ -224,8 +217,6 @@ export const en = {
   pluginDataQuotaExceeded: 'Local data for plugin {id} exceeds the 64KB limit',
   pluginDataInvalid: 'Data written by plugin {id} cannot be serialized',
   pluginDataUnavailable: 'Local data for plugin {id} cannot be read or written',
-  pluginIndexFetchFailed: 'Plugin index fetch failed',
-  pluginIndexInvalid: 'Plugin index structure is invalid',
   pluginPanelTitle: 'Plugins',
   pluginPageIntro: 'Install, enable and configure plugins',
   pluginAdd: 'Add plugin',
@@ -274,7 +265,6 @@ export const en = {
   pluginManifestRevisionRegressed:
     'The {layer} manifest revision of plugin {id} went back from {seen} to {revision}; check whether the source was replaced',
   pluginActionEnable: 'Enable',
-  pluginActionDisable: 'Disable',
   pluginActionUninstall: 'Uninstall',
   pluginActionInstall: 'Install',
   pluginActionInstalled: 'Installed',
@@ -290,7 +280,6 @@ export const en = {
   pluginCardCheckUpdate: 'Check for updates',
   pluginEngineUnavailable: 'The plugin engine is not ready yet',
   pluginBuiltinUninstallHint: 'Built-in plugins are loaded by the host and cannot be uninstalled',
-  pluginUninstallTitle: 'Uninstall plugin',
   pluginUninstallDescription: 'Uninstalling {name} stops its features immediately',
   pluginUninstallKeepDataHint: 'Uninstalling does not delete the local data of the plugin.',
   pluginUninstalledDataKept:
@@ -469,7 +458,6 @@ export const en = {
   pluginSettingsFieldsTitle: 'Configurable options',
   pluginSettingsEmpty: 'This plugin has no configurable options',
   pluginSettingsSave: 'Save',
-  pluginSettingsSaving: 'Saving',
   pluginSettingsSaved: 'Settings saved',
   pluginSettingsSaveFailed: 'Save failed; unsaved changes are kept, please retry',
   pluginSettingsReset: 'Reset to default',
@@ -496,7 +484,6 @@ export const en = {
   settingsPluginPageBack: 'Back to plugin list',
   composerPluginToolbarLabel: 'Plugin tools',
   overlayPluginNoticesLabel: 'Plugin notices',
-  messagePluginActionsLabel: 'Plugin actions',
   panelNavLabel: 'Panels',
   conversationTabChat: 'Chat',
   conversationTabsLabel: 'Conversation views',
