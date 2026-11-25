@@ -7,6 +7,7 @@ import {
   IconDownloadOutline16,
   IconFollowsystemOutline16,
   IconLightOutline16,
+  IconLoadingOutline16,
   IconPluginOutline16,
   IconSettingsOutline16,
   IconUploadOutline14,
@@ -104,6 +105,8 @@ export const SettingsPage = ({ siderCollapsed }: { siderCollapsed: boolean }) =>
           onClick={() => {
             // 导入或清理进行中不离开: 页面卸载会丢掉进行中的状态提示
             if (!historyBusy) {
+              // 关闭即丢弃上一次导入留下的结果提示与待确认文件
+              historyImport.dismiss()
               selectPanel(null)
             }
           }}
@@ -616,7 +619,7 @@ const SettingCell = ({
  */
 const useHistoryImport = () => {
   const [file, setFile] = useState<File | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<{ processed: number; total?: number } | null>(null)
   const [status, setStatus] = useState<Status>(null)
   const importing = useRef(false)
   const confirmTimer = useRef(0)
@@ -642,20 +645,34 @@ const useHistoryImport = () => {
     importing.current = true
     window.clearTimeout(confirmTimer.current)
     setFile(null)
-    setBusy(true)
+    setProgress({ processed: 0 })
     setStatus(null)
     try {
-      const count = await importHistory(file)
+      const count = await importHistory(file, (processed, total) =>
+        setProgress({ processed, total })
+      )
       setStatus({ key: count === 1 ? 'historyImportedOne' : 'historyImported', params: { count } })
     } catch {
       setStatus({ key: 'historyImportFailed', error: true })
     } finally {
       importing.current = false
-      setBusy(false)
+      setProgress(null)
     }
   }
 
-  return { file, busy, status, select, cancel, confirm }
+  return {
+    file,
+    busy: progress !== null,
+    progress,
+    status,
+    select,
+    cancel,
+    dismiss: () => {
+      setFile(null)
+      setStatus(null)
+    },
+    confirm,
+  }
 }
 
 /** 导入 = 覆盖：用选中文件替换本地全部会话与附件。 */
@@ -669,9 +686,11 @@ const ImportHistory = ({
   const t = useTranslate()
   const inputRef = useRef<HTMLInputElement>(null)
   const choosing = historyImport.file !== null
+  const { progress } = historyImport
 
   return (
     <SettingCell
+      className={progress ? styles.importing : undefined}
       label={t('historyImport')}
       description={
         choosing ? t('historyImportConfirmDescription') : t('historyImportDescription')
@@ -716,12 +735,41 @@ const ImportHistory = ({
               variant="outlined"
               size="m"
               className={clsx(styles.cellButton, styles.uploadButton)}
+              aria-busy={historyImport.busy}
+              aria-label={historyImport.busy ? t('historyImport') : undefined}
               disabled={disabled}
               onClick={() => inputRef.current?.click()}
             >
-              <IconUploadOutline14 />
-              {t('upload')}
+              {progress ? (
+                <IconLoadingOutline16 />
+              ) : (
+                <>
+                  <IconUploadOutline14 />
+                  {t('upload')}
+                </>
+              )}
             </Button>
+          )}
+          {progress?.total !== undefined && (
+            <div className={styles.importProgress}>
+              <div
+                className={styles.importTrack}
+                role="progressbar"
+                aria-label={t('historyImport')}
+                aria-valuemin={0}
+                aria-valuemax={progress.total}
+                aria-valuenow={progress.processed}
+              >
+                <span
+                  style={{
+                    width: `${progress.total ? (progress.processed / progress.total) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              <span>
+                {progress.processed} / {progress.total}
+              </span>
+            </div>
           )}
         </>
       }
