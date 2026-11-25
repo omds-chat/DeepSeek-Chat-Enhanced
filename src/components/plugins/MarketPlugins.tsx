@@ -25,6 +25,7 @@ import {
 } from '../dsc-market/index.js'
 import { Button } from '../base/Button.js'
 import { IconButton } from '../base/IconButton.js'
+import { Select, type SelectOption } from '../base/Select.js'
 import {
   IconCloseOutline16,
   IconLoadingOutline16,
@@ -44,6 +45,28 @@ const SEARCH_DEBOUNCE_MS = 250
 
 /** 卡片上平铺的标签上限，其余合并成一枚 +N */
 const MAX_TAG_PILLS = 3
+
+/** 目录项与它所属的来源：来源筛选、结论行与安装都按卡片自己的来源走 */
+type MarketEntry = {
+  sourceId: string
+  /** 来源显示名，聚合视图下用来标注卡片归属 */
+  sourceName: string
+  runtime: SourceRuntime
+  plugin: CatalogPlugin
+}
+
+/** 安装状态筛选 */
+type StatusFilter = 'all' | 'installed' | 'uninstalled'
+
+/** 排序口径；default 表示不排序，目录原序即来源给出的排名 */
+type SortMode = 'default' | 'name' | 'author'
+
+/** 卡片的界面键：跨来源可能有同名插件，键里带来源 id */
+const cardId = (sourceId: string, plugin: CatalogPlugin): string => sourceId + '/' + plugin.key
+
+/** 排序比较：按当前语言的字典序，数字按数值比、大小写不敏感 */
+const collate = (left: string, right: string, locale: 'zh-CN' | 'en-US'): number =>
+  left.localeCompare(right, locale, { numeric: true, sensitivity: 'base' })
 
 /** 客户端缺失时的占位订阅源，保证 Hook 顺序稳定 */
 const EMPTY_STORE = {
@@ -167,8 +190,16 @@ export const MarketPlugins = ({
   const sources = client ? client.sources() : []
   const selectedId = client ? client.selected() : null
   const runtime = client && selectedId !== null ? client.runtime(selectedId) : null
-  const plugins = runtime === null ? [] : runtime.plugins
   const fetchedAt = runtime === null ? null : runtime.fetchedAt
+
+  /** 已配置来源的运行态，按来源顺序；来源筛选与结论行都在它之上取子集 */
+  const allRuntimes: SourceRuntime[] = []
+  for (const source of sources) {
+    const state = client?.runtime(source.id) ?? null
+    if (state !== null) {
+      allRuntimes.push(state)
+    }
+  }
 
   /** 来源浮层默认收起；不跨会话记忆，浮层不是常驻区域 */
   const [sourcesOpen, setSourcesOpen] = useState(false)
@@ -182,6 +213,14 @@ export const MarketPlugins = ({
   const searchTimer = useRef(0)
   const composingRef = useRef(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  /*
+   * 筛选与排序只在本次面板打开期间有效，不做持久化；
+   * 来源筛选用空串表示「全部」，来源 id 非空，两者不会撞。
+   */
+  const [sourceFilter, setSourceFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [sortMode, setSortMode] = useState<SortMode>('default')
 
   useEffect(
     () => () => {
@@ -375,29 +414,35 @@ export const MarketPlugins = ({
     void instance.refresh(editing.id, true)
   }
 
-  const install = async (plugin: CatalogPlugin) => {
+  /*
+   * 安装：计划与信任都取卡片自己的来源，聚合视图下同一插件只可能属于一个来源。
+   * 失败结论钉在卡片上，键里带来源 id，跨来源同名插件不会串行。
+   */
+  const install = async (entry: MarketEntry) => {
+    const { plugin, runtime: source, sourceId } = entry
     const instance = market()
-    if (!instance || selectedId === null) {
+    if (!instance) {
       return
     }
-    setFailure(plugin.key, '')
-    const plan = instance.plan(selectedId, plugin)
+    const key = cardId(sourceId, plugin)
+    setFailure(key, '')
+    const plan = instance.plan(sourceId, plugin)
     if (!plan) {
       const text = t('pluginMarketInstallUnavailable', { id: plugin.name })
-      setFailure(plugin.key, text)
+      setFailure(key, text)
       showToast({ type: 'error', key: 'pluginMarketInstallUnavailable', params: { id: plugin.name } })
       return
     }
     const engine = getPluginEngine()
     if (!engine) {
-      setFailure(plugin.key, t('pluginEngineUnavailable'))
+      setFailure(key, t('pluginEngineUnavailable'))
       showToast({ type: 'error', key: 'pluginEngineUnavailable' })
       return
     }
-    setBusyKey(plugin.key)
+    setBusyKey(key)
     try {
       // 来源信任判定一并交给引擎，只用于界面展示是否被官方认可
-      const trustFailure = runtime?.trustFailure ?? null
+      const trustFailure = source.trustFailure
       const result = await engine.installFromUrl(plan.url, plan.manifest, {
         sourceType: plan.sourceType,
         dataBase: plan.dataBase,
@@ -412,11 +457,11 @@ export const MarketPlugins = ({
         metaVerified: plan.metaVerified,
         revisions: plan.revisions,
         ...(plan.authorPubSha512 === undefined ? {} : { authorPubSha512: plan.authorPubSha512 }),
-        ...(runtime === null ? {} : { trust: runtime.trust }),
+        trust: source.trust,
         ...(trustFailure === null ? {} : { trustFailure }),
       })
       if (result.ok) {
-        instance.countInstall(selectedId, plugin)
+        instance.countInstall(sourceId, plugin)
         // 自动启用被拒时引擎已经提示原因，这里不再用安装完成盖掉它
         if (result.activation?.ok !== false) {
           showToast({ key: 'pluginInstalled', params: { id: plugin.name } })
@@ -424,7 +469,7 @@ export const MarketPlugins = ({
       } else {
         // 失败结论同时钉在卡片上，toast 只做即时提醒
         const reason = pluginReasonText(result.reason, result.detail)
-        setFailure(plugin.key, reason)
+        setFailure(key, reason)
         showToast({
           type: 'error',
           key: 'pluginInstallRejected',
@@ -434,7 +479,7 @@ export const MarketPlugins = ({
       onInstalled()
     } catch {
       const reason = pluginReasonText('load-failed')
-      setFailure(plugin.key, reason)
+      setFailure(key, reason)
       showToast({
         type: 'error',
         key: 'pluginInstallRejected',
@@ -448,54 +493,98 @@ export const MarketPlugins = ({
 
   // 信任校验未通过不再禁用安装：保留「不可信」标识与提示，由用户自行判断
   const untrusted = runtime?.trust === 'untrusted'
-  // 未在官方清单登记只是中性说明，不按不可信处理；安装时仍按本地链校验与验签给出结论
-  const needsConfirm = runtime?.trust === 'unverified' || untrusted
+
+  /** 已安装判定：目录清单里的 id 优先，缺失时按名称归一 */
+  const isInstalled = (plugin: CatalogPlugin): boolean => {
+    const id = plugin.manifest?.id ?? toPluginId(plugin.name)
+    return id !== null && installedIds.has(id)
+  }
 
   const needle = term.trim().toLowerCase()
   const searching = needle !== ''
-  const visible = searching ? plugins.filter((plugin) => matchesQuery(plugin, needle)) : plugins
+  const statusOn = statusFilter !== 'all'
+  const filtersOn = sourceFilter !== '' || statusOn
+
+  /* 来源筛选先改基数：空串是全部来源，即所有已拉取来源的并集，单来源时与目录原序一致 */
+  const scopedSources =
+    sourceFilter === '' ? sources : sources.filter((source) => source.id === sourceFilter)
+  const scopedRuntimes: SourceRuntime[] = []
+  const entries: MarketEntry[] = []
+  for (const source of scopedSources) {
+    const state = client?.runtime(source.id) ?? null
+    if (state === null) {
+      continue
+    }
+    scopedRuntimes.push(state)
+    for (const plugin of state.plugins) {
+      entries.push({ sourceId: source.id, sourceName: source.name, runtime: state, plugin })
+    }
+  }
+  /** 所有来源的插件总数：三态判据只看有没有数据，与筛选无关 */
+  const allPlugins = allRuntimes.reduce((count, state) => count + state.plugins.length, 0)
+  /** 基数：来源筛选后的全部插件，搜索与安装状态都在它之上再取交集 */
+  const total = entries.length
+  const matched = entries.filter(({ plugin }) => {
+    if (searching && !matchesQuery(plugin, needle)) {
+      return false
+    }
+    return statusFilter === 'all' || isInstalled(plugin) === (statusFilter === 'installed')
+  })
+  /* 默认口径不排序：目录原序就是来源给出的排名，只有显式选了才排 */
+  const visible =
+    sortMode === 'default'
+      ? matched
+      : matched.sort((left, right) =>
+          sortMode === 'name'
+            ? collate(left.plugin.name, right.plugin.name, locale) ||
+              collate(left.plugin.author, right.plugin.author, locale)
+            : collate(left.plugin.author, right.plugin.author, locale) ||
+              collate(left.plugin.name, right.plugin.name, locale)
+        )
 
   /*
    * 结论行：清单结论一行、下载计数说明一行，最多两行。
    * 刷新失败但仍有上次目录时，失败原因独占第一行，过期结论不再重复播报。
+   * 聚合视图下按来源各出一条再去重，同类结论不重复铺行。
    */
-  const notices: string[] = []
-  if (runtime !== null) {
-    if (runtime.state === 'failed' && plugins.length > 0) {
-      notices.push(runtime.error === null ? t('pluginMarketStatusFailed') : t(runtime.error))
-    } else {
-      const manifestNotes: string[] = []
-      if (runtime.state === 'ready' && !runtime.catalogVerified) {
-        manifestNotes.push(t('pluginMarketCatalogUnverified'))
-      }
-      for (const warning of runtime.revisionWarnings) {
-        manifestNotes.push(
-          t('pluginMarketRevisionRegressed', {
-            layer: warning.layer,
-            path: warning.path === '' ? '/' : warning.path,
-            seen: warning.seen,
-            revision: warning.revision,
-          })
-        )
-      }
-      if (isUnlistedTrust(runtime.trust)) {
-        manifestNotes.push(t('pluginMarketNotListed'))
-      }
-      if (manifestNotes.length > 0) {
-        notices.push(manifestNotes.join(' · '))
-      }
-      const countNotes: string[] = []
-      if (runtime.meta?.downloadCountEnabled === true) {
-        countNotes.push(t('pluginMarketCountNotice'))
-        if (runtime.meta.apiNeedIp) {
-          countNotes.push(t('pluginMarketCountIpNotice'))
-        }
-      }
-      if (countNotes.length > 0) {
-        notices.push(countNotes.join(' · '))
+  const noticeLines = (state: SourceRuntime): string[] => {
+    if (state.state === 'failed' && state.plugins.length > 0) {
+      return [state.error === null ? t('pluginMarketStatusFailed') : t(state.error)]
+    }
+    const lines: string[] = []
+    const manifestNotes: string[] = []
+    if (state.state === 'ready' && !state.catalogVerified) {
+      manifestNotes.push(t('pluginMarketCatalogUnverified'))
+    }
+    for (const warning of state.revisionWarnings) {
+      manifestNotes.push(
+        t('pluginMarketRevisionRegressed', {
+          layer: warning.layer,
+          path: warning.path === '' ? '/' : warning.path,
+          seen: warning.seen,
+          revision: warning.revision,
+        })
+      )
+    }
+    if (isUnlistedTrust(state.trust)) {
+      manifestNotes.push(t('pluginMarketNotListed'))
+    }
+    if (manifestNotes.length > 0) {
+      lines.push(manifestNotes.join(' · '))
+    }
+    const countNotes: string[] = []
+    if (state.meta?.downloadCountEnabled === true) {
+      countNotes.push(t('pluginMarketCountNotice'))
+      if (state.meta.apiNeedIp) {
+        countNotes.push(t('pluginMarketCountIpNotice'))
       }
     }
+    if (countNotes.length > 0) {
+      lines.push(countNotes.join(' · '))
+    }
+    return lines
   }
+  const notices = [...new Set(scopedRuntimes.flatMap(noticeLines))].slice(0, 2)
 
   const refreshSelected = () => {
     if (selectedId !== null) {
@@ -503,15 +592,42 @@ export const MarketPlugins = ({
     }
   }
 
+  /** 清除筛选：搜索是另一条通道，不在这里一并清掉 */
+  const clearFilters = () => {
+    setSourceFilter('')
+    setStatusFilter('all')
+  }
+
+  /*
+   * 下拉选项：来源项直接来自来源列表，不假设来源能否删除或编辑，
+   * 来源增删后选项跟着变，筛选停在已消失的来源上时按「没有命中」处理。
+   */
+  const sourceOptions: SelectOption<string>[] = [
+    { value: '', label: t('pluginMarketFilterSourceAll') },
+    ...sources.map((source) => ({ value: source.id, label: source.name })),
+  ]
+  const statusOptions: SelectOption<StatusFilter>[] = [
+    { value: 'all', label: t('pluginMarketFilterStatusAll') },
+    { value: 'installed', label: t('pluginMarketFilterStatusInstalled') },
+    { value: 'uninstalled', label: t('pluginMarketFilterStatusUninstalled') },
+  ]
+  const sortOptions: SelectOption<SortMode>[] = [
+    { value: 'default', label: t('pluginMarketSortDefault') },
+    { value: 'name', label: t('pluginMarketSortName') },
+    { value: 'author', label: t('pluginMarketSortAuthor') },
+  ]
+
   /*
    * 工具条由 PluginPanel 的吸顶块承载：portal 把它挂进 .stickyBar 里的挂载点，
    * 因此随页头与页签条一起吸顶，而不是跟着目录滚走。浮层的绝对定位仍相对这条工具条。
    */
   const toolbar = (
     <div className={styles.marketToolbar}>
-      {/* 搜索图标：契约没给容纳它的类，按工具条 flex 行放在搜索框左侧 */}
-      <IconSearchOutline16 />
       <div className={styles.marketSearch}>
+        {/* 搜索图标是输入框的前置图标：绝对定位在框内左侧，输入框让出左内距 */}
+        <span className={styles.marketSearchIcon} aria-hidden="true">
+          <IconSearchOutline16 />
+        </span>
         <input
           ref={searchInputRef}
           className={clsx(styles.input, styles.marketSearchInput)}
@@ -547,28 +663,28 @@ export const MarketPlugins = ({
       </div>
       <div className={styles.marketToolbarMeta}>
         <span className={styles.marketToolbarCount}>
-          {searching
-            ? t('pluginMarketSearchResultFiltered', {
-                shown: visible.length,
-                total: plugins.length,
-              })
-            : t('pluginMarketSearchResult', { count: plugins.length })}
+          {searching || statusOn
+            ? t('pluginMarketSearchResultFiltered', { shown: visible.length, total })
+            : t('pluginMarketSearchResult', { count: total })}
         </span>
-        {fetchedAt === null ? null : (
-          <span className={styles.caption}>
-            {t('pluginMarketIndexUpdatedAt', { time: formatDateTime(fetchedAt) ?? '' })}
-          </span>
-        )}
-        {sources.length > 1 ? (
-          <Tooltip content={t('pluginMarketSourcesCount', { count: sources.length })}>
-            <span
-              className={styles.badgeCount}
-              aria-label={t('pluginMarketSourcesCount', { count: sources.length })}
-            >
-              {sources.length}
+        {/* 窄屏不渲染更新时间与来源数，工具条才收得回两行；数据本身不裁剪 */}
+        <span className={styles.marketToolbarExtra}>
+          {fetchedAt === null ? null : (
+            <span className={styles.caption}>
+              {t('pluginMarketIndexUpdatedAt', { time: formatDateTime(fetchedAt) ?? '' })}
             </span>
-          </Tooltip>
-        ) : null}
+          )}
+          {sources.length > 1 ? (
+            <Tooltip content={t('pluginMarketSourcesCount', { count: sources.length })}>
+              <span
+                className={styles.badgeCount}
+                aria-label={t('pluginMarketSourcesCount', { count: sources.length })}
+              >
+                {sources.length}
+              </span>
+            </Tooltip>
+          ) : null}
+        </span>
         <Button
           variant="outlined"
           size="s"
@@ -587,6 +703,30 @@ export const MarketPlugins = ({
           tooltip={t('pluginMarketRefresh')}
           disabled={selectedId === null || runtime?.state === 'loading'}
           onClick={refreshSelected}
+        />
+      </div>
+      {/* 筛选排在元信息簇之后：折行时先保住搜索与计数，筛选整体落到第二行 */}
+      <div className={styles.marketFilters}>
+        <Select
+          value={sourceFilter}
+          options={sourceOptions}
+          ariaLabel={t('pluginMarketFilterSourceLabel')}
+          className={styles.marketSelect}
+          onChange={setSourceFilter}
+        />
+        <Select
+          value={statusFilter}
+          options={statusOptions}
+          ariaLabel={t('pluginMarketFilterStatusLabel')}
+          className={styles.marketSelect}
+          onChange={setStatusFilter}
+        />
+        <Select
+          value={sortMode}
+          options={sortOptions}
+          ariaLabel={t('pluginMarketSortLabel')}
+          className={styles.marketSelect}
+          onChange={setSortMode}
         />
       </div>
       {sourcesOpen ? (
@@ -767,7 +907,7 @@ export const MarketPlugins = ({
                   {line}
                 </div>
               ))}
-              {runtime.state === 'failed' && plugins.length === 0 ? (
+              {runtime.state === 'failed' && allPlugins === 0 ? (
                 <div className={styles.marketState}>
                   <div className={styles.marketStateText}>
                     {runtime.error === null ? t('pluginMarketStatusFailed') : t(runtime.error)}
@@ -776,12 +916,12 @@ export const MarketPlugins = ({
                     {t('pluginMarketRetry')}
                   </Button>
                 </div>
-              ) : runtime.state === 'loading' && plugins.length === 0 ? (
+              ) : runtime.state === 'loading' && allPlugins === 0 ? (
                 <div className={styles.marketState}>
                   <IconLoadingOutline16 />
                   <div className={styles.marketStateText}>{t('pluginMarketStatusLoading')}</div>
                 </div>
-              ) : plugins.length === 0 ? (
+              ) : allPlugins === 0 ? (
                 <div className={styles.marketState}>
                   <div className={styles.marketStateText}>{t('pluginMarketStatusEmpty')}</div>
                   <Button variant="outlined" size="s" onClick={refreshSelected}>
@@ -789,22 +929,35 @@ export const MarketPlugins = ({
                   </Button>
                 </div>
               ) : visible.length === 0 ? (
+                /* 筛选无结果与搜索无结果是两回事：筛选优先给「清除筛选」，搜索给「清除搜索」 */
                 <div className={styles.marketState}>
                   <div className={styles.marketStateText}>
-                    {t('pluginMarketSearchResultFiltered', { shown: 0, total: plugins.length })}
+                    {t(filtersOn ? 'pluginMarketFilterEmpty' : 'pluginMarketSearchResultFiltered', {
+                      shown: 0,
+                      total,
+                    })}
                   </div>
-                  <Button variant="outlined" size="s" onClick={clearSearch}>
-                    {t('pluginMarketSearchClear')}
+                  <Button
+                    variant="outlined"
+                    size="s"
+                    onClick={filtersOn ? clearFilters : clearSearch}
+                  >
+                    {t(filtersOn ? 'pluginMarketFilterClear' : 'pluginMarketSearchClear')}
                   </Button>
                 </div>
               ) : (
                 <div className={styles.catalogGrid} role="list">
-                  {visible.map((plugin) => {
-                    const id = plugin.manifest?.id ?? toPluginId(plugin.name)
-                    const installed = id !== null && installedIds.has(id)
+                  {visible.map((entry) => {
+                    const { plugin } = entry
+                    /* 卡片键带来源 id：聚合视图下同名插件分属不同来源，状态不能串 */
+                    const cardKey = cardId(entry.sourceId, plugin)
+                    const installed = isInstalled(plugin)
                     const unusable = plugin.error !== null || plugin.latest === null
-                    const confirming = confirmKey === plugin.key
-                    const failure = failures[plugin.key] ?? ''
+                    const confirming = confirmKey === cardKey
+                    const failure = failures[cardKey] ?? ''
+                    // 未在官方清单登记只是中性说明；安装时仍按本地链校验与验签给出结论
+                    const needsConfirm =
+                      entry.runtime.trust === 'unverified' || entry.runtime.trust === 'untrusted'
                     const description =
                       plugin.meta === null ? '' : pickText(plugin.meta.description, locale)
                     /** 动作行左侧的错误结论：安装被拒优先，其次目录里记录的拉取错误 */
@@ -816,15 +969,15 @@ export const MarketPlugins = ({
                         ? ''
                         : plugin.latest === null
                           ? t('pluginMarketInstallUnavailable', { id: plugin.name })
-                          : runtime.catalogVerified && !plugin.catalogVerified
+                          : entry.runtime.catalogVerified && !plugin.catalogVerified
                             ? t('pluginMarketCatalogUnverified')
                             : ''
                     return (
                       <div
-                        key={plugin.key}
+                        key={cardKey}
                         role="listitem"
                         className={styles.catalogCard}
-                        aria-busy={busyKey === plugin.key}
+                        aria-busy={busyKey === cardKey}
                       >
                         <div className={styles.cardHead}>
                           <span className={styles.cardName}>{plugin.name}</span>
@@ -834,7 +987,11 @@ export const MarketPlugins = ({
                         </div>
                         <div className={styles.cardMeta}>
                           <span>{plugin.author}</span>
-                          {runtime.trust === 'endorsed' ? (
+                          {/* 聚合视图下标注来源归属；单来源时口径无歧义，不重复 */}
+                          {scopedSources.length > 1 ? (
+                            <span className={styles.tagPill}>{entry.sourceName}</span>
+                          ) : null}
+                          {entry.runtime.trust === 'endorsed' ? (
                             <span className={styles.endorsedBadge}>{t('pluginEndorsedBadge')}</span>
                           ) : null}
                         </div>
@@ -869,15 +1026,15 @@ export const MarketPlugins = ({
                             disabled={installed || unusable || busyKey !== null}
                             onClick={() => {
                               if (needsConfirm && !confirming) {
-                                armConfirm(plugin.key)
+                                armConfirm(cardKey)
                                 return
                               }
-                              void install(plugin)
+                              void install(entry)
                             }}
                           >
                             {installed
                               ? `✓ ${t('pluginActionInstalled')}`
-                              : busyKey === plugin.key
+                              : busyKey === cardKey
                                 ? t('pluginInstalling')
                                 : confirming
                                   ? t('pluginMarketInstallConfirm')
