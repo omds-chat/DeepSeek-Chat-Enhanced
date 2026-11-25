@@ -34,7 +34,13 @@ import {
 import { createDownloadReporter } from './count.js'
 import { detectSourceModel, type SourceModel } from './model.js'
 import { checkRemoved, type RemovedVerdict } from './removed.js'
-import { normalizeBaseUrls, readSources, writeSources } from './sources.js'
+import {
+  isBrowsableSource,
+  isBuiltinSource,
+  normalizeBaseUrls,
+  readSources,
+  writeSources,
+} from './sources.js'
 import { resolveSourceTrust } from './trust.js'
 import {
   dataBaseOf,
@@ -96,12 +102,25 @@ export type MarketClient = {
   subscribe(listener: () => void): () => void
   sources(): MarketSource[]
   runtime(id: string): SourceRuntime | null
+  /**
+   * 当前浏览的来源；内部插件来源不参与浏览切换，所以这里不会是它的 id。
+   */
   selected(): string | null
+  /** 切换浏览来源；内部插件来源不在可切换之列，请求被忽略 */
   select(id: string): void
   refresh(id: string, force?: boolean): Promise<SourceRuntime | null>
+  /**
+   * 新增用户来源，返回新 id；名称或地址无效时返回 null。
+   * 来源写接口的共同约定：内置来源(kind 不是 user)是市场默认项，
+   * 删除、改地址、改名与移动一律返回 false，不静默忽略、也不改任何状态；
+   * 界面据此不渲染对应入口，并用中性说明标出内置来源不可修改。
+   */
   addSource(name: string, baseUrls: readonly string[]): string | null
+  /** 删除来源；内置项与最后一个来源返回 false */
   removeSource(id: string): boolean
+  /** 调整用户来源的顺序；内置项、或目标位置落在内置项上时返回 false */
   moveSource(id: string, delta: -1 | 1): boolean
+  /** 改来源地址；内置项返回 false */
   setBaseUrls(id: string, baseUrls: readonly string[]): boolean
   plan(id: string, plugin: CatalogPlugin): InstallPlan | null
   countInstall(id: string, plugin: CatalogPlugin): void
@@ -755,6 +774,14 @@ const loadCatalog = async (
   return { plugins, skipped }
 }
 
+/** 市场可浏览的来源：内部插件来源不在其中 */
+const browsableOf = (list: readonly MarketSource[]): MarketSource[] =>
+  list.filter((source) => isBrowsableSource(source))
+
+/** 默认浏览来源：第一个可浏览来源；一条都没有时退回列表首项 */
+const browseIdOf = (list: readonly MarketSource[]): string | null =>
+  (browsableOf(list)[0] ?? list[0])?.id ?? null
+
 /** 来源 id 到插件来源类型；id 用合集目录名，来源类型仍是存储里的四个取值 */
 const sourceTypeOf = (id: string): PluginSourceType => {
   if (id === 'awesome-dsc-plugin') {
@@ -772,7 +799,8 @@ export const createMarketClient = (
   storage: StorageCapability
 ): MarketClient => {
   let sourceList = readSources(storage)
-  let selectedId: string | null = sourceList[0]?.id ?? null
+  // 默认浏览组织社区来源：内部插件来源的条目走已安装页，市场不切到它
+  let selectedId: string | null = browseIdOf(sourceList)
   let stateVersion = 0
   const runtimes = new Map<string, SourceRuntime>()
   const inflight = new Map<string, Promise<SourceRuntime | null>>()
@@ -1137,7 +1165,9 @@ export const createMarketClient = (
     runtime: (id) => runtimes.get(id) ?? null,
     selected: () => selectedId,
     select: (id) => {
-      if (sourceList.some((source) => source.id === id)) {
+      // 内部插件来源不是浏览来源，选中请求直接忽略，selected() 因此恒为可浏览来源
+      const source = sourceList.find((item) => item.id === id)
+      if (source && isBrowsableSource(source)) {
         selectedId = id
         emit()
       }
@@ -1150,7 +1180,7 @@ export const createMarketClient = (
         return null
       }
       const id = nextSourceId()
-      sourceList = [...sourceList, { id, name: trimmed, baseUrls: urls, builtin: false }]
+      sourceList = [...sourceList, { id, name: trimmed, baseUrls: urls, builtin: false, kind: 'user' }]
       persist()
       selectedId = id
       emit()
@@ -1158,14 +1188,15 @@ export const createMarketClient = (
     },
     removeSource: (id) => {
       const source = sourceList.find((item) => item.id === id)
-      if (!source || source.builtin || sourceList.length <= 1) {
+      // 内置项是市场默认项，删了就没有默认来源；最后一个来源同样保住
+      if (!source || isBuiltinSource(source) || sourceList.length <= 1) {
         return false
       }
       sourceList = sourceList.filter((item) => item.id !== id)
       runtimes.delete(id)
       inflight.delete(id)
       if (selectedId === id) {
-        selectedId = sourceList[0]?.id ?? null
+        selectedId = browseIdOf(sourceList)
       }
       persist()
       emit()
@@ -1173,8 +1204,13 @@ export const createMarketClient = (
     },
     moveSource: (id, delta) => {
       const index = sourceList.findIndex((item) => item.id === id)
+      const source = index < 0 ? null : sourceList[index]
+      // 内置项的顺序由内置表决定；用户来源也不能越过内置项，内置段永远在前
+      if (source === null || isBuiltinSource(source)) {
+        return false
+      }
       const target = index + delta
-      if (index < 0 || target < 0 || target >= sourceList.length) {
+      if (target < 0 || target >= sourceList.length || isBuiltinSource(sourceList[target])) {
         return false
       }
       const next = [...sourceList]
@@ -1187,7 +1223,8 @@ export const createMarketClient = (
     },
     setBaseUrls: (id, baseUrls) => {
       const source = sourceList.find((item) => item.id === id)
-      if (!source) {
+      // 内置项的地址是构建期注入的默认值，改地址一律拒绝
+      if (!source || isBuiltinSource(source)) {
         return false
       }
       const urls = normalizeBaseUrls(baseUrls)

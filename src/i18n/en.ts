@@ -373,6 +373,7 @@ export const en = {
   pluginMarketSourceDeleteConfirm: 'Confirm delete',
   pluginMarketSourceMoveUp: 'Move up',
   pluginMarketSourceMoveDown: 'Move down',
+  pluginMarketSourceBuiltinNote: 'Built-in source, cannot be changed',
   pluginMarketSourceNoUrl: 'No usable URL',
   pluginMarketSourceIdle: 'Not fetched yet',
   pluginMarketSourceInvalid:

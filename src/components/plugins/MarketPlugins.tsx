@@ -16,6 +16,7 @@ import { isUnlistedTrust } from '../../i18n/pluginVerdicts.js'
 import { useSettings } from '../../services/settings.js'
 import { getPluginEngine } from '../dsc-plugin-engine/index.js'
 import {
+  isBrowsableSource,
   market,
   toPluginId,
   type CatalogPlugin,
@@ -94,6 +95,17 @@ const trustReasonKey = (runtime: SourceRuntime | null): TranslationKey => {
   return runtime?.trustFailure === 'chain'
     ? 'pluginMarketTrustReasonChain'
     : 'pluginMarketTrustReasonMissing'
+}
+
+/** 来源徽章的配色；结论只有四种，配色跟着走 */
+const trustBadgeClass = (runtime: SourceRuntime | null): string => {
+  if (runtime?.trust === 'trusted') {
+    return styles.badgeTrusted
+  }
+  if (runtime?.trust === 'endorsed') {
+    return styles.badgeEndorsed
+  }
+  return runtime?.trust === 'untrusted' ? styles.badgeUntrusted : styles.badgeUnverified
 }
 
 /** 按当前语言取双语简介；缺失的一侧用另一侧补 */
@@ -188,13 +200,18 @@ export const MarketPlugins = ({
   const confirmTimer = useRef(0)
 
   const sources = client ? client.sources() : []
+  /*
+   * 可浏览来源：内部插件来源只在来源浮层里登记，它的条目走已安装页的「内部插件」组，
+   * 因此目录浏览、来源筛选与来源计数都只认 awesome 与 user 两类。
+   */
+  const browsableSources = sources.filter((source) => isBrowsableSource(source))
   const selectedId = client ? client.selected() : null
   const runtime = client && selectedId !== null ? client.runtime(selectedId) : null
   const fetchedAt = runtime === null ? null : runtime.fetchedAt
 
   /** 已配置来源的运行态，按来源顺序；来源筛选与结论行都在它之上取子集 */
   const allRuntimes: SourceRuntime[] = []
-  for (const source of sources) {
+  for (const source of browsableSources) {
     const state = client?.runtime(source.id) ?? null
     if (state !== null) {
       allRuntimes.push(state)
@@ -271,6 +288,29 @@ export const MarketPlugins = ({
     return () => {
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [sourcesOpen])
+
+  /*
+   * 最大高按视口减顶边偏移算，顶边随窗口宽度与吸顶高度变化，
+   * 所以打开时与改宽时各实测一次，写进 --ds-popover-top 供样式表取值。
+   */
+  useEffect(() => {
+    if (!sourcesOpen) {
+      return
+    }
+    const node = popoverRef.current
+    if (node === null) {
+      return
+    }
+    const sync = () => {
+      const top = Math.round(node.getBoundingClientRect().top)
+      node.style.setProperty('--ds-popover-top', Math.max(0, top) + 'px')
+    }
+    sync()
+    window.addEventListener('resize', sync)
+    return () => {
+      window.removeEventListener('resize', sync)
     }
   }, [sourcesOpen])
 
@@ -505,9 +545,11 @@ export const MarketPlugins = ({
   const statusOn = statusFilter !== 'all'
   const filtersOn = sourceFilter !== '' || statusOn
 
-  /* 来源筛选先改基数：空串是全部来源，即所有已拉取来源的并集，单来源时与目录原序一致 */
+  /* 来源筛选先改基数：空串是全部可浏览来源，即它们的并集，单来源时与目录原序一致 */
   const scopedSources =
-    sourceFilter === '' ? sources : sources.filter((source) => source.id === sourceFilter)
+    sourceFilter === ''
+      ? browsableSources
+      : browsableSources.filter((source) => source.id === sourceFilter)
   const scopedRuntimes: SourceRuntime[] = []
   const entries: MarketEntry[] = []
   for (const source of scopedSources) {
@@ -599,12 +641,13 @@ export const MarketPlugins = ({
   }
 
   /*
-   * 下拉选项：来源项直接来自来源列表，不假设来源能否删除或编辑，
+   * 下拉选项：只列可浏览来源（组织社区与用户自加），内部插件来源的条目在已安装页；
    * 来源增删后选项跟着变，筛选停在已消失的来源上时按「没有命中」处理。
+   * 只剩一条来源时照常渲染这一个选项，不退化、不隐藏控件。
    */
   const sourceOptions: SelectOption<string>[] = [
     { value: '', label: t('pluginMarketFilterSourceAll') },
-    ...sources.map((source) => ({ value: source.id, label: source.name })),
+    ...browsableSources.map((source) => ({ value: source.id, label: source.name })),
   ]
   const statusOptions: SelectOption<StatusFilter>[] = [
     { value: 'all', label: t('pluginMarketFilterStatusAll') },
@@ -674,13 +717,13 @@ export const MarketPlugins = ({
               {t('pluginMarketIndexUpdatedAt', { time: formatDateTime(fetchedAt) ?? '' })}
             </span>
           )}
-          {sources.length > 1 ? (
-            <Tooltip content={t('pluginMarketSourcesCount', { count: sources.length })}>
+          {browsableSources.length > 1 ? (
+            <Tooltip content={t('pluginMarketSourcesCount', { count: browsableSources.length })}>
               <span
                 className={styles.badgeCount}
-                aria-label={t('pluginMarketSourcesCount', { count: sources.length })}
+                aria-label={t('pluginMarketSourcesCount', { count: browsableSources.length })}
               >
-                {sources.length}
+                {browsableSources.length}
               </span>
             </Tooltip>
           ) : null}
@@ -754,87 +797,111 @@ export const MarketPlugins = ({
               {sources.map((source, index) => {
                 const state = client?.runtime(source.id) ?? null
                 const active = source.id === selectedId
+                /*
+                 * 内置来源是市场默认项：不给编辑、删除与调序入口，也不给切换态；
+                 * 只有用户自加来源可写，用户来源之间可调序，但越不过内置段。
+                 */
+                const selectable = isBrowsableSource(source)
+                const writable = source.kind === 'user'
+                const previous = index > 0 ? sources[index - 1] : null
+                const canMoveUp = writable && previous !== null && previous.kind === 'user'
+                const canMoveDown = writable && index < sources.length - 1
+                const texts = (
+                  <span className={styles.sourceTexts}>
+                    <span className={styles.sourceName}>{source.name}</span>
+                    <span className={styles.sourceUrl}>
+                      {state === null
+                        ? t('pluginMarketSourceIdle')
+                        : (state.baseUrl ?? t('pluginMarketSourceNoUrl'))}
+                    </span>
+                  </span>
+                )
                 return (
                   <div
                     key={source.id}
                     className={clsx(styles.sourceRow, active && styles.sourceRowActive)}
                   >
-                    <button
-                      type="button"
-                      className={styles.sourcePick}
-                      aria-pressed={active}
-                      onClick={() => selectSource(source.id)}
-                    >
-                      <span className={styles.sourceName}>{source.name}</span>
-                      <span className={styles.caption}>
-                        {state === null
-                          ? t('pluginMarketSourceIdle')
-                          : (state.baseUrl ?? t('pluginMarketSourceNoUrl'))}
-                      </span>
-                    </button>
-                    <div className={styles.sourceBadges}>
-                      <span
-                        className={clsx(
-                          styles.badge,
-                          state?.trust === 'trusted'
-                            ? styles.badgeTrusted
-                            : state?.trust === 'endorsed'
-                              ? styles.badgeEndorsed
-                              : state?.trust === 'untrusted'
-                                ? styles.badgeUntrusted
-                                : styles.badgeUnverified
-                        )}
-                      >
-                        {t(trustKey(state))}
-                      </span>
-                      {state?.meta?.downloadCountEnabled ? (
-                        <span className={styles.badgeCount}>
-                          {t('pluginMarketCountBadge')}
+                    <div className={styles.sourceHead}>
+                      {selectable ? (
+                        <button
+                          type="button"
+                          className={styles.sourcePick}
+                          aria-pressed={active}
+                          onClick={() => selectSource(source.id)}
+                        >
+                          <span className={styles.sourceDot} aria-hidden="true" />
+                          {texts}
+                        </button>
+                      ) : (
+                        <div className={styles.sourceFixed}>{texts}</div>
+                      )}
+                      <span className={styles.sourceBadges}>
+                        <span className={clsx(styles.badge, trustBadgeClass(state))}>
+                          {t(trustKey(state))}
                         </span>
-                      ) : null}
+                        {state?.meta?.downloadCountEnabled ? (
+                          <span className={styles.badgeCount}>
+                            {t('pluginMarketCountBadge')}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
-                    <div className={styles.sourceActions}>
-                      <IconButton
-                        icon={<IconRefreshOutline16 />}
-                        tooltip={t('pluginMarketRefresh')}
-                        disabled={state?.state === 'loading'}
-                        onClick={() => void refreshSource(source.id, true)}
-                      />
-                      <Button
-                        variant="outlined"
-                        size="s"
-                        disabled={editing !== null}
-                        onClick={() => startEdit(source)}
-                      >
-                        {t('pluginMarketSourceEdit')}
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="s"
-                        disabled={index === 0 || editing !== null}
-                        onClick={() => moveSource(source.id, -1)}
-                      >
-                        {t('pluginMarketSourceMoveUp')}
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="s"
-                        disabled={index === sources.length - 1 || editing !== null}
-                        onClick={() => moveSource(source.id, 1)}
-                      >
-                        {t('pluginMarketSourceMoveDown')}
-                      </Button>
-                      <Button
-                        variant="dangerOutlined"
-                        size="s"
-                        disabled={source.builtin || sources.length <= 1 || editing !== null}
-                        onClick={() => requestDelete(source.id)}
-                      >
-                        {confirmKey === 'delete:' + source.id
-                          ? t('pluginMarketSourceDeleteConfirm')
-                          : t('pluginMarketSourceDelete')}
-                      </Button>
-                    </div>
+                    {writable ? (
+                      <div className={styles.sourceActions}>
+                        <IconButton
+                          icon={<IconRefreshOutline16 />}
+                          tooltip={t('pluginMarketRefresh')}
+                          disabled={state?.state === 'loading'}
+                          onClick={() => void refreshSource(source.id, true)}
+                        />
+                        <Button
+                          variant="outlined"
+                          size="s"
+                          disabled={editing !== null}
+                          onClick={() => startEdit(source)}
+                        >
+                          {t('pluginMarketSourceEdit')}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="s"
+                          disabled={!canMoveUp || editing !== null}
+                          onClick={() => moveSource(source.id, -1)}
+                        >
+                          {t('pluginMarketSourceMoveUp')}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="s"
+                          disabled={!canMoveDown || editing !== null}
+                          onClick={() => moveSource(source.id, 1)}
+                        >
+                          {t('pluginMarketSourceMoveDown')}
+                        </Button>
+                        <Button
+                          variant="dangerOutlined"
+                          size="s"
+                          disabled={editing !== null}
+                          onClick={() => requestDelete(source.id)}
+                        >
+                          {confirmKey === 'delete:' + source.id
+                            ? t('pluginMarketSourceDeleteConfirm')
+                            : t('pluginMarketSourceDelete')}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className={styles.sourceFoot}>
+                        <span className={styles.sourceNote}>
+                          {t('pluginMarketSourceBuiltinNote')}
+                        </span>
+                        <IconButton
+                          icon={<IconRefreshOutline16 />}
+                          tooltip={t('pluginMarketRefresh')}
+                          disabled={state?.state === 'loading'}
+                          onClick={() => void refreshSource(source.id, true)}
+                        />
+                      </div>
+                    )}
                   </div>
                 )
               })}

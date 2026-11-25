@@ -35,6 +35,8 @@ dsc-market/
 
 内置来源的列表顺序即默认优先级,`dsc-inner-plugin` 在前,`awesome-dsc-plugin` 在后。
 
+来源按 `kind` 分类,取值 `inner`(内置内部插件来源)、`awesome`(内置组织社区来源)、`user`(用户自加来源),两条内置来源在 `DEFAULT_SOURCES` 里各自显式声明。`kind` 不是 `user` 即为内置项:不可删除、不可改地址、不可移动,顺序由内置表决定;对内置项的写操作返回 `false`,不静默忽略。读取旧配置时按 id 优先认回内置表,缺失时用持久化的 `kind`,再退回旧的 `builtin` 标记,老配置不会因此丢掉来源。
+
 | 来源 | base_url(按优先级) |
 |:---:|:---:|
 | `dsc-inner-plugin` | `https://omds-chat.github.io/dsc-inner-plugin/` |
@@ -44,9 +46,11 @@ dsc-market/
 
 本地开发时来源地址可由 .env 覆盖,线上地址不变: 上表的 Pages 地址在 dev 下由 .env 的 `DSC_INNER_PLUGIN_PAGES_LINK`、`AWESOME_DSC_PLUGIN_PAGES_LINK` 注入值替代,注入为空或非法时仍用线上地址,地址判定与信任校验不分开发与线上。
 
-来源 id 与合集目录名一致,因此可以直接命中 trusted-manifest 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。来源类型仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
+来源 id 与合集目录名一致,因此可以直接命中 trusted-manifest 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。安装记录里的来源类型(`PluginSourceType`,与来源的 `kind` 不是同一概念)仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
 
-内置来源不可删除,可以改 `base_url` 列表与顺序;用户还可以新增、删除、排序自定义来源。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。界面默认选中列表第一个来源。
+内置来源不可删除、不可改地址、不可移动;用户可新增、删除与排序自定义来源,且自定义来源只能在自定义段内调序,越不过内置段。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。
+
+市场浏览只认可浏览来源(`kind` 为 `awesome` 或 `user`):默认浏览第一个可浏览来源,即组织社区来源。内部插件来源仍在来源登记里、在来源浮层可见并标注为内置不可修改,但它的插件条目由已安装页的「内部插件」组消费,不作为市场目录与来源选择器的切换项。
 
 地址判定与引擎的插件来源判定一致:允许 `https://` 任意主机,或 `http://localhost`、`http://127.0.0.1`、`http://[::1]`。写入前统一去掉查询与哈希并补齐尾部斜杠。
 
@@ -225,7 +229,7 @@ dsc-market/
 
 | 区域 | 内容 |
 |:---:|:---:|
-| 顶部 | 来源列表:名称、当前生效的 `base_url`、信任状态、下载计数标识、刷新、编辑、排序与删除;新增来源表单 |
+| 顶部 | 来源浮层:名称、当前生效的 `base_url`、信任状态与下载计数标识;用户来源另有刷新、编辑、排序与删除,内置来源只留中性说明「内置来源,不可修改」;新增来源表单 |
 | 主体 | 选中来源的插件目录:插件名、作者、标签、最新版本、简介(来自该版本的 `meta.json`)与安装按钮 |
 
 来源不可信或未在清单登记时,安装按钮第一次点击转为 3 秒确认态,确认后才调用引擎;不可信来源额外显示「不可信」标识与警告文案。目录上方的来源文案只反映清单结论: 判定为不可信时按原因显示「来源证书校验未通过」或「来源证书已被吊销」,未在清单登记时显示中性标注「未在官方清单登记」。来源结论「来源已确认」出现在已安装插件列表,由引擎按本地链校验与验签给出;已确认但未在清单登记时,列表额外补一条同样的中性标注;信任清单登记了证书但证书文件缺失时,列表显示「来源证书缺失」而不是通用文案。
@@ -238,13 +242,13 @@ import { market } from '../dsc-market/index.js'
 const client = market()
 client?.sources()              // 来源列表
 client?.runtime('awesome-dsc-plugin') // 来源运行态:state、baseUrl、trust、model、eecFromTrustList、meta、plugins
-client?.selected()             // 当前选中的来源 id
+client?.selected()             // 当前浏览的来源 id;恒为可浏览来源,不会是内部插件来源
 client?.select('awesome-dsc-plugin')
 await client?.refresh('awesome-dsc-plugin', true)  // 拉取并校验;force 为 true 时忽略缓存
-client?.addSource('自定义', ['https://example.com/plugins/'])
-client?.setBaseUrls('awesome-dsc-plugin', ['https://cdn.example.com/'])
-client?.moveSource('dsc-inner-plugin', -1)
-client?.removeSource('custom-3')        // 内置来源与最后一个来源不可删除
+client?.addSource('自定义', ['https://example.com/plugins/'])   // 新来源的 kind 为 user,id 形如 custom-3
+client?.setBaseUrls('custom-3', ['https://cdn.example.com/'])    // 内置来源返回 false
+client?.moveSource('custom-4', -1)     // 只与相邻用户来源换位;内置项、或目标落在内置项上返回 false
+client?.removeSource('custom-3')       // 内置来源与最后一个来源不可删除,返回 false
 client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(嵌套路径优先,旧站点的扁平路径兼容,最旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单;manifest 由该版本 meta.json 推导,缺 mounts 时由引擎在安装阶段用产物导出的 manifest 补齐
 client?.countInstall('awesome-dsc-plugin', plugin) // 上报一次下载计数
 await client?.checkUpdates([{ id: 'demo', version: '1.0.0', sourceUrl: 'https://example.com/plugins/a/demo/1.0.0/plugin.js' }]) // 更新检查：Map<id, { status: 'outdated' | 'latest', latest }>

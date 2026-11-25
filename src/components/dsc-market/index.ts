@@ -57,6 +57,7 @@ export const dscMarketPlugin: DscPlugin = {
 }
 
 export { parsePluginsIndex, parseRuntimeMeta, parseSourceMeta, parseVersions, toPluginId } from './client.js'
+export { isBrowsableSource, isBuiltinSource } from './sources.js'
 export { compareVersions, deriveDataBase, readRecordDataBase, updateStatusOf } from './updates.js'
 export type { MarketClient } from './client.js'
 export type { SourceModel } from './model.js'
@@ -68,6 +69,7 @@ export type {
   MarketSource,
   ReinstallPlan,
   RuntimeMeta,
+  SourceKind,
   SourceMeta,
   SourceRuntime,
   SourceTrust,

@@ -354,6 +354,7 @@ export const zh = {
   pluginMarketSourceDeleteConfirm: '确认删除',
   pluginMarketSourceMoveUp: '上移',
   pluginMarketSourceMoveDown: '下移',
+  pluginMarketSourceBuiltinNote: '内置来源，不可修改',
   pluginMarketSourceNoUrl: '暂无可用地址',
   pluginMarketSourceIdle: '尚未拉取',
   pluginMarketSourceInvalid:

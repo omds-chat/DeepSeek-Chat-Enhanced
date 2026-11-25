@@ -73,18 +73,22 @@ export type InternalCatalog = { sourceId: string; plugins: CatalogPlugin[] }
 /** 市场客户端缺失时的占位订阅源，保证 Hook 顺序稳定 */
 const EMPTY_STORE = { subscribe: () => () => undefined, version: () => 0 }
 
-/** 内置内部插件来源的运行态；没有内置来源或该来源还没拉取过时为 null */
+/**
+ * 内置内部插件来源的运行态；没有 inner 来源或该来源还没拉取过时为 null。
+ * 按 kind 取而不是按顺序取：内置来源有内部插件与社区两条，
+ * 「第一条内置来源」在顺序变化时会错拿成社区来源。
+ */
 const internalRuntimeOf = (client: MarketClient | null): SourceRuntime | null => {
   if (client === null) {
     return null
   }
-  const source = client.sources().find((item) => item.builtin)
+  const source = client.sources().find((item) => item.kind === 'inner')
   return source ? client.runtime(source.id) : null
 }
 
 /**
  * 内置内部插件来源的目录条目；市场未就绪或该来源还没有运行态时返回 null。
- * 来源按清单里的 builtin 标记选取（内置来源不可删，第一条即内部插件来源），不按 id 硬编码。
+ * 来源按 kind 认，不按数组顺序、也不按 id 硬编码。
  * 快照取的是来源运行态本身：客户端按版本缓存它，引用稳定，来源拉取完成后这一组自己出现。
  */
 export const useInternalCatalog = (): InternalCatalog | null => {

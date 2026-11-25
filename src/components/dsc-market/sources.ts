@@ -1,6 +1,6 @@
 import { isHttpsOrLocalUrl } from '../../utils/url.js'
 import type { StorageCapability } from '../dsc-plugin-engine/types.js'
-import type { MarketSource } from './types.js'
+import type { MarketSource, SourceKind } from './types.js'
 
 /** plugins:storage 中保存来源配置的键 */
 export const KEY_SOURCES = 'market-sources'
@@ -59,12 +59,14 @@ export const DEFAULT_SOURCES: readonly MarketSource[] = [
     id: 'dsc-inner-plugin',
     name: 'dsc-inner-plugin',
     builtin: true,
+    kind: 'inner',
     baseUrls: sourceBaseUrls(injectedInnerPages(), ['https://omds-chat.github.io/dsc-inner-plugin/']),
   },
   {
     id: 'awesome-dsc-plugin',
     name: 'awesome-dsc-plugin',
     builtin: true,
+    kind: 'awesome',
     baseUrls: sourceBaseUrls(injectedAwesomePages(), [
       'https://omds-chat.github.io/awesome-dsc-plugin/',
       'https://raw.githubusercontent.com/omds-chat/awesome-dsc-plugin/latest/',
@@ -72,6 +74,18 @@ export const DEFAULT_SOURCES: readonly MarketSource[] = [
     ]),
   },
 ]
+
+/**
+ * 内置项判定：kind 不是 user 即为市场自带的默认来源。
+ * 删除、改地址、改名与调序一律按这一条拒绝，不看调用方传进来的 id 长什么样。
+ */
+export const isBuiltinSource = (source: MarketSource): boolean => source.kind !== 'user'
+
+/**
+ * 可浏览来源：内部插件来源只在来源登记里占一行、供已安装页取目录，
+ * 不作为市场目录与来源选择器的切换项。
+ */
+export const isBrowsableSource = (source: MarketSource): boolean => source.kind !== 'inner'
 
 /** 规范化一组 base_url；丢弃非法项与重复项，保留顺序 */
 export const normalizeBaseUrls = (values: readonly string[]): string[] => {
@@ -98,12 +112,33 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isFilled = (value: unknown): value is string =>
   typeof value === 'string' && value.trim() !== ''
 
+/** 内置来源的类别只由内置表决定；id 命中内置表时这就是答案 */
+const builtinKindOf = (id: string): SourceKind | null => {
+  const known = DEFAULT_SOURCES.find((source) => source.id === id)
+  return known ? known.kind : null
+}
+
+/** 持久化的类别字段；只有三个取值之一才算数 */
+const readKind = (value: unknown): SourceKind | null =>
+  value === 'inner' || value === 'awesome' || value === 'user' ? value : null
+
+/**
+ * 还原来源类别：先按 id 认回内置表，再用持久化的 kind，
+ * 再退回旧配置的 builtin 标记，最后按用户来源处理。
+ * 旧配置没有 kind 也能读出内置项，来源本身不因缺字段被丢弃。
+ */
+const resolveKind = (id: string, persisted: SourceKind | null, builtin: unknown): SourceKind =>
+  builtinKindOf(id) ?? persisted ?? (builtin === true ? 'awesome' : 'user')
+
+/** 持久化里的单条来源；kind 未定，等 id 迁移之后再解析 */
+type ParsedSource = Omit<MarketSource, 'kind'> & { kind: SourceKind | null }
+
 /** 校验单条来源配置；结构不符返回 null */
-const parseSource = (value: unknown): MarketSource | null => {
+const parseSource = (value: unknown): ParsedSource | null => {
   if (!isRecord(value)) {
     return null
   }
-  const { id, name, baseUrls, builtin } = value
+  const { id, name, baseUrls, builtin, kind } = value
   if (!isFilled(id) || !isFilled(name) || !Array.isArray(baseUrls)) {
     return null
   }
@@ -125,6 +160,7 @@ const parseSource = (value: unknown): MarketSource | null => {
     name: name.trim(),
     baseUrls: urls,
     builtin: builtin === true,
+    kind: readKind(kind),
   }
 }
 
@@ -140,13 +176,20 @@ export const parseSources = (raw: unknown): MarketSource[] | null => {
     if (!source) {
       continue
     }
-    // 旧配置里的 awesome / inner 迁移到合集目录名形式的 id
+    // 旧配置里的 awesome / inner 迁移到合集目录名形式的 id，类别按迁移后的 id 认
     const id = LEGACY_IDS[source.id] ?? source.id
     if (seen.has(id)) {
       continue
     }
     seen.add(id)
-    sources.push({ ...source, id })
+    const kind = resolveKind(id, source.kind, source.builtin)
+    sources.push({
+      id,
+      name: source.name,
+      baseUrls: source.baseUrls,
+      builtin: kind !== 'user',
+      kind,
+    })
   }
   return sources.length === 0 ? null : sources
 }

@@ -17,13 +17,29 @@ export type SourceTrust = 'trusted' | 'endorsed' | 'untrusted' | 'unverified'
  */
 export type TrustFailure = 'missing' | 'chain' | 'revoked'
 
+/**
+ * 来源类别。
+ * inner 是内置的内部插件来源，awesome 是内置的组织社区来源，user 是用户自加来源。
+ * inner 与 awesome 同属内置默认项：不可删除、不可编辑、不可移动，顺序也由内置表决定；
+ * 只有 user 能增删改与调序。
+ */
+export type SourceKind = 'inner' | 'awesome' | 'user'
+
 /** 用户可配置的来源；base_url 按顺序尝试 */
 export type MarketSource = {
   id: string
   name: string
   baseUrls: string[]
-  /** 内置来源不可删除 */
+  /**
+   * 内置项：恒等于 kind !== 'user'。
+   * 只为兼容旧持久化数据保留，判定统一走 isBuiltinSource。
+   */
   builtin: boolean
+  /**
+   * 来源类别；旧持久化数据缺该字段时按 id 与 builtin 标记兜底推断。
+   * 内置项是市场默认项：删除、改地址、改名与移动一律返回失败，不静默忽略。
+   */
+  kind: SourceKind
 }
 
 /** 来源 meta.json 的下载计数配置；缺失字段按关闭处理 */
