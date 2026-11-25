@@ -29,14 +29,15 @@ export type SourceTrustOutcome = {
 /**
  * 判定来源信任。
  * 信任清单是策略层：登记与背书只用于界面展示来源是否被官方认可，来源结论由引擎按本地证书链与验签给出。
- * 社区来源：从 trusted-manifest 的 index.json 里按来源 id 与名称查找合集，找到且证书链校验通过即可信，
+ * 社区来源：从 trusted-manifest 的 index.json 里按来源 id 与合集标识名查找合集，找到且证书链校验通过即可信，
  * 找到但链校验不通过或证书缺失记为不可信；清单里没有该来源时记为未校验，只警告不阻断。
  * inner 来源：以「dsc 直接背书」为准，不依赖合集 EEC 链；清单里登记了它的 EEC 时仍按证书链校验，
  * 两种判定都通过才记为背书来源，链校验不通过仍记为不可信，都拿不到时退回未校验。
  */
 export const resolveSourceTrust = (source: MarketSource): SourceTrustOutcome => {
-  const listed = getCollectionTrust(source.id) ?? getCollectionTrust(source.name)
-  const collectionId = collectionIdOf(listed, source.name)
+  // 按 id 查最稳；内置来源 id 即合集目录名，用户来源靠创建时固定的合集标识名
+  const listed = getCollectionTrust(source.id) ?? getCollectionTrust(source.collectionName)
+  const collectionId = collectionIdOf(listed, source.collectionName)
   if (isEndorsedSource(source)) {
     if (!listed) {
       // 只有 dsc 背书这一层判定；安装时仍由引擎按来源 certs 布局的嵌套、扁平与 eec.pem 三档取证书验签

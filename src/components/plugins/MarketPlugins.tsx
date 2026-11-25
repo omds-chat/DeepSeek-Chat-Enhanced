@@ -445,7 +445,8 @@ export const MarketPlugins = ({
       void instance.refresh(id)
       return
     }
-    if (!instance.setBaseUrls(editing.id, urls)) {
+    // 名称与地址一次提交，改名不再被静默丢弃
+    if (!instance.updateSource(editing.id, editing.name, urls)) {
       setFormError('pluginMarketSourceInvalid')
       return
     }

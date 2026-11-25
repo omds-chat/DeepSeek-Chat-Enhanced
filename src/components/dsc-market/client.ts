@@ -120,8 +120,11 @@ export type MarketClient = {
   removeSource(id: string): boolean
   /** 调整用户来源的顺序；内置项、或目标位置落在内置项上时返回 false */
   moveSource(id: string, delta: -1 | 1): boolean
-  /** 改来源地址；内置项返回 false */
-  setBaseUrls(id: string, baseUrls: readonly string[]): boolean
+  /**
+   * 改用户来源的名称与地址，一次提交两项：名称为空、地址全非法或内置项返回 false。
+   * 名称只改显示名，合集标识名在创建时已固定，信任与合集判定不受影响。
+   */
+  updateSource(id: string, name: string, baseUrls: readonly string[]): boolean
   plan(id: string, plugin: CatalogPlugin): InstallPlan | null
   countInstall(id: string, plugin: CatalogPlugin): void
   /** 检查已安装插件的版本更新；无法判断的插件不出现在结果里 */
@@ -1029,8 +1032,8 @@ export const createMarketClient = (
       source.baseUrls.some((baseUrl) => key.startsWith(baseUrl))
     )
     const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
-    // 同址来源已知合集 id 时直接用；未知时按来源名归一化，仍取不到时只试旧布局
-    const collectionId = runtime?.collectionId ?? (owner ? normalizeCollectionId(owner.name) : '')
+    // 同址来源已知合集 id 时直接用；未知时按创建时固定的合集标识名归一化，仍取不到时只试旧布局
+    const collectionId = runtime?.collectionId ?? (owner ? normalizeCollectionId(owner.collectionName) : '')
     const eec = await resolveCollectionEec(net, location.root, runtime?.eec ?? null, collectionId)
     const rootCa = embeddedRootCa()
     const layerContext: LayerContext = {
@@ -1125,8 +1128,8 @@ export const createMarketClient = (
       source.baseUrls.some((baseUrl) => location.pluginDir.startsWith(baseUrl))
     )
     const runtime = owner ? (runtimes.get(owner.id) ?? null) : null
-    // 合集 id 取自运行态；来源尚未刷新时按来源名归一化
-    const collectionId = runtime?.collectionId ?? (owner ? normalizeCollectionId(owner.name) : '')
+    // 合集 id 取自运行态；来源尚未刷新时按创建时固定的合集标识名归一化
+    const collectionId = runtime?.collectionId ?? (owner ? normalizeCollectionId(owner.collectionName) : '')
     // 目录结论来自本次拉取时的三层清单；没有缓存时按未校验处理
     const conclusions = conclusionsCache.get(location.pluginDir)
     const plan: InstallPlan = {
@@ -1180,7 +1183,11 @@ export const createMarketClient = (
         return null
       }
       const id = nextSourceId()
-      sourceList = [...sourceList, { id, name: trimmed, baseUrls: urls, builtin: false, kind: 'user' }]
+      sourceList = [
+        ...sourceList,
+        // 合集标识名在这里定格：此后改名不回写它，信任与合集判定保持不变
+        { id, name: trimmed, collectionName: trimmed, baseUrls: urls, builtin: false, kind: 'user' },
+      ]
       persist()
       selectedId = id
       emit()
@@ -1221,20 +1228,22 @@ export const createMarketClient = (
       emit()
       return true
     },
-    setBaseUrls: (id, baseUrls) => {
+    updateSource: (id, name, baseUrls) => {
       const source = sourceList.find((item) => item.id === id)
-      // 内置项的地址是构建期注入的默认值，改地址一律拒绝
+      // 内置项的名称与地址是构建期注入的默认值，改任一项一律拒绝
       if (!source || isBuiltinSource(source)) {
         return false
       }
+      const trimmed = name.trim()
       const urls = normalizeBaseUrls(baseUrls)
-      if (urls.length === 0) {
+      if (trimmed === '' || urls.length === 0) {
         return false
       }
+      // 合集标识名固定不变：改名只换显示名，信任结论与证书取件路径都不动
       sourceList = sourceList.map((item) =>
-        item.id === id ? { ...item, baseUrls: urls } : item
+        item.id === id ? { ...item, name: trimmed, baseUrls: urls } : item
       )
-      // 地址变了，旧的解析结果与缓存全部作废
+      // 地址可能变了，旧的解析结果与缓存一律作废
       runtimes.delete(id)
       inflight.delete(id)
       persist()

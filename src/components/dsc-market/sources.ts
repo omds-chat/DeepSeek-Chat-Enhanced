@@ -58,6 +58,7 @@ export const DEFAULT_SOURCES: readonly MarketSource[] = [
   {
     id: 'dsc-inner-plugin',
     name: 'dsc-inner-plugin',
+    collectionName: 'dsc-inner-plugin',
     builtin: true,
     kind: 'inner',
     baseUrls: sourceBaseUrls(injectedInnerPages(), ['https://omds-chat.github.io/dsc-inner-plugin/']),
@@ -65,6 +66,7 @@ export const DEFAULT_SOURCES: readonly MarketSource[] = [
   {
     id: 'awesome-dsc-plugin',
     name: 'awesome-dsc-plugin',
+    collectionName: 'awesome-dsc-plugin',
     builtin: true,
     kind: 'awesome',
     baseUrls: sourceBaseUrls(injectedAwesomePages(), [
@@ -130,15 +132,21 @@ const readKind = (value: unknown): SourceKind | null =>
 const resolveKind = (id: string, persisted: SourceKind | null, builtin: unknown): SourceKind =>
   builtinKindOf(id) ?? persisted ?? (builtin === true ? 'awesome' : 'user')
 
-/** 持久化里的单条来源；kind 未定，等 id 迁移之后再解析 */
-type ParsedSource = Omit<MarketSource, 'kind'> & { kind: SourceKind | null }
+/**
+ * 持久化里的单条来源；kind 未定、合集标识名待补默认值，等 id 迁移之后再解析。
+ * 旧数据没有 collectionName，读取时按 name 补齐，与引入该字段之前的口径一致。
+ */
+type ParsedSource = Omit<MarketSource, 'kind' | 'collectionName'> & {
+  kind: SourceKind | null
+  collectionName: string
+}
 
 /** 校验单条来源配置；结构不符返回 null */
 const parseSource = (value: unknown): ParsedSource | null => {
   if (!isRecord(value)) {
     return null
   }
-  const { id, name, baseUrls, builtin, kind } = value
+  const { id, name, collectionName, baseUrls, builtin, kind } = value
   if (!isFilled(id) || !isFilled(name) || !Array.isArray(baseUrls)) {
     return null
   }
@@ -158,6 +166,7 @@ const parseSource = (value: unknown): ParsedSource | null => {
   return {
     id: id.trim(),
     name: name.trim(),
+    collectionName: isFilled(collectionName) ? collectionName.trim() : name.trim(),
     baseUrls: urls,
     builtin: builtin === true,
     kind: readKind(kind),
@@ -186,6 +195,7 @@ export const parseSources = (raw: unknown): MarketSource[] | null => {
     sources.push({
       id,
       name: source.name,
+      collectionName: source.collectionName,
       baseUrls: source.baseUrls,
       builtin: kind !== 'user',
       kind,

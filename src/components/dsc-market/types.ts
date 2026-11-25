@@ -28,7 +28,14 @@ export type SourceKind = 'inner' | 'awesome' | 'user'
 /** 用户可配置的来源；base_url 按顺序尝试 */
 export type MarketSource = {
   id: string
+  /** 显示名；用户来源可改，只影响界面与筛选，不参与信任与合集判定 */
   name: string
+  /**
+   * 合集标识名：信任清单查找与合集 id 归一化只认它，创建来源时按当时的名称固定。
+   * 改名不动这个字段，因此改名前后的信任结论与证书取件路径完全一致。
+   * 旧持久化数据缺该字段时取 name，与引入它之前的口径相同。
+   */
+  collectionName: string
   baseUrls: string[]
   /**
    * 内置项：恒等于 kind !== 'user'。

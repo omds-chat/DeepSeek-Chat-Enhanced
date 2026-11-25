@@ -31,7 +31,7 @@ dsc-market/
 
 ## 来源模型
 
-一个来源由名称与一组 `base_url` 组成,`base_url` 按数组顺序尝试,单个请求最多等待 1 秒,失败自动切下一个。
+一个来源由名称、合集标识名与一组 `base_url` 组成,`base_url` 按数组顺序尝试,单个请求最多等待 1 秒,失败自动切下一个。名称只是显示名;合集标识名(`collectionName`)在创建来源时按当时的名称固定,信任清单查找与合集 id 归一化只认它,因此用户来源改名不改变信任结论与证书取件路径。旧配置缺少该字段时按 `name` 补齐,与引入它之前的口径一致。
 
 内置来源的列表顺序即默认优先级,`dsc-inner-plugin` 在前,`awesome-dsc-plugin` 在后。
 
@@ -48,7 +48,7 @@ dsc-market/
 
 来源 id 与合集目录名一致,因此可以直接命中 trusted-manifest 信任清单,不必依赖公钥文本比对。旧版配置里保存的 `awesome`、`inner` 在读取时自动迁移到新 id,用户配置不会失效。安装记录里的来源类型(`PluginSourceType`,与来源的 `kind` 不是同一概念)仍是 `awesome`、`inner`、`outer`、`local` 四个取值: `awesome-dsc-plugin` 映射为 `awesome`,`dsc-inner-plugin` 映射为 `inner`,其余来源映射为 `outer`。
 
-内置来源不可删除、不可改地址、不可移动;用户可新增、删除与排序自定义来源,且自定义来源只能在自定义段内调序,越不过内置段。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。
+内置来源不可删除、不可改名、不可改地址、不可移动;用户可新增、改名、改地址、删除与排序自定义来源,且自定义来源只能在自定义段内调序,越不过内置段。名称与地址由 `updateSource` 一次提交,名称为空或地址全部非法时返回 `false`。来源配置写入 `plugins:storage` 的 `market-sources` 键,值为 `{ sources: MarketSource[] }`,结构不符时退回内置默认值。已保存的配置按用户自己的顺序读取,不因默认顺序调整而重排。
 
 市场浏览只认可浏览来源(`kind` 为 `awesome` 或 `user`):默认浏览第一个可浏览来源,即组织社区来源。内部插件来源仍在来源登记里、在来源浮层可见并标注为内置不可修改,但它的插件条目由已安装页的「内部插件」组消费,不作为市场目录与来源选择器的切换项。
 
@@ -59,7 +59,7 @@ dsc-market/
 对每个来源依次执行:
 
 1. 取 `<base_url>/meta.json`,解析 `DOWNLOAD_COUNT_ENABLE`、`DOWNLOAD_COUNT_API`、`API_NEED_IP`。缺失字段按关闭处理;计数地址不是合法地址时也按关闭处理。
-2. 在 trusted-manifest 的 `index.json` 里按来源 id 与名称查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用内置根证书校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未登记。这一步只给出「是否被官方认可」的展示结论,来源结论由引擎按本地链校验与验签给出。
+2. 在 trusted-manifest 的 `index.json` 里按来源 id 与合集标识名查找合集条目。找到时按该条目的 `eec` 路径拉取证书,用内置根证书校验证书链:通过记为可信,不通过或证书缺失记为不可信;清单里没有该来源时记为未登记。这一步只给出「是否被官方认可」的展示结论,来源结论由引擎按本地链校验与验签给出。
 3. 取来源证书,三档顺序见下节;清单已登记时直接用清单里的那份,省一次请求。
 4. 识别目录数据模型:先探测合集模型的特征文件 `manifest.json` 与 `plugins.json`,再探测整站模型的特征文件 `web_files.json` 与证书;两种都不成立时按未确认处理,不报错。见下节「目录数据的两种模型」。
 5. 取 `<base_url>/plugins.json` 得到插件目录索引,每条包含 `plugin_name`、`author`、`tag`。该文件在识别模型时已取回一次,不重复请求。
@@ -246,7 +246,7 @@ client?.selected()             // 当前浏览的来源 id;恒为可浏览来源
 client?.select('awesome-dsc-plugin')
 await client?.refresh('awesome-dsc-plugin', true)  // 拉取并校验;force 为 true 时忽略缓存
 client?.addSource('自定义', ['https://example.com/plugins/'])   // 新来源的 kind 为 user,id 形如 custom-3
-client?.setBaseUrls('custom-3', ['https://cdn.example.com/'])    // 内置来源返回 false
+client?.updateSource('custom-3', '自定义镜像', ['https://cdn.example.com/']) // 名称与地址一次提交;内置来源、名称为空或地址全非法返回 false
 client?.moveSource('custom-4', -1)     // 只与相邻用户来源换位;内置项、或目标落在内置项上返回 false
 client?.removeSource('custom-3')       // 内置来源与最后一个来源不可删除,返回 false
 client?.plan('awesome-dsc-plugin', plugin)         // 安装计划:{ url, manifest?, sourceType, eec?, eecUrls, sigUrl, authorPubUrl, authorSigUrl, catalogVerified, metaVerified, revisions, authorPubSha512? };eec 是清单证书(已登记时优先),eecUrls 是来源证书地址列表(嵌套路径优先,旧站点的扁平路径兼容,最旧的 eec.pem 兜底),revisions 是三层清单的 revision,authorPubSha512 来自 L2 清单;manifest 由该版本 meta.json 推导,缺 mounts 时由引擎在安装阶段用产物导出的 manifest 补齐
