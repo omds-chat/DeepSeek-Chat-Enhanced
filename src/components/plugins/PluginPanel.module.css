@@ -151,11 +151,6 @@
   text-align: center;
 }
 
-/* 目录行：名称与作者、标签、版本、简介、操作 */
-.catalogRow {
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.8fr) 76px minmax(0, 1.6fr) minmax(104px, auto);
-}
-
 .head {
   padding-top: 0;
   font-size: 12px;
@@ -175,11 +170,6 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.description {
-  color: var(--dsw-alias-label-secondary);
-  word-break: break-word;
 }
 
 /* 签名状态只做简短标识，与错误提示共用字号，颜色区分结论 */
@@ -265,20 +255,122 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.marketBar {
+/*
+ * 插件市场工具条：吸顶块内的第一行，左侧搜索框、右侧计数与来源入口。
+ * 自身是浮层的定位底座，.sourcesPopover 的 top/right 都相对这条工具条。
+ */
+.marketToolbar {
+  position: relative;
   display: flex;
-  flex-shrink: 0;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 4px 0 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0 8px;
 }
 
-.marketStatus {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+/* 搜索框容器：清除按钮按这里收边 */
+.marketSearch {
+  position: relative;
+  flex: 1 1 0;
+  max-width: 320px;
   min-width: 0;
+}
+
+/*
+ * 搜索框：观感复用 .input，高度与字号按工具条收一档。
+ * 选择器多套一层 .marketSearch，叠加使用 .input 时不会被后者的 36 高与 14 号字反盖。
+ */
+.marketSearch .marketSearchInput {
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--ds-control-height-s);
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--ds-radius-md);
+  background-color: var(--dsw-specific-login-input);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+
+  &:focus-visible {
+    border-color: var(--dsw-alias-state-business-primary);
+  }
+}
+
+/* 有清除按钮时给它让出右侧一截，长查询不会压到按钮下面 */
+.marketSearch:has(.marketSearchClear) .marketSearchInput {
+  padding-right: 30px;
+}
+
+/*
+ * 清除按钮：20 的盒、12 的图标，居中贴在输入框右端。
+ * 同样多套一层，压过 IconButton 的 .xs 尺寸。
+ */
+.marketSearch .marketSearchClear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  transform: translateY(-50%);
+  cursor: pointer;
+
+  @media (hover: hover) {
+    &:hover {
+      color: var(--dsw-alias-label-primary);
+    }
+  }
+
+  &:active {
+    background-color: var(--dsw-alias-interactive-bg-active);
+  }
+
+  /*
+   * 命中区放到 32(与输入框同高)：盒只有 20，900px 以下的 40 触控规则又必须让位给
+   * 32 高的输入框，扩出来的透明层让触屏仍够得着，视觉尺寸不变。
+   */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: -6px;
+  }
+
+  > svg {
+    position: relative;
+    width: 12px;
+    height: 12px;
+  }
+}
+
+/* 右侧元信息簇：auto 左外边距把它顶到工具条右端，浮层因此贴右收边 */
+.marketToolbarMeta {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  margin-left: auto;
+}
+
+.marketToolbarCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .statusText {
@@ -287,11 +379,61 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-.marketControls {
+/*
+ * 来源浮层：相对工具条右下方展开的一张卡片，不是模态也不铺遮罩。
+ * 层级只压住目录卡片(目录内容不带 z-index)，不进全局浮层档位表。
+ */
+.sourcesPopover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(60vh, 480px);
+  padding: 12px;
+  border: 0;
+  border-radius: var(--ds-radius-lg);
+  background-color: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--ds-elevation-prominent);
+  --ds-elevation-stroke-color: var(--dsw-alias-border-l1);
+  /* 浮层底比页面高一档，滚动条滑块取 l2 才看得出 */
+  --ds-scrollbar-thumb: var(--dsw-alias-border-l2);
+}
+
+/* 浮层头部：标题与关闭排成一行，与主体之间留 12 */
+.sourcesPopoverHead {
   display: flex;
   flex-shrink: 0;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  padding-bottom: 12px;
+}
+
+.sourcesPopoverTitle {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 浮层主体：内容超出时自己滚动，头部与底部入口保持可见 */
+.sourcesPopoverBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 来源列表已由浮层主体承担滚动，列表自身不再开一道内滚动 */
+.sourcesPopoverBody .sourceList {
+  max-height: none;
+  overflow: visible;
 }
 
 /* 安装栏固定在已安装页底部，不遮挡滚动的列表；分隔发丝线与内容列同宽 */
@@ -414,42 +556,6 @@
   font-size: 12px;
   line-height: 18px;
   word-break: break-word;
-}
-
-/* 多来源市场：顶部来源列表，主体是选中来源的目录 */
-.marketSources {
-  display: flex;
-  flex-shrink: 0;
-  flex-direction: column;
-  gap: 4px;
-  padding-bottom: 8px;
-  box-shadow: inset 0 -0.5px 0 var(--dsw-alias-border-l2-darkmode-thin);
-}
-
-/* 来源面板摘要行：收起时只留这一行，仍能看到当前选中来源与信任状态 */
-.sourcesSummary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-}
-
-.summaryText {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* 收起时只保留摘要行：列表、表单与新增入口都不占纵向空间 */
-.marketSourcesCollapsed .sourceList,
-.marketSourcesCollapsed .sourceForm,
-.marketSourcesCollapsed .sourceFooter {
-  display: none;
 }
 
 .sourceFooter {
@@ -577,6 +683,206 @@
   flex-direction: column;
 }
 
+/* 目录卡片网格：280 起，容器变宽就多排一列，不设列数上限 */
+.catalogGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+/*
+ * 容器窄于 620 时单列：两列 280 卡加 12 间距要 572 的内容宽，
+ * 再看内容列两侧各 20 起的内缩，620 以下两列会把描述挤成一行半。
+ */
+@media not all and (min-width: 620px) {
+  .catalogGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 单卡：整卡不可点，唯一的交互是动作行里的按钮 */
+.catalogCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 14px;
+  border-radius: var(--ds-radius-lg);
+  background-color: var(--dsw-alias-bg-layer-2);
+  /* 0.5px 内描边用内阴影给，不写 border，悬停换底色时盒尺寸不变 */
+  box-shadow: inset 0 0 0 0.5px var(--dsw-alias-border-l1);
+  transition: background-color var(--ds-transition-duration) var(--ds-ease-in-out);
+
+  @media (hover: hover) {
+    &:hover {
+      background-color: var(--dsw-alias-interactive-bg-hover);
+    }
+  }
+}
+
+/* 卡头：名称吃满剩余宽并截断，版本靠右不折行 */
+.cardHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cardName {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cardVersion {
+  flex-shrink: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 作者行：作者名吃满剩余宽并截断，背书徽标留在右侧不被压缩 */
+.cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+
+  > span:first-child {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
+.cardTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/*
+ * 标签胶囊：形状与来源徽章一致，字号再小一档。
+ * 浅色主题里 layer-3 与 layer-2 同为一档白，只靠底色会看不出胶囊，
+ * 因此照 .badge 的做法补一道内描边（既有令牌，不新增颜色）。
+ */
+.tagPill,
+.tagMore {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background-color: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px var(--dsw-alias-border-l2-darkmode-thin);
+}
+
+/* 溢出计数与胶囊同形，只报数不点击，字色弱一档 */
+.tagMore {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 描述固定两行截断，卡片高度才可控 */
+.cardDesc {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  /* 卡片 gap 8 之外再补 4，动作行净上边距凑满 12 */
+  margin-top: 4px;
+}
+
+/* 卡内失败原因常驻，不等 toast 消失 */
+.cardError {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-word;
+}
+
+/* 卡内说明行：来源不可信、目录未校验之类的中性补充 */
+.cardNotice {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-word;
+}
+
+/*
+ * 结论行：一行一条，错误结论复用 .errorText 的红，
+ * 这里的弱字色承担警示与说明两种语气(主题没有 warning 令牌)。
+ */
+.marketNotice {
+  /* 目录容器不带 gap，结论行自己留出与相邻块的间隔 */
+  margin: 4px 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  word-break: break-word;
+}
+
+/* 三态：加载、失败、空共用一块居中区域，出路按钮排在文案下面 */
+.marketState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 32px 0;
+  text-align: center;
+}
+
+.marketStateText {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* 加载态的转圈：三态容器里只有加载图标是 svg，出路按钮不受影响 */
+.marketState > svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  animation: marketSpin 0.8s linear infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes marketSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .trustError,
 .trustWarn {
   margin: 4px 0 8px;
@@ -629,16 +935,6 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.tagsCell {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 /* 待决定冲突：常驻在已安装列表顶部，冲突双方就在下面的列表里 */
@@ -748,6 +1044,12 @@
     min-height: 40px;
   }
 
+  /* 工具条搜索框只有 32 高，清除按钮若跟随 40 的触控刻度会溢出输入框 */
+  .page .marketSearchClear {
+    min-width: 20px;
+    min-height: 20px;
+  }
+
   .table {
     gap: 8px;
   }
@@ -757,8 +1059,7 @@
     display: none;
   }
 
-  .row,
-  .catalogRow {
+  .row {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     padding: 12px;
@@ -804,11 +1105,6 @@
   .inputId {
     width: 100%;
   }
-
-  .marketBar {
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
 }
 
 /* 手机：页签条间距再收一档，顶栏自带的高度取代页面顶部留白 */
@@ -836,8 +1132,7 @@
     line-height: 24px;
   }
 
-  .row,
-  .catalogRow {
+  .row {
     padding: 10px;
   }
 

@@ -48,6 +48,8 @@ export const PluginPanel = () => {
   const tabId = (value: PluginPanelTab) => `${baseId}-tab-${value}`
   const panelId = `${baseId}-tabpanel`
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+  /** 市场工具条的挂载点：它落在吸顶块里，市场页通过 portal 把工具条挂进来 */
+  const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null)
 
   /** 标签页键盘导航：左右方向键循环切换，Home / End 跳到首尾 */
   const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -125,6 +127,8 @@ export const PluginPanel = () => {
                 ))}
               </div>
             </div>
+            {/* 市场工具条随页头吸顶：挂载点只在市场页签存在，占位高度由工具条自身撑开 */}
+            {tab === 'market' ? <div ref={setToolbarSlot} /> : null}
           </div>
         </div>
         <div className={styles.column} role="tabpanel" id={panelId} aria-labelledby={tabId(tab)}>
@@ -134,7 +138,11 @@ export const PluginPanel = () => {
               <InstalledPlugins plugins={plugins} ready={ready} refresh={refresh} />
             </>
           ) : (
-            <MarketPlugins installedIds={installedIds} onInstalled={refresh} />
+            <MarketPlugins
+              installedIds={installedIds}
+              onInstalled={refresh}
+              toolbarSlot={toolbarSlot}
+            />
           )}
         </div>
       </div>
