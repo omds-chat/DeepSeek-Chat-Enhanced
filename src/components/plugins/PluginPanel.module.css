@@ -62,14 +62,6 @@
   padding-bottom: 48px;
 }
 
-.title {
-  margin: 0;
-  font-size: 18px;
-  line-height: 24px;
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-}
-
 .tabsBar {
   display: flex;
   flex-shrink: 0;
@@ -433,8 +425,9 @@
 }
 
 /*
- * 状态胶囊：蓝字叠加 10% 同色底，底由允许的令牌派生，不写死颜色。
- * 首行是给不支持 color-mix 的引擎留的兜底底色。
+ * 状态胶囊：蓝字叠加一成同色底。
+ * color-mix 要 Chrome 111；105-110 回落到同为蓝调的既有令牌底色，不退成中性底。
+ * 两条声明按序生效，低版本只换底色，不动其他属性。
  */
 .pluginStatusTag {
   display: inline-flex;
@@ -443,8 +436,12 @@
   height: 18px;
   padding: 0 7px;
   border-radius: 999px;
-  background-color: var(--dsw-alias-interactive-bg-hover);
-  background-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  background-color: var(--dsw-alias-button-ghost-active-fill);
+
+  @supports (color: color-mix(in srgb, red, blue)) {
+    background-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  }
+
   color: var(--dsw-alias-state-business-primary);
   font-size: 10px;
   line-height: 1;
@@ -632,12 +629,6 @@
   white-space: nowrap;
 }
 
-.statusText {
-  font-size: 13px;
-  line-height: 20px;
-  color: var(--dsw-alias-label-secondary);
-}
-
 /*
  * 来源浮层：相对工具条右下方展开的一张卡片，不是模态也不铺遮罩。
  * 层级只压住目录卡片(目录内容不带 z-index)，不进全局浮层档位表。
@@ -722,11 +713,6 @@
 .inputUrl {
   flex: 1 1 0;
   min-width: 0;
-}
-
-.inputId {
-  flex-shrink: 0;
-  width: 168px;
 }
 
 .inputInvalid {
@@ -1294,10 +1280,6 @@
     grid-column: 1 / -1;
     justify-content: flex-start;
   }
-
-  .inputId {
-    width: 100%;
-  }
 }
 
 /* 手机：页签条间距再收一档，顶栏自带的高度取代页面顶部留白 */
@@ -1312,11 +1294,6 @@
 }
 
 @media (max-width: 480px) {
-  .title {
-    font-size: 17px;
-    line-height: 24px;
-  }
-
   .sourceActions {
     gap: 6px;
   }
